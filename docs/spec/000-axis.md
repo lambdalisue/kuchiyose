@@ -13,27 +13,37 @@ LLM に代筆させたときに、<strong>自分が書いたものとして通�
 ## 先行研究が答えていること
 
 やりたいことを満たすのに何が要るかは、思いつきで決めない。[先行研究](../references/)
-を調べたうえで決める。分かったことは 3 つある。
+を調べたうえで決める。分かったことは 4 つある。
 
-<strong>1. 「その人らしいか」を測るのは、解決済みの技術である。</strong>
+<strong>1. 「その人らしいか」を測るのは、解決済みである。</strong>
 
 著者識別（authorship attribution）として蓄積がある。日本語でも、1 編 1,100 字の作文
 11 人で 99%、<strong>500 字の日記 6 人で 92%</strong> という実証がある
-（[金 2013](../references/jin-2013.md)）。
+（[金 2013](../references/jin-2013.md)）。日記 500 字で 92% なら、チャットや投稿のような
+短い場面でも見込みがある。
 
-<strong>短い文章でも届く</strong>ことが、対象を記事に限らない上で効く。日記 500 字で 92% なら、
-チャットや投稿のような短い場面でも見込みがある。
+<strong>手作りの特徴量で判別性能を競う道は、既に終わっている。</strong> 文体埋め込みが古典的な計量
+文体論を上回る（[Kim & Jurgens](../references/kim-jurgens-2026.md)）。ここは借りる。
 
-<strong>2. どこが違うかを説明することは、この分野でも解けていない。</strong>
-
-[Stamatatos (2009)](../references/stamatatos-2009.md) が未解決として名指ししている。
-判別に効く特徴は分かるが、書き手の文体を <strong>高い水準で言い表す</strong> ことはできていない。
-
-<strong>3. 「言えない」のは本人の観察力の問題ではない。</strong>
+<strong>2. 「言えない」のは本人の観察力の問題ではない。</strong>
 
 文体を担う機能語は、書き手が概ね無意識に使い、題材に依存しない
 （[Stamatatos §2.1](../references/stamatatos-2009.md)）。<strong>無意識だから言えない。</strong>
-訊いても出てこないのは、そういう性質のものだからである。
+
+<strong>3. 素朴な貸し方は、両方とも失敗している。</strong>
+
+| やり方 | 結果 |
+| --- | --- |
+| 例文を何本か見せる | 頭打ち。平均的な調子に寄り、AI 生成と検出される（[Wang](../references/wang-2025.md)） |
+| 文体の特徴を並べて指示する | <strong>例文だけより悪くなる</strong>（[Bhandarkar](../references/bhandarkar-2024.md)） |
+
+<strong>4. 貸す側にも手法はある。ただし数値ではない。</strong>
+
+[Kim & Jurgens (2026)](../references/kim-jurgens-2026.md) は、文体埋め込みから自然言語の
+指示を復元するデコーダで、対象の文章を直接プロンプトに入れる方法を上回った。
+
+出てくるのは指示であって数値ではない。したがって <strong>検められない</strong>し、<strong>どこがどれだけ
+外れているかも出ない</strong>。
 
 ## 軸
 
@@ -41,13 +51,35 @@ LLM に代筆させたときに、<strong>自分が書いたものとして通�
 
 <strong>その人の書きぶりを、本人の外で使えるようにする。</strong>
 
-測ることは既にできる。足りないのは、測った結果を <strong>他人が使える形にする</strong> ことである。
-kakiburi はそこをやる。
+判別で勝つ道具ではない。埋め込みに負ける。生成の質だけを競う道具でもない。残るのは、
+<strong>書かせて、検めて、直すループを回せること</strong>である。
 
-- <strong>取り出す</strong>——先行研究の手法を借りる。自前で工夫しない
-- <strong>貸す</strong>——ここが未解決の側であり、この道具の仕事
+それには <strong>決定的で解釈できる数値</strong> が要る。数値であることが、そのまま 3 つを可能に
+する。
 
-書くのは借りた側である。kakiburi は書かない。
+- 貸すときの指示になる
+- 検めるときの物差しになる
+- <strong>両者が同じものを見ていることを保証できる</strong>
+
+取り出し方は先行研究から借りる。自前で工夫しない。書くのは借りた側であり、kakiburi は
+書かない。
+
+### 賭けているところ
+
+指標を並べて渡すと悪くなることは分かっている。だが
+[Bhandarkar](../references/bhandarkar-2024.md) は、その原因を <strong>固定の特徴集合が全ての
+著者に等しく効くという前提</strong> に見て、こう書いている。
+
+> instead of static directed prompting, a more effective approach could involve
+> <strong>dynamically prompting LLMs by considering each author's individual linguistic
+> preferences</strong>
+
+<strong>書き手ごとに、その人に効くものを選んで渡す。</strong> これは提案されただけで試されていない。
+kakiburi が賭けているのはここである。
+
+そしてこの賭けは、[何が特徴になるかも人による](#何が特徴になるかも人による)という
+書きぶりの性質から、独立に導かれる。<strong>失敗した実験の側と、定義の側から、同じ結論が出て
+いる。</strong>
 
 ## 書きぶりとは何か
 
