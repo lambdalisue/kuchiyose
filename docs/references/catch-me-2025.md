@@ -1,14 +1,16 @@
-# Catch Me If You Can? Not Yet (2025)
+# Wang et al. (2025) Catch Me If You Can? Not Yet
 
 LLMs Still Struggle to Imitate the Implicit Writing Styles of Everyday Authors.
-EMNLP 2025 Findings. arXiv:2509.14543.
+Findings of ACL: EMNLP 2025, pp.10040-10055. arXiv:2509.14543.
+Stony Brook / Penn State / Bosch.
 <https://aclanthology.org/2025.findings-emnlp.532.pdf>
 
 <strong>全文を読んだ。対象は「普通の人」で、素材はブログと掲示板である。</strong>
 
 ## 何をしたか
 
-<strong>400 人以上の実在の書き手</strong>を 4 領域から集め、6 つの LLM に真似させた。
+<strong>400 人以上の実在の書き手</strong>を 4 領域から集め、6 つの LLM に真似させた。手本として
+渡すのは、その書き手の文章と、書く内容の要約である。
 
 | 素材 | 書き手 | 文章 | 平均語数 |
 | --- | --- | --- | --- |
@@ -70,6 +72,18 @@ DeepSeek-V3。<strong>1 モデルあたり 4 万件以上の生成。</strong>
 > always enhance stylistic imitation, and <strong>no single configuration consistently excels</strong>
 > across all metrics
 
+## 評価は 4 つを組み合わせている
+
+1. 著者識別（authorship attribution）
+2. 著者検証（authorship verification）
+3. 文体の一致（style matching）
+4. <strong>AI 検出</strong>——AI が書いたと判定されないか
+
+4 つ目があるので、文体が合っていても AI くさければ低く出る。
+
+<strong>4 つとも計算による判定であり、人が読んだ判断ではない。</strong> 論文自身が限界として
+挙げている。
+
 ## 冒頭 50 語を渡すと「人間らしく」は見える
 
 書き出しの 50 語を手本に入れると、<strong>人間らしさの判定は最も上がる</strong>。だが著者推定の結果は
@@ -80,8 +94,6 @@ DeepSeek-V3。<strong>1 モデルあたり 4 万件以上の生成。</strong>
 ## 読み取れること
 
 ### 1. 領域によって結果が大きく違う
-
-[Wang](wang-2025.md) の「ブログやフォーラムの方が苦戦する」に、<strong>領域別の数字が付いた。</strong>
 
 <strong>19〜66% 対 95〜97%。</strong> 同じ手法でも、対象の領域で成立したりしなかったりする。
 
@@ -108,4 +120,9 @@ DeepSeek-V3。<strong>1 モデルあたり 4 万件以上の生成。</strong>
 > Future work should explore <strong>richer personalization signals</strong> and <strong>hybrid prompting
 > and/or finetuning</strong> strategies
 
-[Wang](wang-2025.md) と同じ言い回しである。<strong>2 本が同じ空白を指している。</strong>
+<strong>何を渡せばよいかは、この論文の時点で分かっていない。</strong>
+
+## 注意
+
+- <strong>日本語ではない。</strong> 英語
+- 評価は計算による判定であり、人が読んだ判断ではない

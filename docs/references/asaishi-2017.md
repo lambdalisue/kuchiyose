@@ -4,7 +4,6 @@
 <https://www.jstage.jst.go.jp/article/jslis/63/3/63_159/_pdf>
 
 <strong>全文を読んだ。</strong> 日本語テキストの計量指標を、言語単位ごとに棚卸ししたもの。
-<strong>指標の候補一覧としてそのまま使える。</strong>
 
 ## 言語単位別の指標
 

@@ -6,32 +6,39 @@
 ## Writeprints
 
 Abbasi & Chen (2008) Writeprints: A stylometric approach to identity-level identification
-and similarity detection in cyberspace. ACM TOIS 26(2).
-<https://www.scss.tcd.ie/Khurshid.Ahmad/Research/Sentiments/K_Teams_Buchraest/a7-abbasi.pdf>
+and similarity detection in cyberspace. ACM TOIS 26(2), Article 7.
+DOI: <https://doi.org/10.1145/1344411.1344413>
 
-特徴を 5 つに分ける。
+<strong>要旨のみ確認した。</strong> 本文は有料で、入手していない。以下はすべて要旨に書かれている
+範囲である。
 
-| 種類 | 内容 |
-| --- | --- |
-| 語彙的 | 文字と語。大文字の分布、特殊文字、平均語長、1 文あたりの語数 |
-| 構造的 | 文章の組み立て。段落数、文数、それぞれの平均長、<strong>挨拶や結びの有無</strong> |
-| 統語的 | <strong>機能語</strong>、句読点の型 |
-| 内容固有 | その領域に固有の語 |
-| <strong>特異</strong> | 綴りの誤りなど、その人だけの癖 |
+特徴を 5 種に分けている。
 
-100 人の識別で 94% と報告されている。
+> a rich set of stylistic features, including <strong>lexical, syntactic, structural,
+> content-specific, and idiosyncratic</strong> attributes
+
+語彙的・統語的・<strong>構造的</strong>・内容固有・<strong>特異</strong>。各種の中身は本文にあり、確認していない。
+
+評価は 4 つの領域（メール、インスタントメッセージ、フィードバックコメント、
+プログラムコード）で行われ、<strong>100 人の識別で最高 94%</strong>。SVM、Ensemble SVM、PCA、
+標準的な KL 変換を上回ったとしている。
 
 ### 個人ごとの特徴量セットを使っている
 
 > Writeprints is a Karhunen-Loeve transforms-based technique that uses a sliding window and
 > pattern disruption algorithm with <strong>individual author-level feature sets</strong>
 
-<strong>これは効く。</strong> 2008 年の時点で、<strong>著者ごとに違う特徴量セットを使う</strong>という設計が採られ、
-成果を出している。
+そして、それが効いたことも要旨に書かれている。
 
-[Bhandarkar](bhandarkar-2024.md) が生成の側で提案して試さなかった「著者ごとに動的に」は、
-<strong>測る側では 2008 年から実績がある。</strong> 同じ考え方が再現させる側で試された報告は見当た
-らない。
+> Furthermore, <strong>individual-author-level feature sets generally outperformed use of a single
+> group of attributes.</strong>
+
+<strong>2008 年の時点で、著者ごとに違う特徴量セットを使う設計が採られ、単一の属性群を使うより
+良かったと報告されている。</strong>
+
+[Bhandarkar](bhandarkar-2024.md) が生成の側で提案して試さなかった「著者ごとに動的に」と
+同じ考え方が、測る側では 2008 年に報告されている。<strong>再現させる側で試された報告は
+見当たらない。</strong>
 
 ## Writeprints-static
 
@@ -55,18 +62,7 @@ Linguistic Inquiry and Word Count (Boyd et al. 2022, LIWC-22)。語を心理的�
 [Bhandarkar](bhandarkar-2024.md) が指示に使った言語的特徴は、LIWC と Writeprints の
 部分集合だった。<strong>それを明示的に指示したら成績が下がった</strong>のがあの論文の結果である。
 
-## 日本語では
+## 言語
 
-<strong>そのままは使えない。</strong> 大文字・小文字の区別が無く、機能語の一覧も違い、LIWC の日本語版
-の整備状況も別問題である。
-
-対応するものを日本語で組むなら、[金 2014](jin-2014.md) の 4 種になる。
-
-| Writeprints | 日本語で対応するもの |
-| --- | --- |
-| 機能語 403 | <strong>助詞・助動詞</strong>の頻度、[語の文体値](baba-2022.md) |
-| 品詞タグ 22 | <strong>品詞の unigram / bigram</strong> |
-| 句読点 8 | <strong>読点の打ち方</strong>、記号の頻度 |
-| 文字 n-gram | <strong>文字 bigram</strong>（3 以上は内容を拾う） |
-| 構造的 | 見出し、段落、箇条書き。<strong>短い文章ほど効く</strong> |
-| 特異 | 表記ゆれ、誤変換 |
+<strong>どちらも英語向けである。</strong> Writeprints-static の 560 次元には大文字率と英字 26 が含まれ、
+LIWC の辞書も英語の語彙で作られている。日本語版の整備状況は、この 2 本の範囲外である。

@@ -65,7 +65,7 @@ score = (freq_class + α) / (freq_other + α) × 2^n
 > 従来の<strong>プロンプトによる工夫では制御に限界があり</strong>、モデルの再学習は計算コストが高い
 
 <strong>日本語側でも、プロンプトによる文体制御の限界が前提になっている。</strong>
-[Bhandarkar](bhandarkar-2024.md) と [Wang](wang-2025.md) が英語で示したことと同じ。
+[Bhandarkar](bhandarkar-2024.md) と [Catch Me](catch-me-2025.md) が英語で示したことと同じ。
 
 ### 結論——制御できるスタイルと、できないスタイルがある
 

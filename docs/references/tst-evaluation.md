@@ -51,6 +51,5 @@ Metrics? arXiv:2502.04718.
 
 ## 未読
 
-本文の実験結果と、どの指標の組み合わせが最も人と相関したか。合否判定を設計するときに
-読むこと。関連して Meta-Evaluation of Style and Attribute Transfer Metrics
+本文の実験結果と、どの指標の組み合わせが最も人と相関したか。使うと決めたときに読むこと。関連して Meta-Evaluation of Style and Attribute Transfer Metrics
 （EMNLP 2025 Findings）も未読。

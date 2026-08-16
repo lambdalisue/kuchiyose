@@ -16,8 +16,13 @@ arXiv:2606.05716. University of Michigan.
 > many tasks like authorship attribution <strong>over older, more interpretable methods from
 > stylometry</strong>
 
-<strong>古典的な計量文体論より精度が高い。</strong> つまり [Burrows's Delta](burrows-delta.md) や
-特徴量の手作りは、判別性能では既に古い。
+<strong>著者識別のような課題では、古い解釈できる計量文体論の手法より大きく性能が上がった</strong>
+というのが、この論文が前提として置いている認識である。
+
+> [!NOTE]
+> [Neurobiber](neurobiber-2025.md) は、題材のばらつく著者検証で、解釈できる 96 特徴
+> + Random Forest が F1 0.77、微調整した RoBERTa が 0.78 という結果を出している。
+> <strong>差がほとんど無い場合もある。</strong>
 
 問題は、ベクトルが何を捉えているか分からないこと。
 

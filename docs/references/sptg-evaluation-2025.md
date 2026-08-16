@@ -1,4 +1,4 @@
-# Evaluating Style-Personalized Text Generation (2025)
+# Jangra et al. (2025) Evaluating Style-Personalized Text Generation
 
 Challenges and Directions. arXiv:2508.06374.
 <https://arxiv.org/abs/2508.06374>
@@ -11,6 +11,19 @@ Challenges and Directions. arXiv:2508.06374.
 > area
 
 <strong>SPTG。</strong>「LLM に特定の書き手の文体で書かせる」課題には、この名前が付いている。
+
+## 何を問題にしているか
+
+<strong>評価指標が標準化されておらず、人の判断とよく相関しない。</strong>
+
+よく使われるのは BLEU のような n-gram の重なり、埋め込み、LLM-as-judge だが、どれも
+既知の限界がある。文体転換の分野では <strong>簡単に騙せる</strong>ことも報告されている
+（Krishna et al. 2020）。
+
+そもそも LLM は著者固有の文体をうまく写せない（[Bhandarkar](bhandarkar-2024.md)）
+のだから、<strong>指標が測りたいものを測れていたのかを疑うべきだ</strong>、という問題意識である。
+
+<strong>低資源の設定</strong>を「参照できる文体テキストが 1,500 語未満」と定義している。
 
 ## 評価は 2 択にする
 
@@ -84,8 +97,8 @@ Challenges and Directions. arXiv:2508.06374.
 
 ### 1. 判定は組み合わせで行う。1 つの数字にしない
 
-[Jangra](jangra-2025.md) の「単一の点数は騙せる」に、<strong>組み合わせ方の具体案</strong>が付いた。
-<strong>違う原理の指標を、性能で重みを付けて投票させる。</strong>
+<strong>違う原理の指標を、性能で重みを付けて投票させる。</strong> 単独最良の 0.815 に対して
+組み合わせが 0.821。
 
 <strong>ただし埋め込みは、同じ依頼から作った 2 つを比べる場面では効かない。</strong> 内容が同じなので
 区別できず、性能が 38.3% 落ちる。

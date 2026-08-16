@@ -55,7 +55,7 @@ arXiv:2603.23069.
 | <strong>AuthorMix</strong> | <strong>1.61</strong> | <strong>0.63</strong> | <strong>0.89</strong> |
 
 <strong>例文を見せるだけの few-shot は、文体の正解率 0.40——偶然を下回る。</strong>
-人が見て、目標の著者に寄ったとは言えない。[Wang](wang-2025.md) の結論に、人手の数字が
+人が見て、目標の著者に寄ったとは言えない。[Catch Me](catch-me-2025.md) の結論に、人手の数字が
 付いた。
 
 最良でも <strong>0.63</strong> である。

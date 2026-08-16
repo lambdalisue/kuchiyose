@@ -169,8 +169,13 @@ Karlgren & Eriksson (2007) は、頻度ではなく <strong>連続する文に�
 > rather than stylistic choices</strong>
 
 政治の記事を書く著者とスポーツの記事を書く著者がいれば、選抜は話題語を選ぶ。<strong>選抜され
-た特徴はコーパス依存になり、一般には使えない。</strong>[Evert](burrows-delta.md) の過学習の話と
-同じである。
+た特徴はコーパス依存になり、一般には使えない。</strong>
+
+> [!NOTE]
+> [Evert ら (2015)](burrows-delta.md) は逆の結果を出している。教師ありの再帰的特徴削減
+> で選んだ 234 語を未知の著者・作品で検証し、<strong>過学習していない</strong>と報告している。
+> 対象が英仏独の小説に限られる点は異なるが、<strong>この 2 本は同じ問いに違う答えを出して
+> いる。</strong>
 
 ### 不安定性という基準
 

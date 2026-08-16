@@ -36,7 +36,7 @@ EMNLP 2024, 4172-4206. University of Washington / AI2.
 > our goal is to identify <strong>"author invariants"</strong>, which are text properties that are unique
 > to a specific author
 
-## <strong>ここが本命——書き手ごとの軸選択</strong>
+## 書き手ごとの軸選択
 
 <strong>手順が完全に書かれている。</strong>
 
@@ -64,7 +64,7 @@ EMNLP 2024, 4172-4206. University of Washington / AI2.
 [Bhandarkar](bhandarkar-2024.md) が「試していない」と書いた <strong>書き手ごとの動的な特徴選択</strong>
 は、隠す側では実装され、効果が測られている。
 
-## <strong>もう 1 つの本命——軸を増やすと壊れる</strong>
+## 軸を増やすと壊れる
 
 軸の本数を 1 から 7 まで変えて総合点を測っている。
 
@@ -91,7 +91,7 @@ EMNLP 2024, 4172-4206. University of Washington / AI2.
 <strong>ジャンルの制約が強い文書は、文体を動かす余地が小さい。</strong>
 [柳・金](yanagi-jin-2022.md) の「ジャンルは器、個人文体は流体」がそのまま出ている。
 
-崩れた文章ほど文体が出るという [Wang](wang-2025.md) の指摘とも整合する。<strong>形式の
+崩れた文章ほど文体が出るという [Catch Me](catch-me-2025.md) の指摘とも整合する。<strong>形式の
 決まった文書ほど、動かせる幅が小さい。</strong>
 
 ## 読み取れること

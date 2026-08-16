@@ -29,7 +29,7 @@
 | [柳・金 (2023) 核文節](yanagi-jin-2023.md) | <strong>文節パターン B 型の定義。前処理の規則</strong> |
 | [柳・金 (2022) 異ジャンル混在](yanagi-jin-2022.md) | <strong>場面をまたぐと何が残るか。ジャンルは器、個人文体は流体</strong> |
 | [浅石 (2017) 指標の概観](asaishi-2017.md) | 日本語の指標カタログ。効くもの、効かないもの |
-| [Burrows's Delta](burrows-delta.md) | 基準線。改良版は追わなくてよい。<strong>選抜は過学習する</strong> |
+| [Burrows's Delta](burrows-delta.md) | 最も確立した基準線。<strong>Cosine Delta が明確に上回る。効いているのはベクトル正規化</strong> |
 | [Writeprints と LIWC](writeprints-liwc.md) | 既製の特徴量セット。<strong>2008 年から著者ごとの特徴量セット</strong> |
 | [Wegmann et al. (2022)](wegmann-2022.md) | <strong>著者を当てられることは、文体を表している証明にならない</strong> |
 | [Neurobiber (2025)](neurobiber-2025.md) | <strong>解釈できる 96 次元が、埋め込みとほぼ並ぶ</strong> |
@@ -40,25 +40,23 @@
 | | 何が分かるか |
 | --- | --- |
 | [Sawant (2026) 著者性の隔たり](authorship-gap-2026.md) | <strong>個人化した出力は、赤の他人より遠い。天井と床で測る</strong> |
-| [Catch Me If You Can (2025)](catch-me-2025.md) | <strong>普通の人のブログ・掲示板では 19〜66%。記事は 95%</strong> |
+| [Wang ら (2025) Catch Me If You Can](catch-me-2025.md) | <strong>普通の人のブログ・掲示板では 19〜66%。記事は 95%。例文を増やしても効かない</strong> |
 | [AuthorMix (2026)](authormix-2026.md) | <strong>最先端でも文体は寄らない。軸は 4 本が頂点</strong> |
 | [Post-Editing (2026)](post-editing-2026.md) | <strong>人が手で直しても LLM 文体は落ちない。本人は気づかない</strong> |
 | [StyleRemix (2024)](styleremix-2024.md) | <strong>書き手ごとの軸選択は実装済み。無作為より 6% 良い</strong> |
 | [SICO (2024)](sico-2024.md) | <strong>「人らしく」なら 40 本で解ける。差から作った記述を散文で渡す</strong> |
 | [Masks and Mimicry (2025)](masks-mimicry-2025.md) | <strong>手本は 3 本が最良。成功率は書き手で 0.11〜0.77</strong> |
-| [Wang et al. (2025)](wang-2025.md) | <strong>例文を見せるだけでは真似できない。増やしても頭打ち</strong> |
 | [Bhandarkar et al. (2024)](bhandarkar-2024.md) | <strong>固定の特徴を指示すると、かえって悪くなる</strong> |
 | [Zeng & Nini (2026)](zeng-nini-2026.md) | <strong>失敗の原因は繰り返しの不足。しかも測れる</strong> |
 | [Kim & Jurgens (2026)](kim-jurgens-2026.md) | <strong>制御できることを説明とみなす</strong> |
 | [高橋ら (2025) 日本語スタイル制御](japanese-llm-style.md) | <strong>制御できるスタイルと、できないスタイルがある</strong> |
-| [Jangra et al. (2025)](jangra-2025.md) | 評価は複数指標の組み合わせで |
 | [Residualized Similarity (2025)](residualized-similarity-2025.md) | LLM の説明は推論過程を表していない |
 
 ### 評価
 
 | | 何が分かるか |
 | --- | --- |
-| [SPTG の評価 (2025)](sptg-evaluation-2025.md) | <strong>分野の名前。単独の指標は信用できない。組み合わせる</strong> |
+| [Jangra ら (2025) SPTG の評価](sptg-evaluation-2025.md) | <strong>分野の名前。単独の指標は信用できない。組み合わせる</strong> |
 | [文体転換の評価 (2025)](tst-evaluation.md) | <strong>評価は 3 次元。文体・内容・自然さは trade-off</strong> |
 
 ### 機械生成文の検出
@@ -72,7 +70,7 @@
 
 | | 何が分かるか |
 | --- | --- |
-| [中俣 多次元的抽出](nakamata-multidimensional.md) | <strong>客観的に導いた 4 つの文体軸。解釈できる指標の本命</strong> |
+| [中俣 多次元的抽出](nakamata-multidimensional.md) | <strong>客観的に導いた 4 つの文体軸。ジャンルのラベルを使っていない</strong> |
 | [中俣 (2020) 類義副詞](nakamata-2020-adverbs.md) | <strong>30 組中 29 組が異なる文体グループ。言い換えは文体を持つ</strong> |
 | [水上ほか (2013, 2014)](mizukami-2014.md) | <strong>個人性は機能語に宿る。場面の寄与は人の寄与と同じ大きさ</strong> |
 | [馬場 語の文体値データ](baba-2022.md) | 13 万語の表。<strong>2 次元。向きが名前と逆</strong> |
@@ -157,8 +155,8 @@
 そして場面だけで大きく動く。<strong>接続詞の直後に読点を打つ割合は、新聞 65.6%、
 Yahoo! ブログ 39.5%。</strong> 個人を見る前に 26 ポイントの幅がある。
 
-<strong>軸を設計するとき、まずこの分解をする。</strong> 規範の層を軸に採っても、誰を真似ても
-同じ値になる。
+<strong>規範の層には個人差が出ない。</strong> 岩崎はこれを、公用文の手引きに書かれている常識だと
+位置づけている。
 
 ### 単独で弱い指標が、組み合わせでは効く
 
@@ -176,7 +174,7 @@ Yahoo! ブログ 39.5%。</strong> 個人を見る前に 26 ポイントの幅�
 
 | 素朴な手 | 結果 |
 | --- | --- |
-| 例文を何本か見せる | 頭打ち。平均的な調子に寄り、AI 生成と検出される（[Wang](wang-2025.md)） |
+| 例文を何本か見せる | 頭打ち。平均的な調子に寄り、AI 生成と検出される（[Catch Me](catch-me-2025.md)） |
 | 文体の特徴を並べて指示する | <strong>例文だけより悪くなる</strong>（[Bhandarkar](bhandarkar-2024.md)） |
 
 <strong>2 つ目は「特徴を渡せば寄る」という素朴な期待を否定している。</strong>
@@ -244,7 +242,7 @@ Yahoo! ブログ 39.5%。</strong> 個人を見る前に 26 ポイントの幅�
 > <strong>dynamically prompting LLMs by considering each author's individual linguistic
 > preferences</strong>
 
-[Wang](wang-2025.md) の結びも同じ方向を向く（`richer personalization signals`）。
+[Catch Me](catch-me-2025.md) の結びも同じ方向を向く（`richer personalization signals`）。
 <strong>著者ごとに、その人に効く特徴を選んで渡す。</strong> どちらも、そこに答えがあるかもしれないと
 書いて、試していない。
 
@@ -262,7 +260,7 @@ Yahoo! ブログ 39.5%。</strong> 個人を見る前に 26 ポイントの幅�
 | なりすます | <strong>成功率が 0.11〜0.77 に開く</strong>（[Masks and Mimicry](masks-mimicry-2025.md)） |
 | <strong>真似る</strong> | <strong>未検証</strong>（[Bhandarkar](bhandarkar-2024.md) が提案のみ） |
 
-<strong>残っているのは「近づける向き」だけである。</strong> 賭けの範囲はずっと狭い。
+<strong>報告が見当たらないのは「近づける向き」だけである。</strong>
 
 ### 渡す軸は 3〜4 本で頂点になる
 
@@ -321,8 +319,8 @@ Yahoo! ブログ 39.5%。</strong> 個人を見る前に 26 ポイントの幅�
 語り性）。<strong>主観から作った表と、客観的な因子分析が、上位 2 軸で一致している。</strong>
 
 そして [Neurobiber](neurobiber-2025.md) が 2025 年に別コーパスで <strong>Involved 対
-Informational</strong> を再現した。<strong>第 1 軸は、英語 1988 年、日本語、英語 2025 年で一致して
-いる。最初に実装する軸として、これ以上の根拠は要らない。</strong>
+Informational</strong> を再現した。<strong>第 1 軸は、英語 1988 年、日本語、英語 2025 年の 3 度、
+独立に同じところに出ている。</strong>
 
 ### 日本語の個人性は機能語に宿る
 
@@ -344,9 +342,11 @@ Informational</strong> を再現した。<strong>第 1 軸は、英語 1988 年�
 
 人手による合否判定は主観的で、高くつき、回数を稼げない。この基準なら機械で回せる。
 
-そして [Jangra](jangra-2025.md) と [Wang](wang-2025.md) から、<strong>単一の点数に頼らない</strong>。
-組み合わせ方も出ている——<strong>違う原理の指標を、性能で重み付けて投票させる</strong>
+そして評価の側からは、<strong>単一の点数に頼らないこと</strong>と、その組み合わせ方が出ている——
+<strong>違う原理の指標を、性能で重み付けて投票させる</strong>
 （[SPTG の評価](sptg-evaluation-2025.md)。組み合わせ 0.821 対 単独最良 0.815）。
+[Catch Me](catch-me-2025.md) も、著者識別・著者検証・文体の一致・AI 検出の 4 つを
+並べて評価している。
 
 ### 本人の判断は、思っていたほど当てにならない
 
@@ -373,8 +373,8 @@ LLM に著者の特徴を挙げさせ、生成文がそれを満たすかで測�
 
 さらに、その特徴抽出自体が安定しない。<strong>同じ著者から 2 回抽出して、一致は Jaccard 0.22。</strong>
 
-<strong>検査としてそのまま使える。</strong> 本人の実際の文章を採点して、生成文より低く出る指標は
-捨てる。<strong>安価で、決定的で、強い。</strong>
+<strong>論文はこれを検査として提示している。</strong> 本人の実際の文章を採点して、生成文より低く出る
+指標は、著者性ではなく指示追従を測っている。
 
 ### 場面ごとの見込みが、日本語で立った
 
@@ -415,7 +415,7 @@ Type-Token 比</strong>（[Zeng & Nini](zeng-nini-2026.md), [水上ほか](mizuk
 （[Bhandarkar](bhandarkar-2024.md), [StyleRemix](styleremix-2024.md),
 [AuthorMix](authormix-2026.md)）
 
-<strong>題材の似た例を選ぶと悪化する。</strong>（[Wang](wang-2025.md)）題材の近い例を選びたくなるが、
+<strong>題材の似た例を選ぶと悪化する。</strong>（[Catch Me](catch-me-2025.md)）題材の近い例を選びたくなるが、
 文体の多様性が減って逆効果になる。
 
 <strong>手本を増やすと下がる。</strong>（[Masks and Mimicry](masks-mimicry-2025.md)）5 人中 4 人で、
@@ -454,13 +454,20 @@ AUC が .79 から .58 に落ちた例がある。<strong>先行研究の精度�
 文章は、自由に書いた文章より互いに似通う（g = 1.42）。<strong>差を出す道具にとっては逆向きの
 力である。</strong>
 
-<strong>特徴選抜は過学習する。</strong>（[Evert](burrows-delta.md)）コーパスの癖（ローマ数字、歴史的
-仮名遣い）を著者の文体として拾った実例がある。
+<strong>特徴選抜については、2 本が逆を向いている。</strong>[Stamatatos §2.6](stamatatos-2009.md) は
+判別力で選抜すると <strong>話題語が選ばれ、コーパス依存になる</strong>とし、頻度で選ぶほうが上だと
+する。一方 [Evert](burrows-delta.md) は、教師ありの再帰的特徴削減で 234 語まで絞り、
+<strong>未知の著者・作品で検証して過学習していないことを確かめた</strong>（正解率 0.97、
+クラスタリングは全特徴より良い ARI 0.871 対 0.835）。結論も <strong>「見込みのある方法」</strong>
+としている。
+
+<strong>どちらが正しいかは、この 2 本では決まらない。</strong> 対象が違う（英仏独の小説と、著者識別
+一般）。Evert 自身も、選ばれた特徴の中に <strong>独語の歴史的正書法</strong>（`Heimath`、`giebt`）
+という <strong>コーパス由来の可能性が高いもの</strong>が混ざったことは書いている。
 
 <strong>単独の性能で指標を落とすと、組み合わせが弱くなる。</strong>
 （[統合アンサンブル](japanese-attribution-recent.md)）文節パターンは単独最下位（0.704）で
-最良の組み合わせの常連。<strong>上の「過学習する」と合わせると、選抜は単独性能でも組み合わせ
-性能でもなく、頻度で行う</strong>（[Stamatatos](stamatatos-2009.md)）ということになる。
+最良の組み合わせの常連。<strong>単独の順位は、組み合わせでの寄与を予測しない。</strong>
 
 <strong>定型文が著者間の類似を押し上げる。</strong>（[日本語レビュー](japanese-attribution-recent.md)）
 「発送が早かった」に相当するものは、どの場面にもある。技術記事なら見出しの定型と引用、
@@ -486,10 +493,10 @@ trade-off がある。書きぶりだけを見ていると、題材が保存さ�
 <strong>題材から完全には逃げられない。</strong>（[Stamatatos §5](stamatatos-2009.md)）機能語も文字
 n-gram も題材情報を拾う。減らす設計は要るが、消しきれる前提では立てない。
 
-<strong>単一の点数は騙せる。</strong>（[Jangra](jangra-2025.md)）前身でも、語を置換しただけの生成文
-が 38 点から 94 点になった。
+<strong>単一の点数は騙せる。</strong>（[SPTG の評価](sptg-evaluation-2025.md)）文体転換の分野で
+報告されている（Krishna et al. 2020）。
 
-<strong>崩れた文章ほど難しい。</strong>（[Wang](wang-2025.md), [Catch Me](catch-me-2025.md)）
+<strong>崩れた文章ほど難しい。</strong>（[Catch Me](catch-me-2025.md)）
 記事とメールでは生成文が本人のものと判定される率が 95〜97% なのに、<strong>ブログと掲示板では
 19〜66%</strong>。
 
@@ -514,11 +521,11 @@ DOI: <https://doi.org/10.15084/00003109>
 
 ### 英語
 
-そのまま使えるものは無いが、<strong>作り方の手本になる。</strong>
+いずれも英語である。
 
 | | 何か |
 | --- | --- |
-| [DiSC](styleremix-2024.md) | 7 軸 16 方向の対訳コーパス。1,500 テキスト。<strong>日本語版を作るときの雛形</strong> |
+| [DiSC](styleremix-2024.md) | 7 軸 16 方向の対訳コーパス。1,500 テキスト。<strong>日本語に相当するものは見当たらない</strong> |
 | [AuthorMix データ](styleremix-2024.md) | 14 著者 4 領域 3 万段落 |
-| [BiberPlus / Neurobiber](neurobiber-2025.md) | 96 の文法形式タグ。<strong>特徴の粒度の手本</strong> |
+| [BiberPlus / Neurobiber](neurobiber-2025.md) | 96 の文法形式タグ |
 | [STEL / Style-Embeddings](wegmann-2022.md) | 題材を統制した評価の枠組み。<https://github.com/nlpsoc/Style-Embeddings> |
