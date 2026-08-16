@@ -11,9 +11,9 @@ Authorship.</strong> Literary and Linguistic Computing 17(3), 267-287.
 <strong>◎ Hoover, D. (2004) Testing Burrows's Delta.</strong> LLC 19(4).
 <https://mimno.infosci.cornell.edu/info3350/readings/delta.pdf>（本文を確認）
 
-<strong>○ Evert, S. et al. (2015) Towards a better understanding of Burrows's Delta in
+<strong>◎ Evert, S. et al. (2015) Towards a better understanding of Burrows's Delta in
 literary authorship attribution.</strong>
-<https://aclanthology.org/W15-0709.pdf>（未読）
+<https://aclanthology.org/W15-0709.pdf>（要旨と結論を確認）
 
 <strong>○ 実装例</strong> <https://github.com/fastdatascience/faststylometry>
 
@@ -63,3 +63,26 @@ kakiburi の対象（技術記事）はこれを満たす。
 
 <strong>製品には使えない。</strong> z 値の平均絶対差は解釈できないので、貸すことも直し方を示すことも
 できない。あくまで物差しである。
+
+## 改良版を追う必要はない
+
+Evert らによれば、2002 年以降に提案された Delta の変種は数多いが、
+
+> a recent empirical study showed that <strong>none of the proposed variants constitute a major
+> improvement</strong> in terms of authorship attribution performance
+
+<strong>素の Delta で足りる。</strong> 変種の比較に時間を使わない。
+
+## 特徴選抜は過学習する
+
+Evert らは、再帰的な特徴削減で完璧な分類・クラスタリングを達成できたが、そのとき
+選ばれた特徴を調べて警告している。
+
+- <strong>内容語が選ばれる。</strong>「機能語が最良の指標」という通念に反するが、内容語の方が
+  過学習しやすいのではないかとしている
+- <strong>コーパスの癖が選ばれる。</strong> ローマ数字（`XL`、`XXXVVII`）や歴史的仮名遣い
+  （`Heimath`、`giebt`）が特徴として拾われた。これらは著者の文体ではなく <strong>コーパスの
+  作りに由来する</strong>
+
+未知データで検証すると精度が落ちた。<strong>「選抜したら精度が上がった」を信じてはいけない。</strong>
+kakiburi が指標を絞るときにも同じ罠がある。
