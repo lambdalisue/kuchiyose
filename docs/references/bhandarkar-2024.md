@@ -4,7 +4,7 @@
 University of Florida.
 <https://aclanthology.org/2024.personalize-1.6.pdf>
 
-<strong>全文を読んだ。kakiburi の設計を直撃する否定的な結果がある。</strong>
+<strong>全文を読んだ。文体特徴を明示的に指示すると成績が下がる、という否定的な結果がある。</strong>
 
 ## 何をしたか
 
@@ -25,8 +25,6 @@ University of Florida.
 
 > most LLMs exhibit reduced performance while transitioning from simple to directed
 > prompting
-
-これは kakiburi の前提——書きぶりを数値にして指示に載せる——に真正面から反する。
 
 そして全体として、<strong>最良でも元の著者の文章の 3 分の 2 程度の識別性能</strong>しか出ない。
 「plug-and-play での著者文体模倣には現状かなり限界がある」と結論している。
@@ -49,22 +47,15 @@ University of Florida.
 <strong>3. LLM がその特徴を扱えない。</strong> 長い文章では指示した特徴によく従う。とくに調子、
 真正性、分析的な面、語彙の豊かさを反映する特徴には従いやすい。
 
-## kakiburi にとって
+## 読み取れること
 
-<strong>否定的な結果と、設計の裏付けが同時に出ている。</strong>
+<strong>固定の特徴集合を並べて指示する作りは、例文だけより悪い。</strong> 実測されている。
 
-否定の方。<strong>指標を全部並べて指示に載せる作りは、やってはいけない。</strong> 例文だけの方が
-まだ良い、という結果が出ている。
+そして論文が挙げる改善案——<strong>著者ごとにその人の傾向を見て動的に指示する</strong>——は、
+<strong>提案されただけで試されていない。</strong>
 
-裏付けの方。この論文が挙げる改善案——<strong>著者ごとにその人の傾向を見て動的に指示する</strong>
-——は、kakiburi が[軸](../spec/000-axis.md#何が特徴になるかも人による)から導いた
-「何が特徴になるかは人による」「どの指標が効くかは書き手ごとに決まる」と同じである。
-
-失敗した実験の側から同じ結論が出ている。つまり <strong>kakiburi が賭けているのは、この論文が
-未検証のまま残した改善案である。</strong>
-
-そして条件が 1 つ増える。<strong>数値を出す相手を選ばなければ、出さない方がましになる。</strong>
-全指標を並べるのは害である。
+<strong>特徴を選ばずに渡すくらいなら、渡さないほうがよい。</strong> これがこの論文の実測から言える
+最も強い主張である。
 
 ## 注意
 

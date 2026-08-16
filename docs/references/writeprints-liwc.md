@@ -30,8 +30,8 @@ and similarity detection in cyberspace. ACM TOIS 26(2).
 成果を出している。
 
 [Bhandarkar](bhandarkar-2024.md) が生成の側で提案して試さなかった「著者ごとに動的に」は、
-<strong>測る側では既に実績がある。</strong> kakiburi の賭けは、測る側で確立された考え方を貸す側に
-持ち込むことになる。
+<strong>測る側では 2008 年から実績がある。</strong> 同じ考え方が再現させる側で試された報告は見当た
+らない。
 
 ## Writeprints-static
 

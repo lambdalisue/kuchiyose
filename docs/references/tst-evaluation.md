@@ -18,18 +18,10 @@ Metrics? arXiv:2502.04718.
 
 <strong>そして 3 つの間には trade-off がある。</strong> 文体を強く寄せるほど、内容が壊れ、自然さが落ちる。
 
-### kakiburi にとっての意味
+### 文体だけを見ると何が起きるか
 
-<strong>これは仕様に書いていなかった危険である。</strong>
-
-kakiburi は「書きぶりに寄せる」ことだけを見ようとしていた。だが指標に寄せるよう強く
-指示すれば、<strong>書くべき内容が壊れるか、日本語として不自然になる</strong>。
-
-[軸](../spec/000-axis.md)は「題材と場面を決めたあとに残る差」を扱うと定めている。つまり
-<strong>題材は保存されていることが前提</strong> である。保存されているかを見ないなら、その前提が
-成り立っているか分からない。
-
-<strong>検めるときは 3 つを見る。</strong> 書きぶりが寄ったか、題材が保たれたか、読める日本語か。
+<strong>文体に強く寄せるほど、内容が壊れ、自然さが落ちる。</strong> 文体の一致だけを測っている
+評価は、この 2 つの劣化を見落とす。
 
 ## LLM を判定に使うことについて
 
@@ -47,16 +39,14 @@ kakiburi は「書きぶりに寄せる」ことだけを見ようとしてい�
 | LLM に <strong>判定</strong> させる（合っているか） | 人の判断とよく相関する |
 | LLM に <strong>説明</strong> させる（なぜか） | <strong>推論過程を表していない</strong> |
 
-kakiburi にとって。<strong>説明は数値が担う。判定の一部に LLM を混ぜるのはありうる。</strong>
-ただし[数える側に LLM を置かない](../spec/010-strategy.md)という決定は、決定性のための
-ものなので変わらない。合否の判定は決定的である必要が無い場面もある、という整理になる。
+<strong>判定と説明は別の用途である。</strong> 判定に使えることは、説明に使えることを意味しない。
 
 ## 人手評価が理想だが高い
 
 > human evaluation is often regarded as the standard for capturing subtle cues in style,
 > it is <strong>expensive, time-intensive, and difficult to reproduce at scale</strong>
 
-kakiburi が合否を「本人が読んで受け入れる」に置いていたときの問題そのものである。
+人手評価に頼る設計が抱える問題である。
 自動の指標は人の判断の代理でしかないが、代理が要る理由もはっきりしている。
 
 ## 未読

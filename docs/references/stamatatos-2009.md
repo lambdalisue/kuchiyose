@@ -3,8 +3,7 @@
 Journal of the American Society for Information Science and Technology 60(3).
 <https://icsdweb.aegean.gr/stamatatos/papers/survey.pdf>
 
-<strong>全文を読んだ。</strong> この分野の標準的な総説。kakiburi の位置づけを決める上でいちばん
-効く 1 本。
+<strong>全文を読んだ。</strong> この分野の標準的な総説である。
 
 ## 特徴量の分類
 
@@ -25,16 +24,16 @@ Journal of the American Society for Information Science and Technology 60(3).
 > function words are used in a largely unconscious manner by the authors and they are
 > topic-independent
 
-<strong>kakiburi の[軸](../spec/000-axis.md)は、この一文から性質 1 と性質 3 を採った。</strong>
-定義を先に立てたのではなく、先行研究が示した性質を定義に採っている。
+<strong>無意識であること、題材に依存しないこと。</strong> 機能語がこの 2 つを備えている点が、
+文体の担い手とされる理由である。
 
 ### 文体分類は話題分類と逆である
 
 <strong>文体では最頻出の特徴がそのまま最良の特徴になる。</strong> 話題分類では判別力で特徴を選ぶが、
 文体ではその必要がない。
 
-これは kakiburi にとって重要な警告になる。「指標を分散比で選抜する」という発想は
-<strong>話題分類の作法</strong> であって、文体分析の作法ではない。頻度順に取ればよい。
+<strong>「特徴を判別力で選抜する」のは話題分類の作法である。</strong> 文体分析では頻度順に取れば
+よい。
 
 次元も低くて済む。話題分類が数千語を要するのに対し、文体分類は数百語で足りる。
 
@@ -92,12 +91,9 @@ Honoré の R）も提案されたが結果は疑わしく、<strong>単独で�
 さらに年齢・教育・国籍も揃え、<strong>同じ時期のもの</strong>を使う（Can & Patton 2004、文体は
 時とともに変わる）。
 
-この作法から、kakiburi は場面を固定すること、時期の偏りを見ることを採る。ただし
-「同じ題材」までは揃えられない。実在の記事を使うためである。
+<strong>統制すべきは、ジャンル、題材、時期、書き手の属性である。</strong>
 
 ## この分野が解けていないこと
-
-ここが kakiburi にとって決定的である。
 
 > An important obstacle is that it is not yet possible to explain the differences between
 > the authors' style. It is possible to estimate the significance of certain (usually
@@ -107,12 +103,10 @@ Honoré の R）も提案されたが結果は疑わしく、<strong>単独で�
 <strong>判別はできる。説明はできない。</strong> これが 2009 年時点の到達点であり、大きくは変わって
 いない。
 
-kakiburi の軸は「本人の外で使えるようにする」——つまり貸すことである。貸すには説明が
-要る。<strong>つまり kakiburi がやろうとしていることのうち、検める側は解決済みの技術で、
-貸す側が未解決の側にある。</strong>
+<strong>判別と説明は別の問題であり、後者だけが未解決のまま残っている。</strong> 文体を再現させるに
+は、何がその人らしさかを言葉にする必要がある。そこが埋まっていない。
 
-これは戦略に直接効く。判別のための特徴量を自前で工夫しても、既存手法を超えることは
-まず無い。労力を割くべきは説明の層である。
+判別のための特徴量を新たに工夫しても、既存手法を超えることはまず無い。
 
 ## 未解決として挙げられていること
 
@@ -151,7 +145,7 @@ Karlgren & Eriksson (2007) は、頻度ではなく <strong>連続する文に�
 > such features ... are particular important in <strong>very short texts</strong> where the stylistic
 > properties of the textual content cannot be adequately represented
 
-<strong>非常に短い文章ほど、構造的な特徴が効く。</strong> kakiburi のチャット場面に直接効く。
+<strong>非常に短い文章ほど、構造的な特徴が効く。</strong>
 
 言語固有の特徴もある。現代ギリシャ語の二言語併用（形式的な語尾と口語的な語尾）が例に
 挙がっている。<strong>日本語なら敬体と常体がこれに当たる。</strong>
@@ -193,8 +187,7 @@ Koppel et al. (2006) が提案した、もう 1 つの基準。
 実験では、不安定性だけで選ぶと頻度で選ぶより劣った。だが <strong>頻度と不安定性を組み合わせる
 と大きく良くなった</strong>。
 
-<strong>kakiburi にとって。</strong>「機会が来たときどちらを選んだか」という設計指針と同じものである。
-選択肢があるところに文体があり、選択肢が無いところには無い。文献側の裏付けが取れた。
+<strong>選択肢があるところに文体があり、選択肢が無いところには無い。</strong>
 
 ## profile 型と instance 型（§3.4）
 
@@ -206,8 +199,8 @@ Koppel et al. (2006) が提案した、もう 1 つの基準。
 | 短い文章 | <strong>連結する方が安定する</strong> | 個別だと不安定 |
 | 学習 | 不要 | 必要 |
 
-<strong>kakiburi は instance 型である。</strong> 帯（分布）を作るには文書ごとの値が要り、異種の特徴を
-混ぜる必要があり、構造的な特徴も使うため。
+<strong>文書ごとの値の分布が要る場合、異種の特徴を混ぜる場合、構造的な特徴を使う場合は
+instance 型になる。</strong>
 
-ただし <strong>短い文章では profile 型の方が安定する</strong>という指摘は効く。チャットの場面では、
-何本かを束ねて 1 単位にする設計がこれに沿う。
+ただし <strong>短い文章では profile 型の方が安定する</strong>。短文を何本か束ねて 1 単位にする設計は
+これに沿う。

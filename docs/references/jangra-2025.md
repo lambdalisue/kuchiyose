@@ -7,8 +7,8 @@ arXiv:2508.06374. Columbia / Microsoft / York.
 
 ## 分野の名前
 
-<strong>SPTG（Style-Personalized Text Generation）</strong>。「write like me」。kakiburi がやろうと
-していることには、既にこの名前が付いている。
+<strong>SPTG（Style-Personalized Text Generation）</strong>。「write like me」。特定の書き手の文体で
+書かせる課題には、この名前が付いている。
 
 ## 何を問題にしているか
 
@@ -33,15 +33,13 @@ arXiv:2508.06374. Columbia / Microsoft / York.
 
 <strong>低資源の設定</strong>を「参照できる文体テキストが 1,500 語未満」と定義している。
 
-## kakiburi にとって
+## 押さえておく点
 
-- <strong>合否判定を 1 つの数値に頼らない。</strong> [Wang 2025](wang-2025.md) の 4 指標の組み合わせ
-  と同じ方向である
-- <strong>点数は騙せる。</strong> 前身で、語を置換しただけの生成文が 38 点から 94 点になった実例が
-  あった。この分野でも「簡単に騙せる」ことが報告されている。単一指標を上げる最適化は
-  必ず抜け道を見つける
-- 「1,500 語未満が低資源」という線引きは、kakiburi のコーパス規模を考えるときの目安に
-  なる
+- <strong>単一の評価器では足りない。</strong>[Wang 2025](wang-2025.md) の 4 指標の組み合わせと同じ
+  方向を指している
+- <strong>単一指標は騙せる。</strong> 文体転換の分野で報告されている。1 つの点数を上げる最適化は
+  抜け道を見つける
+- <strong>「1,500 語未満が低資源」</strong>という線引きが、この論文で定義されている
 
 ## 未読
 

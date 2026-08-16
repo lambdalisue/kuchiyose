@@ -3,7 +3,7 @@
 Expert Systems with Applications. arXiv:2507.00838.
 <https://arxiv.org/pdf/2507.00838>
 
-<strong>本文を読んだ。kakiburi が基準を LLM の既定出力に置いたことの裏付けになる。</strong>
+<strong>本文を読んだ。人の文章と LLM の出力がどこまで分離するかを扱っている。</strong>
 
 ## 何をしたか
 
@@ -43,8 +43,8 @@ Wikipedia の人が書いた説明文と、LLM が生成・要約・言い換え
 9. <strong>読点</strong>
 10. 数詞
 
-<strong>句読点が上位に 3 つ入っている。</strong> 単純な記号の数が効くという指摘は、kakiburi の記号系の
-指標に裏付けを与える。
+<strong>句読点が上位に 3 つ入っている。</strong> 単純な記号の数が、人と機械を分ける上位の特徴に
+なっている。
 
 ## LLM の文章の性質
 
@@ -66,7 +66,7 @@ Wikipedia の人が書いた説明文と、LLM が生成・要約・言い換え
 > dispersed among many quantified features</strong>. Moreover, the explanations are not general,
 > but may vary depending on the model
 
-kakiburi にとって重大である。<strong>基準は、使う LLM に依存する。</strong> モデルを変えれば基準も
+<strong>基準は、使う LLM に依存する。</strong> モデルを変えれば基準も
 変わる。「LLM が既定で書いたもの」と一口に言えない。どのモデルで作った基準かを記録
 する必要がある。
 
@@ -76,10 +76,10 @@ kakiburi にとって重大である。<strong>基準は、使う LLM に依存�
 Wikipedia は多人数が書いて多人数が編集しているので、そもそも個人の文体ではない、という
 限界も自ら挙げている。
 
-## kakiburi にとって
+## 押さえておく点
 
-- <strong>基準を LLM の既定出力に置く判断は正しい。</strong> 分離することが実証されている
-- <strong>10 文でも分かれる。</strong> チャットのような短い場面でも見込みがある
-- <strong>句読点は効く。</strong> 単純な指標を軽んじない
-- <strong>基準はモデルごとに違う。</strong> どのモデルで作ったかを記録する
-- 日本語の特徴量セットは自前で組む。既製品は無い
+- <strong>人の文章と LLM の既定出力は分離する。</strong> 実証されている
+- <strong>10 文でも分かれる。</strong> 短い文章でも成立する
+- <strong>句読点が効いている。</strong> 単純な指標が上位に来る
+- <strong>分離の基準はモデルごとに違う</strong>
+- 日本語向けの特徴量セットは、この研究には無い
