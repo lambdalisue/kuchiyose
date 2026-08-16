@@ -121,3 +121,93 @@ kakiburi の軸は「本人の外で使えるようにする」——つまり�
 - <strong>著者・ジャンル・題材を分離できていない。</strong> 機能語も文字 n-gram も、題材情報を
   拾ってしまうことが分かっている（Clement & Sharp 2003、Mikros & Argiri 2007）。
   「文体情報と題材情報の組み合わせだからこそ強いのではないか」とまで書かれている
+
+## 統語的特徴（§2.3）
+
+<strong>著者は統語の型を無意識に使うので、語彙情報より信頼できる指紋だと考えられている。</strong>
+機能語が効くこと自体、統語情報が有用である証拠でもある（機能語は特定の統語構造に
+現れるため）。
+
+だが解析器が要る。解析器は誤るので <strong>データに雑音が入る</strong>。言語依存でもある。
+
+| 研究 | 使ったもの | 結果 |
+| --- | --- | --- |
+| Baayen et al. (1996) | 書き換え規則の頻度 | 語彙的特徴と語彙の豊富さより良い |
+| Gamon (2004) | 同上 | <strong>単独では語彙的特徴より悪い。組み合わせると改善</strong> |
+| Stamatatos et al. (2000, 2001) | チャンク（句）の数と長さ | 高精度で自動抽出できる |
+| Hirst & Feiguina (2007) | 統語ラベル列の bigram | <strong>200 語程度の非常に短い文章で有効</strong> |
+| van Halteren (2007) | 形態統語タグの n-gram と書き換え規則 | 約 90 万次元 |
+
+<strong>品詞タグの n-gram</strong> は簡便な選択肢として広く使われている。
+
+Karlgren & Eriksson (2007) は、頻度ではなく <strong>連続する文にわたる出現の型</strong>（分布的性質）
+を見ようとしており、「有望」と評されている。
+
+## 応用固有の特徴（§2.5）
+
+電子メールやフォーラムでは <strong>構造的な特徴</strong> が定義できる。挨拶、結び、署名の型、字下げ、
+段落長など。
+
+> such features ... are particular important in <strong>very short texts</strong> where the stylistic
+> properties of the textual content cannot be adequately represented
+
+<strong>非常に短い文章ほど、構造的な特徴が効く。</strong> kakiburi のチャット場面に直接効く。
+
+言語固有の特徴もある。現代ギリシャ語の二言語併用（形式的な語尾と口語的な語尾）が例に
+挙がっている。<strong>日本語なら敬体と常体がこれに当たる。</strong>
+
+## 特徴の選び方（§2.6）——ここが重要
+
+<strong>選抜の基準は頻度である。判別力ではない。</strong>
+
+> The most important criterion for selecting features in authorship attribution tasks is
+> <strong>their frequency</strong>. In general, the more frequent a feature, the more stylistic variation
+> it captures.
+
+| 比較 | 結果 |
+| --- | --- |
+| 頻度 vs 情報利得（Houvardas & Stamatatos 2006） | <strong>4,000 次元までは頻度が上</strong> |
+| 頻度 vs オッズ比（Koppel et al. 2006） | <strong>頻度が上。組み合わせるとさらに良い</strong> |
+
+判別力で選ぶことには危険がある。
+
+> the best features may strongly correlate with one of the authors due to <strong>content-specific
+> rather than stylistic choices</strong>
+
+政治の記事を書く著者とスポーツの記事を書く著者がいれば、選抜は話題語を選ぶ。<strong>選抜され
+た特徴はコーパス依存になり、一般には使えない。</strong>[Evert](burrows-delta.md) の過学習の話と
+同じである。
+
+### 不安定性という基準
+
+Koppel et al. (2006) が提案した、もう 1 つの基準。
+
+<strong>不安定性とは、その言語的特徴に「言い換え」が存在するかである。</strong>
+
+- `and` や `the` は <strong>安定</strong>——代わりが無い。だから文体の選択ではない
+- `benefit` や `over` は <strong>不安定</strong>——`gain` や `above` に置き換えられる。だから <strong>文体の選択
+  を表しやすい</strong>
+
+言い換えの生成には、機械翻訳で往復させる方法を使っている。
+
+実験では、不安定性だけで選ぶと頻度で選ぶより劣った。だが <strong>頻度と不安定性を組み合わせる
+と大きく良くなった</strong>。
+
+<strong>kakiburi にとって。</strong>「機会が来たときどちらを選んだか」という設計指針と同じものである。
+選択肢があるところに文体があり、選択肢が無いところには無い。文献側の裏付けが取れた。
+
+## profile 型と instance 型（§3.4）
+
+| | profile 型 | instance 型 |
+| --- | --- | --- |
+| 表現 | 著者の全文書を連結して 1 つ | 文書ごとに 1 つ |
+| 特徴の組み合わせ | 難しい | <strong>容易</strong> |
+| 文書単位の特徴（挨拶、署名） | <strong>使えない</strong> | 使える |
+| 短い文章 | <strong>連結する方が安定する</strong> | 個別だと不安定 |
+| 学習 | 不要 | 必要 |
+
+<strong>kakiburi は instance 型である。</strong> 帯（分布）を作るには文書ごとの値が要り、異種の特徴を
+混ぜる必要があり、構造的な特徴も使うため。
+
+ただし <strong>短い文章では profile 型の方が安定する</strong>という指摘は効く。チャットの場面では、
+何本かを束ねて 1 単位にする設計がこれに沿う。
