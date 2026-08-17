@@ -264,19 +264,31 @@ Cllr 0.32484、EER 9.3% だった。技術記事とほぼ同じ長さと素材�
 どの語が接続詞かが辞書で変わり、[接続詞直後の読点](metrics/接続詞直後の読点.md)の
 次元が消える。
 
-<strong>借りている日本語の資源が、そろって BCCWJ 系である。</strong>
+<strong>外の表を語彙素で引く指標があるからである。</strong>
 
-| 借りているもの | 何に載っているか |
+| 引く指標 | 引く先 |
 | --- | --- |
-| [語の文体値](../references/baba-2022.md) | BCCWJ の<strong>短単位</strong>・語彙素 |
-| [接続詞直後の読点](../references/japanese-attribution-others.md) | BCCWJ コアデータ |
-| [文法形式の因子](../references/nakamata-multidimensional.md) | BCCWJ ほか |
+| [語の文体値](metrics/語の文体値.md) | [馬場の表](../references/baba-2022.md)。BCCWJ の<strong>短単位・語彙素</strong>で作られている |
+| [接続詞直後の読点](metrics/接続詞直後の読点.md) | [岩崎](../references/japanese-attribution-others.md)が挙げた語彙素。BCCWJ コアデータ |
 
-<strong>別の体系で解析すれば、表を引く鍵が合わない。</strong> 語彙素で引く設計なので、語彙素の切り方
-が違えば引けない語が出る——しかも <strong>0 件として静かに落ちる</strong>。
+<strong>別の体系で解析すれば、鍵が合わない。</strong> 語彙素の切り方が違えば引けない語が出る——
+しかも <strong>0 件として静かに落ちる</strong>。
 
-<strong>品詞は第 1 層を使う。</strong> 細分類まで使うと次元が跳ね上がる割に得るものが少ない
-（[金 2014](../references/jin-2014.md)）。
+<strong>ほかの指標は辞書を選ばない。</strong> 文字 bigram も品詞 bigram も、タグが付けば足りる
+（[金 2014](../references/jin-2014.md)は MeCab を使っている）。<strong>だが 1 つの解析結果を
+全部で使う以上、引ける側に合わせる。</strong>
+
+### 品詞は第 1 層で始める
+
+<strong>[金 2014](../references/jin-2014.md)が第 1 層のタグの bigram を使っており、その構成が
+日本語で確かめられているからである。</strong> 理由はそれだけで、細分類が悪いという根拠は無い。
+
+> [!WARNING]
+> <strong>むしろ逆を示す報告がある。</strong>[金 2013](../references/jin-2013.md)はタグの取り方を
+> 4 通り比べ、<strong>最良は第 2 層（C）</strong>だった——作文 11 人で 98.91%、日記 6 人で 91.75%。
+>
+> <strong>第 1 層で始めるのは暫定である。</strong> 骨格が通ったら第 2 層と比べる。bigram にすると
+> 次元が跳ねるので、[語彙の固定](200-extract.md#語彙は先に決めて固定する)と合わせて測る。
 
 <strong>辞書と版は[指紋](200-extract.md#何で測ったかを指紋にする)に入る。</strong> 体系を選んだうえで、
 なお版で値が動くからである。

@@ -78,18 +78,21 @@
 | --- | --- |
 | `[!NOTE]` `[!TIP]` `:::note` `:::tip` `<aside>` | <strong>補足</strong> |
 | `[!WARNING]` `[!CAUTION]` `[!IMPORTANT]` `:::warning` `:::caution` | <strong>警告</strong> |
+| `[^1]` と定義行、`:::footnote`、`<sup><a>` | <strong>脚注</strong> |
+| `<details>`、`:::details` | <strong>折りたたみ</strong> |
+| GFM の表、`<table>` | <strong>表</strong> |
 
 <strong>`IMPORTANT` を警告に入れるのは、書き手が「読み飛ばすな」と示している側だからである。</strong>
 補足は本筋から外れることを示す記法で、向きが逆になる。
 
 <strong>書けない記法は「測れない」になる。</strong>
 
-| 取り込み元 | 補足 | 警告 | 脚注 | 折りたたみ |
-| --- | --- | --- | --- | --- |
-| `github-markdown` | 書ける | 書ける | 書ける | 書ける |
-| `directive-markdown` | 書ける | 書ける | 書ける | 書ける |
-| `html` | 書ける | <strong>書けない</strong> | 書ける | 書ける |
-| `plain-markdown` | <strong>書けない</strong> | <strong>書けない</strong> | <strong>書けない</strong> | <strong>書けない</strong> |
+| 取り込み元 | 補足 | 警告 | 脚注 | 折りたたみ | 表 |
+| --- | --- | --- | --- | --- | --- |
+| `github-markdown` | 書ける | 書ける | 書ける | 書ける | 書ける |
+| `directive-markdown` | 書ける | 書ける | 書ける | 書ける | 書ける |
+| `html` | 書ける | <strong>書けない</strong> | 書ける | 書ける | 書ける |
+| `plain-markdown` | <strong>書けない</strong> | <strong>書けない</strong> | <strong>書けない</strong> | <strong>書けない</strong> | <strong>書けない</strong> |
 
 <strong>0 と「測れない」を区別する。</strong> 0 を並べれば、その書き手は補足を使わない人だと判定
 される。<strong>「書けない」の升目がそのまま「測れない」を返す場所である。</strong>

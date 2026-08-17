@@ -109,6 +109,8 @@ derived/                   派生物（作り直せる）
 | 形態素解析器の辞書と版 | 実行環境 |
 | <strong>係り受け解析器の辞書と版</strong> | 実行環境 |
 | 圧縮器と設定 | 実行環境 |
+| <strong>固定した z 得点の平均と標準偏差</strong> | `derived/` |
+| <strong>外部の表の版</strong>（語の文体値、文末表現の辞書、Unicode） | 実行環境 |
 | 取り込み元の種類・変換の実装と版・対応表 | `decided/` と実行環境 |
 | 基準の LLM の版と推論設定 | `decided/baseline.json` |
 | 人が決めたこと | `decided/` 全部 |
