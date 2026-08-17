@@ -44,14 +44,15 @@ DOI: <https://doi.org/10.1145/1344411.1344413>
 
 実装しやすいように固定次元にした版。<https://literary-materials.github.io/writeprints-static/>
 
-<strong>合計 560 次元。</strong>
+<strong>合計 557 次元</strong>（語彙的 124 + 統語的 433）。
 
 | | 次元 | 内容 |
 | --- | --- | --- |
-| 語彙的 | 127 | 語数、平均語長、短語数、文字数、数字率、大文字率、特殊文字 21、英字 26、数字 10、文字 2-gram 39、文字 3-gram 20、hapax と dis legomena 2 |
+| 語彙的 | 124 | 語数、平均語長、短語数、文字数、数字率、大文字率、特殊文字 21、英字 26、数字 10、文字 2-gram 39、文字 3-gram 20、hapax と dis legomena 2 |
 | 統語的 | 433 | <strong>機能語 403</strong>、品詞タグ 22、句読点 8 |
 
-<strong>560 次元のうち 403 が機能語である。</strong> 機能語が中心という [Stamatatos](stamatatos-2009.md)
+<strong>557 次元のうち 403 が機能語である。</strong> ただし <strong>この 403 語は Brennan ら (2012) の
+JStylo 実装のもの</strong>で、Abbasi & Chen (2008) の論文が挙げた構成ではない。 機能語が中心という [Stamatatos](stamatatos-2009.md)
 の記述が、そのまま構成に出ている。
 
 ## LIWC
@@ -64,5 +65,6 @@ Linguistic Inquiry and Word Count (Boyd et al. 2022, LIWC-22)。語を心理的�
 
 ## 言語
 
-<strong>どちらも英語向けである。</strong> Writeprints-static の 560 次元には大文字率と英字 26 が含まれ、
+<strong>どちらも英語向けである。</strong>（LIWC については日本語版 <strong>J-LIWC2015</strong> が存在する
+——Igarashi, Okuda & Sasahara 2022, Frontiers in Psychology 13:841534。） Writeprints-static の 557 次元には大文字率と英字 26 が含まれ、
 LIWC の辞書も英語の語彙で作られている。日本語版の整備状況は、この 2 本の範囲外である。

@@ -104,7 +104,7 @@
 
 ### 1. 機能語が個人性を担う——日本語側の実証
 
-[Writeprints](writeprints-liwc.md) は 560 次元中 403 が機能語だった。
+[Writeprints](writeprints-liwc.md) は 557 次元中 403 が機能語だった。
 [Stamatatos](stamatatos-2009.md) も機能語中心と書いていた。<strong>日本語では、助詞・助動詞・
 感動詞・フィラーがそれに当たる。</strong>
 
