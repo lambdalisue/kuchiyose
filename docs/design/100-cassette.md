@@ -32,7 +32,7 @@ flowchart LR
         vocab["vocabulary<br/>固定した語彙"]
         values["values<br/>単位 × 指標"]
         spread["spread<br/>幅・出現割合"]
-        calib["calibration<br/>束の割り・重み 2 種"]
+        calib["calibration<br/>相手集合・重み"]
         scale["scale<br/>天井・床・帯"]
         eff["effective<br/>効く指標・前に出す指標"]
     end
@@ -60,7 +60,6 @@ manifest.json              版・場面・指紋
 decided/                   人が決めたこと（作り直せない）
   scene.json                 場面
   boilerplate.json           落とす定型
-  topic-pairs.json           題材の近い組
   baseline.json              基準の作り方
   movement.json              直させて分かったこと（条件 3）
 corpus/                    揃えたあとの本文（作り直せない）
@@ -71,7 +70,7 @@ derived/                   派生物（作り直せる）
   vocabulary.json            固定した語彙
   values.jsonl               単位 × 指標の値
   spread.json                幅・出現割合
-  calibration.json           束の割り、交差検証の重み、本番の重み
+  calibration.json           相手集合の割り、重み
   scale.json                 天井・床・帯（照合値と人らしさ値）
   effective.json             効く指標の判定、前に出す指標
 ```
@@ -88,12 +87,13 @@ derived/                   派生物（作り直せる）
   "scene": "技術記事",
   "fingerprint": "sha256:...",
   "fingerprint_inputs": { ... },
-  "provisional": ["題材が揃っていない"]
+  "provisional": []
 }
 ```
 
-<strong>`provisional` が空でないカセットは、判定に但し書きが付く。</strong>
-[題材を揃えられなかった](../spec/200-extract.md#2-つを同じ題材の統制で作る)ときに立つ。
+<strong>`provisional` が空でないカセットは、判定に但し書きが付く。</strong> いまのところ立てる条件は
+無いが、[暫定値](../spec/100-metrics.md#除外の既定)を導き直す前に測ったことを記録する
+場所として持つ。
 
 ### 指紋は組み立てを型で守る
 
@@ -107,7 +107,7 @@ derived/                   派生物（作り直せる）
 | 指標の定義そのもの | 登録簿 |
 | 固定した語彙 | `derived/vocabulary.json` |
 | 形態素解析器の辞書と版 | 実行環境 |
-| <strong>係り受け解析器の辞書と版</strong> | 実行環境 |
+| 係り受け解析器の辞書と版（[保留中](../spec/metrics/文節パターン.md#保留)。使うと決めたら要る） | 実行環境 |
 | 圧縮器と設定 | 実行環境 |
 | <strong>固定した z 得点の平均と標準偏差</strong> | `derived/` |
 | <strong>外部の表の版</strong>（語の文体値、文末表現の辞書、Unicode） | 実行環境 |
@@ -163,7 +163,7 @@ node の木をそのまま JSON にする。<strong>往復は目的ではない<
 <strong>束ね方は人が決める</strong>——文章から当てにいかない。<strong>束の中の並びは `id` の昇順に固定する。</strong>
 並びが変われば連結した本文が変わり、[決定性](300-test.md#決定性)が壊れる。
 
-<strong>[文書 5 本の下限](../spec/200-extract.md#対が何本あれば信じるか)は単位で数える。</strong>
+<strong>[10 単位の下限](../spec/200-extract.md#対が何本あれば信じるか)は単位で数える。</strong>
 ファイルで数えれば、束ねた分だけ実際より多く見える。
 
 > [!WARNING]
@@ -200,17 +200,11 @@ node の木をそのまま JSON にする。<strong>往復は目的ではない<
 
 ### calibration.json
 
-<strong>重みは 2 種類ある</strong>（[理由](../spec/200-extract.md#検めに使う重みは別に作る)）。混同すると
-判定がどこでも狂う。
+<strong>重みは 1 組である</strong>（[理由](../spec/200-extract.md#較正と天井床)）。較正も帯も検めも
+同じ重みを使う。
 
-| | 何に使うか |
-| --- | --- |
-| 交差検証の k 通り | <strong>帯を作る</strong> |
-| <strong>本番の重み</strong> | <strong>[検め](000-architecture.md#kakiburi-review)が新しい文書を採点する</strong> |
-
-<strong>束の割りは `id` の昇順から決定的に導く。</strong> 無作為に割ると、
-[作り直したときに同じものが出ない](300-test.md#作り直せることを試験する)——しかも
-少しだけ違う帯が出るので、気付きにくい。<strong>保存するのは覗くためであって、正本ではない。</strong>
+<strong>[相手集合](../spec/200-extract.md#相手集合を-1-つ決める)の割りも持つ。</strong>`unit` の昇順から
+決定的に導くので、<strong>保存するのは覗くためであって、正本ではない。</strong>
 
 ### effective.json
 

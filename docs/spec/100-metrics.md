@@ -17,12 +17,12 @@
 | 特徴 | 出どころ |
 | --- | --- |
 | <strong>文字 bigram</strong> | [金 2014](../references/jin-2014.md), [尤度比](../references/fusing-lr-2026.md), [柳・金](../references/yanagi-jin-2022.md) |
-| <strong>機能語</strong>（助詞・助動詞・接続詞・副詞・感動詞） | [財津・金](../references/zaitsu-2018.md), [水上ほか](../references/mizukami-2014.md), [Writeprints](../references/writeprints-liwc.md) |
+| <strong>機能語</strong>（助詞・助動詞・接続詞・副詞・感動詞） | [財津・金](../references/zaitsu-2018.md)。ほかに[水上ほか](../references/mizukami-2014.md)（<strong>話し言葉</strong>）、[Writeprints](../references/writeprints-liwc.md)（<strong>英語</strong>） |
 | <strong>品詞 bigram</strong> | [金 2014](../references/jin-2014.md), [財津・金](../references/zaitsu-2018.md) |
 | <strong>読点の打ち方</strong> | [財津・金](../references/zaitsu-2018.md), [尤度比](../references/fusing-lr-2026.md), [柳・金](../references/yanagi-jin-2022.md) |
 | <strong>文字種</strong> | [尤度比](../references/fusing-lr-2026.md) |
-| 文節パターン | [金 2013](../references/jin-2013.md), [柳・金 2023](../references/yanagi-jin-2023.md) |
-| <strong>埋め込み</strong>（単語・文字） | [尤度比](../references/fusing-lr-2026.md), [Kim & Jurgens](../references/kim-jurgens-2026.md)。<strong>[定義が無く、当面使わない](#埋め込みは保留する)</strong> |
+| 文節パターン | [金 2013](../references/jin-2013.md), [柳・金 2023](../references/yanagi-jin-2023.md)。<strong>[保留中](metrics/文節パターン.md#保留)</strong> |
+| <strong>埋め込み</strong>（単語・文字） | [尤度比](../references/fusing-lr-2026.md)。<strong>[定義が無く、当面使わない](#埋め込みは保留する)</strong> |
 
 <strong>読点の打ち方を否定している研究は見当たらない。</strong> 独立した特徴として立てているのが
 上の 3 本で、残る[金 2014](../references/jin-2014.md)は <strong>文字 bigram に包含される</strong>と
@@ -35,12 +35,12 @@
 
 | 特徴 | 何の研究か | 何が確かめられていないか |
 | --- | --- | --- |
-| 文末表現 | [有馬ら](../references/arima-2018.md)。有益投稿の選別 | 4 クラスは<strong>集団の文体</strong>であって個人の文体ではない、と出どころ自身が断っている |
+| 文末表現 | [有馬ら](../references/arima-2018.md)。有益投稿の選別 | 4 クラスは<strong>集団の文体</strong>であって個人の文体ではない。<strong>辞書が配布されているかも確かめていない</strong> |
 | 語の文体値 | [馬場](../references/baba-2022.md)。BCCWJ の語彙表 | 語に文体値が付くことと、書き手を分けることは別 |
 | 表記の選択 | [Wegmann](../references/wegmann-2022.md) | <strong>英語</strong>での知見。日本語の対応物は未検証 |
-| 構造（見出し・箇条書き・表・引用などの使い方） | [Writeprints](../references/writeprints-liwc.md) の構造的特徴 | <strong>英語</strong>での知見。要旨しか入手できておらず、中身の内訳も確認できていない |
-| 長さ（段落・節・項目の長さとそのばらつき） | 同上の<strong>拡張</strong> | 上に加えて、<strong>拡張が元の特徴と同じ性質を持つ保証が無い</strong> |
-| 文法形式の因子 | [中俣](../references/nakamata-multidimensional.md), [Neurobiber](../references/neurobiber-2025.md) | <strong>英語での知見。</strong> Neurobiber は 96 の文法形式で著者検証 F1 0.77 を出しているが、日本語の 89 形式での著者識別は未検証。中俣の D3 はジャンル固有と本人が断っている（D1・D2 は頑健とされる） |
+| 構造（見出し・箇条書き・表・引用などの使い方） | [Stamatatos §2.5](../references/stamatatos-2009.md)の応用固有の特徴 | <strong>英語</strong>での知見。段落長・字下げ・挨拶や結びの型として挙げられている |
+| 長さ（段落・節・項目の長さとそのばらつき） | 同上の<strong>拡張</strong>（平均ではなくばらつきを見る） | 上に加えて、<strong>拡張が元の特徴と同じ性質を持つ保証が無い</strong> |
+| 文法形式の因子 | [中俣](../references/nakamata-multidimensional.md), [Neurobiber](../references/neurobiber-2025.md) | 中俣は日本語だが<strong>ジャンルの軸</strong>であり、著者識別では未検証。Neurobiber は 96 の文法形式で著者検証 F1 0.77 を出しているが、日本語の 89 形式での著者識別は未検証。D3 がジャンル固有であることは<strong>我々の読み</strong>である |
 
 <strong>層 2 は測ってよいが、[効くかの判定](200-extract.md#どの指標が効くかを決める)を通るまで
 は層 1 と同じ重さで扱わない。</strong>
@@ -136,8 +136,9 @@
 は、<strong>文字 bigram・読点 bigram・文字種・単語埋め込み・文字埋め込み</strong>の 5 系統で、
 Cllr 0.32484、EER 9.3% だった。技術記事とほぼ同じ長さと素材である。
 
-<strong>機能語 unigram と品詞 bigram は、その組み合わせに入っていない。</strong> どちらも単独では
-中位だったのに落ちた。<strong>上の表は「較正済みの最良集合」ではない。</strong> 何が候補かを示す
+<strong>機能語 unigram と品詞 bigram は、その組み合わせに入っていない。</strong> 品詞 bigram は単独
+でも記録のある 4 系統中いちばん悪く（0.54215）、機能語 unigram は単独の値が報告されて
+いない。<strong>上の表は「較正済みの最良集合」ではない。</strong> 何が候補かを示す
 だけで、どれが効くかは書き手と場面ごとに決まる
 （[評価](200-extract.md#どの指標が効くかを決める)）。
 
@@ -285,7 +286,8 @@ Cllr 0.32484、EER 9.3% だった。技術記事とほぼ同じ長さと素材�
 
 > [!WARNING]
 > <strong>むしろ逆を示す報告がある。</strong>[金 2013](../references/jin-2013.md)はタグの取り方を
-> 4 通り比べ、<strong>最良は第 2 層（C）</strong>だった——作文 11 人で 98.91%、日記 6 人で 91.75%。
+> 4 通り比べ、作文 11 人と日記 6 人では <strong>第 2 層（C）が最良</strong>だった——98.91%、91.75%。
+> （文学作品では別の型が最良で、層の優劣は素材で入れ替わる。）
 >
 > <strong>第 1 層で始めるのは暫定である。</strong> 骨格が通ったら第 2 層と比べる。bigram にすると
 > 次元が跳ねるので、[語彙の固定](200-extract.md#語彙は先に決めて固定する)と合わせて測る。

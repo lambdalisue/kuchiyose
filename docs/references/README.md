@@ -171,7 +171,7 @@ Yahoo! ブログ 39.5%。</strong> 個人を見る前に 26 ポイントの幅�
 [統合アンサンブル](japanese-attribution-recent.md)で、文節パターンは <strong>単独 F1 0.704 で
 最下位</strong>なのに、<strong>最良の組み合わせには必ず入っている</strong>。
 
-逆に[尤度比](fusing-lr-2026.md)では、機能語 unigram（単独では中位）が最良の組み合わせ
+逆に[尤度比](fusing-lr-2026.md)では、機能語 unigramが最良の組み合わせ
 から落ちた。
 
 <strong>指標を選ぶ基準は、単独の性能ではなく、他と違うものを見ているかである。</strong>
