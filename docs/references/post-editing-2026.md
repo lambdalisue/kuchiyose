@@ -14,7 +14,7 @@ Post-Editing LLM-Generated Text for Personal Style. arXiv:2604.24444.
 | 条件 | 手順 |
 | --- | --- |
 | 対照 | 内容を計画 → <strong>自分で書く</strong> |
-| 処置 | 内容を計画 → GPT-4o mini の草稿を受け取る → <strong>自分らしくなるよう直す</strong> |
+| 処置 | 内容を計画 → GPT-o4-mini の草稿を受け取る → <strong>自分らしくなるよう直す</strong> |
 
 文体は LUAR 埋め込みで測り、AI 検出は Pangram、主観は 5 段階で訊いている。
 
@@ -46,18 +46,18 @@ Post-Editing LLM-Generated Text for Personal Style. arXiv:2604.24444.
 
 LUAR の測定値と、本人が感じる「自分らしさ」の相関は <strong>r = 0.244</strong>。ほとんど無い。
 
-論文の解釈は 2 つ挙がっている。<strong>人は特定の語（`delve` など）や記号（em dash）だけを見て
+論文の解釈は 2 つ挙がっている。<strong>人は特定の語（`dive` など）や記号（em dash）だけを見て
 判断していて、分布としての文体を見ていない。</strong> あるいは埋め込みが、統計的には目立つが
 主観的には無関係なものを拾っている。
 
-> <strong>User intuitions about personal style may be unreliable guides</strong> for AI personalization
-> systems
+> users. intuitions about their own style may not be fully reliable and that additional
+> scaffolding or feedback may be needed
 
 ## 人が実際にやった直し
 
 | 直し | 例 |
 | --- | --- |
-| <strong>LLM 臭い記号・語を消す</strong> | em dash を削る、`delve` を消す |
+| <strong>LLM 臭い記号・語を消す</strong> | em dash を削る、`dive` を消す |
 | 短縮形を足す | `it is` → `it's` |
 | 飾りを削る | 大げさな言い回しを平らにする |
 | 地域・文化に合わせる | 英国綴り、弔辞の宗教的表現 |

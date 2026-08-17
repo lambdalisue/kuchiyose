@@ -66,7 +66,8 @@ Challenges and Directions. arXiv:2508.06374.
 
 <strong>文体埋め込みは、LLM の出力を判定する場面で崩れる。</strong>
 
-> Performance dropped <strong>38.3%</strong> from domain discrimination to LLM settings
+（引用できる原文は無い。文体埋め込みの分類ごとの落ち込みとして −38.3% / −26.7% / −11.3% が
+並んでおり、<strong>この 1 つだけを取り出すのは我々の要約である。</strong>）
 
 理由もはっきりしている。<strong>2 つの候補が同じ依頼から生成されているので、内容が同じであり、
 内容に頼っている埋め込みは区別できない。</strong>
@@ -78,7 +79,9 @@ Challenges and Directions. arXiv:2508.06374.
 
 <strong>そして構造化出力を求めると 24% 悪化した。</strong>
 
-> Structured output prompts performed <strong>24% worse</strong> than open-ended approaches
+（引用できる原文は無い。<strong>8B のモデル 1 つ、64 件の開発セットでの比較</strong>であり、しかも両条件
+とも偶然（0.499）を大きく下回る 0.288 対 0.379 である。同じ実験で逆向きに +34.5% 動いた
+条件もある。<strong>弱い証拠である。</strong>）
 
 ## 人間も一致しない
 

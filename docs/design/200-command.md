@@ -46,6 +46,7 @@ kakiburi new <カセット> --scene <場面>
 ```
 kakiburi add <カセット> <ファイル...> --source <取り込み元>
                                  [--as person|baseline|other] [--unit <名前>]
+                                 [--model <名前> --version <版> --param <鍵>=<値>...]
 ```
 
 [正規化](../spec/030-normalize.md)して入れる。取り込み元は内容から判定せず、拡張子と
@@ -54,6 +55,10 @@ kakiburi add <カセット> <ファイル...> --source <取り込み元>
 <strong>落ちない入力は断る</strong>（[決定](../spec/030-normalize.md#通らないものは断る)）。黙って
 一部を落として通さない。<strong>1 本でも断ったら、そのコマンドは失敗する</strong>——成功したことに
 すると、欠けたまま次へ進む。
+
+<strong>`--as baseline` で入れるときは `--model` と `--version` が要る。</strong> 外で作った基準でも、
+[版と推論設定が指紋に入る](../spec/200-extract.md#版と推論設定まで記録する)——記録の無い
+基準で作った値は次に測ったときに比べられない。
 
 <strong>`--unit` は短い文書を[束ねる](100-cassette.md#短い文書は束ねる)。</strong> 同じ名前を渡した
 ものが 1 単位になる。チャットの場面では常用する。
