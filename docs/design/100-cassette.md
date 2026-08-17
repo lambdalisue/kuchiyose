@@ -13,6 +13,7 @@
 | --- | --- | --- |
 | <strong>揃えたあとの本文</strong> | <strong>できない。</strong> 元のファイルは手元に無い | 全部が終わる |
 | <strong>人が決めたこと</strong> | <strong>できない。</strong> 人の頭の中にしかない | 同じ判断をやり直す |
+| <strong>直させて分かったこと</strong> | <strong>できない。</strong> 測り直しても再現しない | 動かない指標が指摘に戻る |
 | 派生物（値・語彙・重み・目盛り） | できる。本文と設定から何度でも | 測り直せばよい |
 
 <strong>捨ててよいものを、捨てにくい場所に置かない。</strong> 置けば測り直しをためらうようになり、
@@ -24,7 +25,7 @@ flowchart LR
     subgraph keep["原本——失えば戻らない"]
         direction TB
         corpus["corpus/<br/>揃えたあとの本文"]
-        decided["decided/<br/>人が決めたこと"]
+        decided["decided/<br/>人が決めたこと<br/>直させて分かったこと"]
     end
     subgraph drop["派生物——いつでも捨ててよい"]
         direction TB
@@ -61,6 +62,7 @@ decided/                   人が決めたこと（作り直せない）
   boilerplate.json           落とす定型
   topic-pairs.json           題材の近い組
   baseline.json              基準の作り方
+  movement.json              直させて分かったこと（条件 3）
 corpus/                    揃えたあとの本文（作り直せない）
   person/<id>.json           本人の文書。正規形
   baseline/<id>.json         基準の文書。正規形
@@ -216,7 +218,7 @@ node の木をそのまま JSON にする。<strong>往復は目的ではない<
 | --- | --- |
 | 幅が狭いか | 条件 1 |
 | 基準から離れているか | 条件 2 |
-| <strong>指示して動くか</strong> | 条件 3。`動く` / `動かない` / <strong>`未知`</strong> |
+| <strong>指示して動くか</strong> | 条件 3。`decided/movement.json` から引く |
 | 標本の範囲が覆えているか | 覆えていなければ条件 1・2 を出さない |
 | 確かめられていないか | [狭いだけで信じない](../spec/200-extract.md#狭いだけで信じない) |
 

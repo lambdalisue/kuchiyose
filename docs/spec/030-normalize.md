@@ -62,17 +62,37 @@
 
 ### 対応表は取り込み元ごとに持つ
 
-| 取り込み元 | 補足をどう書くか |
-| --- | --- |
-| GitHub 系 | `> [!NOTE]` |
-| directive 記法 | `:::note` |
-| HTML | `<aside>` |
-| 素の Markdown | <strong>書けない。</strong> 引用として現れる |
+<strong>扱う取り込み元は 4 つである。</strong> 増やすときはここに行を足す。
 
-<strong>最後の行が重要である。</strong> 補足を書けない取り込み元では、補足の密度は測れない。
+| | |
+| --- | --- |
+| `github-markdown` | GitHub Flavored Markdown + Alert 記法 |
+| `directive-markdown` | CommonMark + directive 記法（`:::note`） |
+| `html` | HTML |
+| `plain-markdown` | 素の CommonMark |
+
+<strong>補足と警告は別の node である。</strong> 記法が 1 つの族にまとまっているので、<strong>どれがどちらに
+落ちるかを決めておかないと、実装ごとに変わる。</strong>
+
+| 記法 | どの node か |
+| --- | --- |
+| `[!NOTE]` `[!TIP]` `:::note` `:::tip` `<aside>` | <strong>補足</strong> |
+| `[!WARNING]` `[!CAUTION]` `[!IMPORTANT]` `:::warning` `:::caution` | <strong>警告</strong> |
+
+<strong>`IMPORTANT` を警告に入れるのは、書き手が「読み飛ばすな」と示している側だからである。</strong>
+補足は本筋から外れることを示す記法で、向きが逆になる。
+
+<strong>書けない記法は「測れない」になる。</strong>
+
+| 取り込み元 | 補足 | 警告 | 脚注 | 折りたたみ |
+| --- | --- | --- | --- | --- |
+| `github-markdown` | 書ける | 書ける | 書ける | 書ける |
+| `directive-markdown` | 書ける | 書ける | 書ける | 書ける |
+| `html` | 書ける | <strong>書けない</strong> | 書ける | 書ける |
+| `plain-markdown` | <strong>書けない</strong> | <strong>書けない</strong> | <strong>書けない</strong> | <strong>書けない</strong> |
 
 <strong>0 と「測れない」を区別する。</strong> 0 を並べれば、その書き手は補足を使わない人だと判定
-される。
+される。<strong>「書けない」の升目がそのまま「測れない」を返す場所である。</strong>
 
 ## 表記を潰さない
 
@@ -100,6 +120,18 @@
 | 記法が壊れていて解釈できない | <strong>断る</strong> |
 | 対応表に無い記法が使われている | <strong>断る。</strong> 対応表を足してから通す |
 | 日本語以外が主 | <strong>断る</strong>（[日本語だけ](010-strategy.md#日本語だけ)） |
+
+<strong>「日本語以外が主」に線を引く。</strong> 判定は決定的でなければならないので、言語判定の道具に
+頼らない。
+
+> [地の文](020-document.md#地の文)の文字のうち、[日本語の文字](020-document.md#日本語の文字)
+> が <strong>3 割に満たなければ</strong>断る。
+
+<strong>約物と空白を分母から外す。</strong> コードの多い技術記事は英数字と記号が増えるが、それは
+題材であって言語ではない——[地の文はコードを含まない](020-document.md#地の文)ので、
+ここで数えるのは散文だけである。
+
+<strong>3 割は暫定値である</strong>（[指標](100-metrics.md#除外の既定)）。
 
 黙って一部を落として通せば、<strong>落ちた分だけ値が狂った文書</strong>が、正常な文書と同じ顔で
 コーパスに入る。

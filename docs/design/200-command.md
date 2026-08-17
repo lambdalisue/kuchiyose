@@ -64,12 +64,21 @@ kakiburi add <カセット> <ファイル...> [--as person|baseline|other] [--un
 ```
 kakiburi decide <カセット> boilerplate <文字列...>
 kakiburi decide <カセット> topic-pair <id> <id>
+kakiburi decide <カセット> movement <指標> moves|stuck
 ```
 
 | | なぜコマンドが要るか |
 | --- | --- |
 | 落とす定型 | [場面ごとに人が決める](../spec/200-extract.md#定型を落とす)。文章から当てにいかない |
 | 題材の近い組 | [どれとどれが近いかは人が指定する](../spec/200-extract.md#2-つを同じ題材の統制で作る) |
+| <strong>指示して動くか</strong> | <strong>直させてみて初めて分かる。</strong> コーパスから導けない |
+
+<strong>3 つ目が[戻る線 1 本目](../spec/010-strategy.md#運用に入ると戻る線が-2-本できる)の入口
+である。</strong>[検めを 2 周](../spec/300-revise.md#直したら測り直す)して数値が動かなかった指標を
+`stuck` にすると、次から[前に出す指標](../spec/300-revise.md#3-種類を合わせて通るを出す)から
+外れる。
+
+<strong>書かないかぎり `未知` で、`未知` は前に出す指標に入る。</strong> 動かないと分かるまでは使う。
 
 <strong>どちらも作り直せない原本である。</strong> 書く道が無ければ、実装する人が「文章から推定する」
 を発明する——仕様がどちらについても名指しで禁じている道である。
