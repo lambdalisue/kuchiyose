@@ -76,14 +76,17 @@
 
 | 記法 | どの node か |
 | --- | --- |
-| `[!NOTE]` `[!TIP]` `:::note` `:::tip` `<aside>` | <strong>補足</strong> |
-| `[!WARNING]` `[!CAUTION]` `[!IMPORTANT]` `:::warning` `:::caution` | <strong>警告</strong> |
+| `[!NOTE]` `[!TIP]` `:::note` `:::tip` <strong>`:::message`</strong> `<aside>` | <strong>補足</strong> |
+| `[!WARNING]` `[!CAUTION]` `[!IMPORTANT]` `:::warning` `:::caution` <strong>`:::message alert`</strong> | <strong>警告</strong> |
 | `[^1]` と定義行、`:::footnote`、`<sup><a>` | <strong>脚注</strong> |
 | `<details>`、`:::details` | <strong>折りたたみ</strong> |
 | GFM の表、`<table>` | <strong>表</strong> |
 
 <strong>`IMPORTANT` を警告に入れるのは、書き手が「読み飛ばすな」と示している側だからである。</strong>
 補足は本筋から外れることを示す記法で、向きが逆になる。
+
+<strong>名前だけでは決まらない記法がある。</strong> Zenn の `:::message` は補足だが、
+`:::message alert` は警告である。<strong>修飾を落とすと警告が補足に化ける。</strong>
 
 <strong>書けない記法は「測れない」になる。</strong>
 
@@ -96,6 +99,30 @@
 
 <strong>0 と「測れない」を区別する。</strong> 0 を並べれば、その書き手は補足を使わない人だと判定
 される。<strong>「書けない」の升目がそのまま「測れない」を返す場所である。</strong>
+
+### 取り込み元を間違えると、0 が並ぶ
+
+<strong>升目の守りは、取り込み元が正しく申告されて初めて効く。</strong>
+
+[取り込み元は内容から判定しない](../design/200-command.md#add)——人が指定する。<strong>だから
+間違えられる。</strong> そして間違えたとき、書けるはずの升目が黙って 0 を返す。
+
+実測した。Zenn の記事 12 本を `github-markdown` として読むと——
+
+| | `directive-markdown` | `github-markdown` |
+| --- | --- | --- |
+| 補足 | <strong>18 箇所</strong> | <strong>0</strong> |
+| 警告 | <strong>2 箇所</strong> | <strong>0</strong> |
+| 段落（1 本の例） | 52 | 63 |
+
+<strong>書き手は 20 回使っている。</strong> それが「使わない人」として出る。段落の数まで変わる——
+補足の中身が段落として数えられるからである。
+
+<strong>だから断る。</strong>[対応表に無い記法](#通らないものは断る)を地の文に流さない。
+`:::` を知らない取り込み元で `:::message` を見たら、それは対応表に無い記法である。
+
+> 実装で確かめた。`github-markdown` と申告すると <strong>12 本のうち 6 本が断られる</strong>——
+> `:::message` を使っている 6 本である。<strong>黙って 0 を返さない。</strong>
 
 ## 表記を潰さない
 
@@ -131,10 +158,16 @@
 > が <strong>3 割に満たなければ</strong>断る。
 
 <strong>約物と空白を分母から外す。</strong> コードの多い技術記事は英数字と記号が増えるが、それは
-題材であって言語ではない——[地の文はコードを含まない](020-document.md#地の文)ので、
-ここで数えるのは散文だけである。
+題材であって言語ではない——[地の文はコードもコードだけのセルも含まない](020-document.md#地の文)
+ので、ここで数えるのは散文だけである。
 
-<strong>3 割は暫定値である</strong>（[指標](100-metrics.md#除外の既定)）。
+<strong>だから分母は「地の文に残ったもの」である。</strong> 落としたセルはここにも入らない。
+記号だけの比較表が大半を占める文書は、<strong>表のぶんが分母から消えたうえで判定される</strong>——
+残った散文が日本語なら通る。<strong>それでよい</strong>——断る基準は「日本語で書かれていない文書」で
+あって「表が多い文書」ではない。
+
+<strong>3 割は暫定値である</strong>（[指標](100-metrics.md#除外の既定)）。<strong>地の文の作りを変えたら、
+この値は導き直しになる</strong>——分母が変わるので、同じ 3 割が同じものを断らない。
 
 黙って一部を落として通せば、<strong>落ちた分だけ値が狂った文書</strong>が、正常な文書と同じ顔で
 コーパスに入る。

@@ -78,9 +78,13 @@ kakiburi decide <カセット> movement <指標> moves|stuck
 | <strong>指示して動くか</strong> | <strong>直させてみて初めて分かる。</strong> コーパスから導けない |
 
 <strong>2 つ目が[戻る線 1 本目](../spec/010-strategy.md#運用に入ると戻る線が-2-本できる)の入口
-である。</strong>[検めを 2 周](../spec/300-revise.md#直したら測り直す)して数値が動かなかった指標を
-`stuck` にすると、次から[前に出す指標](../spec/300-revise.md#3-種類を合わせて通るを出す)から
-外れる。
+である。</strong>[検めを 2 周](../spec/300-revise.md#直したら測り直す)して
+<strong>その指標自身の値が</strong>動かなかったものを `stuck` にすると、次から
+[前に出す指標](../spec/300-revise.md#3-種類を合わせて通るを出す)から外れる。
+
+<strong>照合値が動かなかったことを根拠にしない。</strong> 照合値は 1 つの切り口には鈍く、指摘が正しく
+通じても動かないことがある（[実測](../spec/300-revise.md#直したら測り直す)）。混ぜれば、
+<strong>効いている指標を `stuck` にして捨てる。</strong>
 
 <strong>書かないかぎり `未知` で、`未知` は前に出す指標に入る。</strong> 動かないと分かるまでは使う。
 
@@ -109,7 +113,20 @@ kakiburi baseline <カセット> --model <名前> --version <版>
 以上、本人が書いた題材について書かせることになる。<strong>ただし要約は人が書く。</strong> 本文から
 機械的に作れば、そこが漏れる経路になる。
 
-`--param` と `--model` `--version` は `decided/baseline.json` に残り、そのまま指紋に入る。
+<strong>要約には記事が名指しする物を書く</strong>——製品名、コマンド名、版番号
+（[理由](../spec/010-strategy.md#題材を統制する)）。題名だけだと基準の側だけラテン文字が薄く
+なり、<strong>その差だけで帯が分離してしまう</strong>——通ったように見えて、測っているのは題材である。
+
+<strong>ただし名前の表記までは写さない。</strong>「Vim script」か「Vim スクリプト」か、版番号を半角か
+全角か——そこは書きぶりの層であり、写せば漏れる。
+
+<strong>この 2 つは検めようがない。</strong> `--topic` は自由な文字列で、名前が入っているかも表記を
+写したかも機械には見えない。<strong>[要約は人が書く](#baseline)以上、ここは人が守る規則である</strong>
+——`doctor` の一覧にも載らない。
+
+`--topic` `--param` `--model` `--version` は `decided/baseline.json` に残り、<strong>そのまま指紋に
+入る</strong>（[人が決めたこと](../spec/200-extract.md#何で測ったかを指紋にする)）。<strong>`--topic` を
+外さない</strong>——題材の言葉づかいだけで帯が動くので、外せば古い目盛りが黙って使われる。
 
 <strong>使わなくてもよい。</strong> 外で作った基準は `add --as baseline` で入る
 （[理由](000-architecture.md#kakiburi-baseline)）。
