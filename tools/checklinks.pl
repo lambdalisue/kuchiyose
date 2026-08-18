@@ -26,10 +26,20 @@ sub slug {
     return $h;
 }
 
+# 経路は 1 つの形に正す。canonpath は先頭の ./ を落とすので、
+# 両側を同じ関数に通さないと `..` を含むリンクだけが全部壊れて見える。
+sub norm {
+    my $t = File::Spec->canonpath(shift);
+    $t =~ s{^\./}{};
+    # 先頭の区間にも `..` は来る（tools/../docs/…）。両方畳む。
+    1 while $t =~ s{(?:^|(?<=/))[^/]+/\.\.(?:/|$)}{};
+    return $t;
+}
+
 my %anchors;
 for my $p (@files) {
     open(my $fh, '<:encoding(UTF-8)', $p) or die $!;
-    while (<$fh>) { $anchors{ decode_utf8($p) . '#' . slug($1) } = 1 if /^#+\s+(.*?)\s*$/ }
+    while (<$fh>) { $anchors{ norm(decode_utf8($p)) . '#' . slug($1) } = 1 if /^#+\s+(.*?)\s*$/ }
     close $fh;
 }
 
@@ -43,10 +53,7 @@ for my $p (@files) {
         my ($file, $frag) = ($1, $2);
         next unless defined $file or defined $frag;
         $total++;
-        my $target = defined $file
-            ? File::Spec->canonpath(dirname($dp) . '/' . $file)
-            : $dp;
-        $target =~ s{/[^/]+/\.\.}{}g while $target =~ m{/[^/]+/\.\.};
+        my $target = norm(defined $file ? dirname($dp) . '/' . $file : $dp);
         unless (-f encode_utf8($target)) {
             print "MISSING FILE: $file  (in $dp)\n"; $bad++; next;
         }

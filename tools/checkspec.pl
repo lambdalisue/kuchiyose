@@ -27,6 +27,14 @@ my @retracted = (
   ['GPT-4o mini',               'Post-Editing は o4-mini'],
   ['出どころが名指しした系統',     '層は札から引く'],
   ['出どころは必ず系統に遡れる',   '層は札から引く'],
+  ['10 分割交差検証。',           '岩崎 2018 の 78.99% は学習内の再分類'],
+  ['柳 佳',                      '著者は柳 燁佳'],
+  ['## 正解率（Random Forest, LOO）', '柳・金 2023 の 10 群は検証法が書かれていない'],
+  ['個人文体の情報が含まれている」と結論している', '柳・金 2023 は「推測できる」'],
+  ['金・樺島・村上 (1993, 1994)',  '1994 は読点ではない'],
+  ['規範の層には個人差が無い',      '岩崎 2018 は個人ごとの値を出していない'],
+  ['本文は無料では見つからなかった', '井上・山名 2012 は dbsj.org が公開'],
+  ['したがって 2 次元である',      '語り性は著者自身が分析から外している'],
 );
 for my $f (@files) {
   open my $fh, '<:utf8', $f or next;
@@ -58,10 +66,17 @@ if (-d $mdir) {
     next if $f eq 'README.md';
     open my $fh, '<:utf8', "$mdir/$b" or next;
     my @l = <$fh>; close $fh;
+    my $body = join '', @l;
     my $tag = $l[2] // ''; chomp $tag;
     $tag =~ s/。\s*$//;
     my @p = split m{ / }, $tag;
     my $kind = $p[0] // '';
+
+    # 4. 実装に足りる形か。欠けていればコードが書けない。
+    printf "DEF  %s  数え方が無い\n", $f          and $bad++ unless $body =~ /^## 数え方/m;
+    printf "DEF  %s  照合なのに次元が無い\n", $f   and $bad++ if $kind eq '照合' && $body !~ /^## 次元/m;
+    printf "DEF  %s  指示なのに直し方が無い\n", $f and $bad++ if $kind eq '指示' && $body !~ /^## 直し方/m;
+
     if ($kind eq '指示') {
       if (@p != 5) { printf "TAG  %s  指示 は 5 欄: 「%s」\n", $f, $tag; $bad++; next }
       my ($sys, $cls, $dir) = @p[1,2,3];
