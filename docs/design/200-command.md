@@ -44,13 +44,24 @@ kakiburi new <カセット> --scene <場面>
 ### add
 
 ```
-kakiburi add <カセット> <ファイル...> --source <取り込み元>
-                                 [--as person|baseline|other] [--unit <名前>]
+kakiburi add <カセット> <ファイル...> --source <取り込み元> --as person|baseline|other
+                                 [--id <id>] [--unit <名前>]
+                                 [--scene <場面> --use floor|humanness]
                                  [--model <名前> --version <版> --param <鍵>=<値>...]
 ```
 
-[正規化](../spec/030-normalize.md)して入れる。取り込み元は内容から判定せず、拡張子と
-`--source` で決める。
+[正規化](../spec/030-normalize.md)して入れる。<strong>取り込み元は内容から判定しない。</strong>
+拡張子でも判定しない——Markdown 3 種は拡張子が同じである。`--source` だけで決める。
+
+<strong>`--as` に既定を置かない。</strong> 役を間違えると[対照にしたはずの文書が書き手の帯に残る](../spec/200-extract.md#相手集合を-1-つ決める)。
+<strong>いちばん高くつく取り違えに既定を与えない。</strong>
+
+<strong>`--id` を省いたら、ファイル名の拡張子を除いた部分を `id` にする。</strong> 複数のファイルを
+渡したときは 1 本ずつに当てる。<strong>`--id` は 1 本だけ渡すときにのみ書ける</strong>——複数に同じ
+`id` は付けられない。
+
+<strong>`id` はカセット全体で一意である</strong>（[検めること](100-cassette.md#足すことと差し替えることを分ける)）。
+別のディレクトリの同名ファイルは <strong>そのままでは 2 本目を足せない</strong>ので、`--id` で分ける。
 
 <strong>落ちない入力は断る</strong>（[決定](../spec/030-normalize.md#通らないものは断る)）。黙って
 一部を落として通さない。<strong>1 本でも断ったら、そのコマンドは失敗する</strong>——成功したことに
@@ -62,6 +73,44 @@ kakiburi add <カセット> <ファイル...> --source <取り込み元>
 
 <strong>`--unit` は短い文書を[束ねる](100-cassette.md#短い文書は束ねる)。</strong> 同じ名前を渡した
 ものが 1 単位になる。チャットの場面では常用する。
+
+<strong>`--as other` では `--scene` と `--use` が要る</strong>（[役は 3 つ](100-cassette.md#役は-3-つ)）。
+他人の文書は用途によって場面の扱いが違うので、<strong>どちらに使えるかを入れるときに決める</strong>。
+文章から当てにいかない。
+
+<strong>`--use floor` は、カセットと同じ場面のときだけ受ける。</strong> 違えば断る——
+[場面ごとに閉じる](../spec/010-strategy.md#場面ごとに閉じる)が床の側にだけ掛かる。
+
+<strong>足す前に検める</strong>（[何を検めるか](100-cassette.md#足すことと差し替えることを分ける)）。
+`id` が既にある、`unit` が別の役や別の取り込み元で使われている——どれも <strong>断る</strong>。
+<strong>黙って上書きしない。</strong>
+
+### 差し替える
+
+```
+kakiburi replace <カセット> --id <id> <ファイル> --source <取り込み元>
+                            [--as person|baseline|other] [--unit <名前>]
+                            [--scene <場面> --use floor|humanness]
+                            [--model <名前> --version <版> --param <鍵>=<値>...]
+```
+
+<strong>`add` と同じ引数に `--id` が付く。</strong> 置き換える先をファイル名から当てにいかない——
+<strong>取り込み直すときにファイル名が変わっていることは普通にある。</strong> 無い `id` を渡したら
+断る。<strong>1 度に 1 本だけ置き換える。</strong>
+
+<strong>操作を分けるのは、上書きを事故ではなく意思にするためである。</strong> `add` が上書きも
+できると、<strong>同じ名前のファイルを 2 度取り込んだだけで原本が 1 本消える。</strong>
+
+<strong>置き換えたあとも[束の中は揃っている](100-cassette.md#足すことと差し替えることを分ける)こと
+を検める。</strong> 同じ `unit` の中で役や取り込み元がばらつけば断る。
+
+<strong>置き換えも[丸ごと書き直して差し替える](100-cassette.md#書くときは壊さないことを優先する)。</strong>
+途中の状態を残さない。
+
+<strong>そして派生物を落とす。</strong> 本文が変われば値も目盛りも変わるが、<strong>指紋は測った条件を
+表すものなので変わらない</strong>——落とさなければ、古い値が有効な顔で読まれる。
+<strong>`add` も同じである。</strong> 落としたカセットは、`build` するまで
+[判定できない](../spec/010-strategy.md#届かないときは判定できないと言う)を返す。
 
 ### decide
 
@@ -87,6 +136,19 @@ kakiburi decide <カセット> movement <指標> moves|stuck
 <strong>効いている指標を `stuck` にして捨てる。</strong>
 
 <strong>書かないかぎり `未知` で、`未知` は前に出す指標に入る。</strong> 動かないと分かるまでは使う。
+
+<strong>`decide movement` は周回の途中で打つ。</strong>「作る」に置いてあるのは、書き込む先が
+[人が決めたこと](100-cassette.md#何を収めるか)だからであって、回し終えてから打つという
+意味ではない（[周回を繋ぐ](../spec/300-revise.md#周回を繋ぐものを決める)）。
+
+<strong>打ったら派生物が古くなる。</strong>[前に出す指標](100-cassette.md#effectivejson)は movement
+から導くので、書き換えたのに作り直さなければ <strong>`stuck` にした指標が指摘に出続ける。</strong>
+
+> <strong>`decide movement` は、movement と `derived/effective.json` と指紋を一度に書く。</strong>
+> 途中で止まった状態を残さない。
+
+<strong>ほかの派生物は作り直さない。</strong> 値も目盛りも movement では変わらない——変わるのは
+「どれを前に出すか」だけである。
 
 <strong>どちらも作り直せない原本である。</strong> 書く道が無ければ、実装する人が「文章から推定する」
 を発明する——仕様がどちらについても名指しで禁じている道である。
@@ -169,10 +231,14 @@ kakiburi build <カセット>
 ### review
 
 ```
-kakiburi review <カセット> <ファイル> [--json]
+kakiburi review <カセット> <ファイル> --source <取り込み元> [--json]
 ```
 
 <strong>3 値と指摘を返す。</strong>
+
+<strong>`--source` は `add` と同じ理由で要る。</strong> 検める文書も[同じ手順で正規化する](../spec/300-revise.md#同じ測り方で測る)
+以上、取り込み元が決まらなければ通せない。<strong>推測しない</strong>——
+[間違えれば黙って 0 が並ぶ](../spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)。
 
 | 終了コード | |
 | --- | --- |
@@ -208,11 +274,23 @@ kakiburi review <カセット> <ファイル> [--json]
 #### 草稿の作られ方を訊く
 
 ```
-kakiburi review ... --shown-own-writing
+kakiburi review ... [--own-writing shown|not-shown|unknown]
 ```
 
 本人の文章を見せて書かせた草稿は[測定が膨らむ](../spec/300-revise.md#草稿の作られ方を疑う)。
 kakiburi は書かせる側を持たないので防げない。<strong>だから申告させ、判定に添える。</strong>
+
+<strong>真偽のフラグにしない。</strong> フラグでは「渡していない」と「申告していない」が同じ形に
+なる。<strong>3 値で受ける</strong>——既定は `unknown` である。
+
+| 値 | 何を言っているか |
+| --- | --- |
+| `shown` | 本人の文章を渡して書かせた |
+| `not-shown` | 渡していない |
+| `unknown`（既定） | 草稿の作られ方を知らない |
+
+<strong>省略を `not-shown` と読まない。</strong> 読めば、いちばん膨らみやすい草稿がいちばん綺麗な
+顔で通る。<strong>`shown` と `unknown` には、3 値のどれを返すときも但し書きを添える。</strong>
 
 ## 覗く
 
@@ -220,10 +298,16 @@ kakiburi は書かせる側を持たないので防げない。<strong>だから
 そのまま 3 つのコマンドにする。
 
 ```
-kakiburi measure <ファイル> [--cassette <カセット>]      1 本を測る
-kakiburi compare <ファイル>... [--cassette <カセット>]   並べて比べる
-kakiburi show <カセット>                                 コーパス全体の分布を出す
+kakiburi measure <ファイル> --source <取り込み元> [--cassette <カセット>]
+kakiburi compare <ファイル>... --source <取り込み元> [--cassette <カセット>]
+kakiburi show <カセット>
 ```
+
+<strong>`measure` は 1 本を測り、`compare` は並べて比べ、`show` はコーパス全体の分布を出す。</strong>
+<strong>文書を取るものには `--source` が要る</strong>——`show` はカセットの中の正規形を読むので
+要らない。<strong>`compare` の複数のファイルは、同じ取り込み元でなければならない</strong>：違えば
+[升目が単位ごとに変わり](../spec/030-normalize.md#対応表は取り込み元ごとに持つ)、
+測れないの出方が揃わない。
 
 <strong>カセットが無くても動く。ただし出るものが違う。</strong>
 

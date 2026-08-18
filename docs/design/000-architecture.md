@@ -30,7 +30,7 @@
 
 ```mermaid
 flowchart TB
-    src["取り込み元<br/>Markdown / HTML / チャット"]
+    src["取り込み元<br/>Markdown 3 種 / HTML"]
     base["kakiburi-baseline<br/>基準を作る"]
     norm["kakiburi-normalize<br/>記法 → 意味"]
     doc["kakiburi-doc<br/>node と単位"]
@@ -122,7 +122,8 @@ flowchart TB
 [検めて、直す](../spec/300-revise.md)。<strong>目盛りに載せて、判定と指摘を返す。</strong>
 
 <strong>`kakiburi-scale` に依存しない。</strong> 当てはめる関数が視界に入らないので、検める対象を
-見てから目盛りを作り直す経路が <strong>書けない</strong>。読むのはカセットだけである。
+見てから目盛りを作り直す経路が <strong>このクレートには書けない</strong>。読むのはカセットだけである。
+（[組み立て層は別である](#守られるのはクレートの中だけである)。）
 
 <strong>判定にも指摘にも[前に出す指標](../spec/300-revise.md#3-種類を合わせて通るを出す)を使う。</strong>
 同じ集合を 2 か所で組み立て直さない——`kakiburi-scale` が作ったものをそのまま読む。
@@ -193,7 +194,28 @@ flowchart TB
 
 <strong>`kakiburi-review` から `kakiburi-scale` への線が無いことが、この図の要である。</strong>
 検めは目盛りを <strong>カセット越しに読む</strong>。当てはめる関数が視界に入らないので、
-<strong>検める対象を見てから作り直す経路が、そもそも書けない。</strong>
+<strong>検める対象を見てから作り直す経路が、そのクレートの中には書けない。</strong>
+
+### 守られるのはクレートの中だけである
+
+<strong>`kakiburi` は両方に依存する。</strong> コマンドは目盛りを作り（`build`）、目盛りで検める
+（`review`）。<strong>だから組み立て層では、両方の関数が同時に視界に入っている。</strong>
+
+| どこ | 何が守られるか |
+| --- | --- |
+| `kakiburi-review` の中 | <strong>型で守られる。</strong> 呼べる関数が存在しない |
+| <strong>`kakiburi` の中</strong> | <strong>型では守られない。</strong> 書こうと思えば書ける |
+
+<strong>これを「境界が無い」と読んではいけない。</strong> 守れているのは <strong>判定の中身がどこにあるか</strong>
+である。検めの判断は `kakiburi-review` にあり、そこに当てはめは無い。組み立て層に
+判断を置かなければ、漏れる場所そのものが無い。
+
+<strong>だから組み立て層には規則が要る。</strong>`review` の経路から較正の関数を呼ばないことを、
+[試験で確かめる](300-test.md#組み立て層が目盛りを作り直さないこと)——型で止まらない以上、
+ここだけは検査で止める。
+
+<strong>クレートを割る意味は、守る範囲を狭めたことにある。</strong> 見張るのは組み立て層 1 か所で
+済み、残りは型が持つ。
 
 <strong>成果物の型は `kakiburi-cassette` が持つ。</strong> 語彙・重み・天井・床・帯・幅・効く指標の
 判定は、作る側と読む側の両方から見えるので、どちらでもない場所に置く。
