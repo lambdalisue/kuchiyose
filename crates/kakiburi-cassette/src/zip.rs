@@ -38,6 +38,17 @@ impl std::error::Error for ZipError {}
 /// 中身。<strong>名前の昇順で持つ</strong>ので、書き出しが決定的になる。
 pub type Entries = BTreeMap<String, Vec<u8>>;
 
+/// 旗の 11 番目。<strong>entry の名前が UTF-8 であると名乗る。</strong>
+///
+/// <strong>立てなければ、読む側は CP437 として解釈してよい。</strong> zip の規格がそう決めて
+/// いる。名前が ASCII だけのあいだは差が出ないが、
+/// [場面が階層の名前になった](../../../docs/design/100-cassette.md#中身)ので、
+/// <strong>ふつうの `unzip` で中身の名前が化ける。</strong>
+///
+/// 自分で読み書きするぶんには困らないが、<strong>1 ファイルで持ち運べることが容器を
+/// zip にした理由</strong>である以上、外の道具で開けないのは選んだ理由を損なう。
+const UTF8_NAME: u16 = 0x0800;
+
 /// 書き出す。
 ///
 /// <strong>時刻を入れない。</strong> 入れると、同じ中身から違うバイトが出て
@@ -52,7 +63,7 @@ pub fn write(entries: &Entries) -> Vec<u8> {
         let crc = crc32(body);
         out.extend_from_slice(&0x0403_4b50u32.to_le_bytes()); // 局所札
         out.extend_from_slice(&20u16.to_le_bytes()); // 要る版
-        out.extend_from_slice(&0u16.to_le_bytes()); // 旗
+        out.extend_from_slice(&UTF8_NAME.to_le_bytes()); // 旗
         out.extend_from_slice(&0u16.to_le_bytes()); // 無圧縮
         out.extend_from_slice(&0u16.to_le_bytes()); // 時刻。<strong>0 で固定する</strong>
         out.extend_from_slice(&0u16.to_le_bytes()); // 日付。同じ
@@ -74,7 +85,7 @@ pub fn write(entries: &Entries) -> Vec<u8> {
         out.extend_from_slice(&0x0201_4b50u32.to_le_bytes()); // 索引の札
         out.extend_from_slice(&20u16.to_le_bytes()); // 作った版
         out.extend_from_slice(&20u16.to_le_bytes()); // 要る版
-        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&UTF8_NAME.to_le_bytes()); // 旗
         out.extend_from_slice(&0u16.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes());
@@ -250,6 +261,30 @@ mod tests {
         );
         e.insert("derived/scale.json".into(), b"{}".to_vec());
         e
+    }
+
+    #[test]
+    fn 名前が_utf8_であると名乗る() {
+        // <strong>立てなければ、読む側は CP437 として解釈してよい。</strong> 場面が階層の
+        // 名前になったので、ふつうの `unzip` で名前が化ける。
+        let mut e = Entries::new();
+        e.insert("decided/技術記事/baseline.json".into(), b"{}".to_vec());
+        let bytes = write(&e);
+        // 局所札の旗は 6 バイト目から。
+        assert_eq!(u16::from_le_bytes([bytes[6], bytes[7]]), UTF8_NAME);
+        // 索引の旗も同じ。<strong>片方だけでは読む側が選ぶ。</strong>
+        let at = bytes
+            .windows(4)
+            .position(|w| w == 0x0201_4b50u32.to_le_bytes())
+            .expect("索引がある");
+        assert_eq!(
+            u16::from_le_bytes([bytes[at + 8], bytes[at + 9]]),
+            UTF8_NAME
+        );
+        assert_eq!(
+            index(&bytes).unwrap(),
+            vec!["decided/技術記事/baseline.json"]
+        );
     }
 
     #[test]

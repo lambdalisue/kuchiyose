@@ -114,18 +114,38 @@ pub fn inspect(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Vec<R
         .collect()
 }
 
+/// 目盛りを作る材料。
+///
+/// <strong>場面を跨げる素材を、跨げない素材と同じ配列に入れない。</strong> 入れれば、
+/// 相手集合にも天井にも他人が混ざる道が開く——[場面ごとに閉じる](../../../docs/spec/010-strategy.md#場面ごとに閉じる)
+/// が、呼ぶ側の注意だけで守られることになる。
+///
+/// <strong>欄で分けたうえで、[`assemble`]は [`others`](Self::others) を人らしさの較正にしか
+/// 渡さない。</strong> 型が全部を守るわけではないが、跨ぐ道が 1 本に絞られる。
+#[derive(Debug, Clone, Copy)]
+pub struct Material<'a> {
+    /// <strong>1 つの場面の</strong>本人の単位。
+    pub person: &'a [Sample<'a>],
+    /// <strong>同じ場面の</strong>基準の単位。
+    pub baseline: &'a [Sample<'a>],
+    /// 他人の文書。<strong>場面を跨いでよい唯一の素材である。</strong>
+    ///
+    /// [人らしさの較正の人の側](../../../docs/spec/200-extract.md#人らしさの境目は同じ材料から出る)
+    /// にだけ足す。<strong>帯の側には足さない</strong>——足せば、帯の点の数が本人と基準で
+    /// 釣り合わなくなる。
+    pub others: &'a [Sample<'a>],
+}
+
 /// 組み立てる。
 ///
 /// <strong>作れないことは失敗ではない。</strong> 素材が足りなければ目盛りを作らず、検めが
 /// 判定できないを返す——それが正しい振る舞いである。
-pub fn assemble(
-    person: &[Sample<'_>],
-    baseline: &[Sample<'_>],
-    analyzer: Option<&dyn Analyzer>,
-) -> Result<Scale, ScaleError> {
+pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scale, ScaleError> {
+    let (person, baseline) = (m.person, m.baseline);
     let measured: BTreeMap<String, Measurements> = person
         .iter()
         .chain(baseline.iter())
+        .chain(m.others.iter())
         .map(|s| ((*s.name).to_owned(), Measurements::of(*s, analyzer)))
         .collect();
 
@@ -268,10 +288,26 @@ pub fn assemble(
             })
             .collect()
     };
-    let humanness = HumannessScale::fit(
-        &rows_of(&person_split.partners),
-        &rows_of(&baseline_split.partners),
-    );
+    // <strong>他人の文書は較正の側にだけ足す。</strong> 人らしさの人の側は「誰の文章でも人が
+    // 書いたものは人の側に落ちる」ので、素材が足りなければ混ぜてよい——
+    // <strong>場面は人と機械の別を跨がない。</strong>
+    //
+    // <strong>測れなかったものは落とす。</strong> 12 次元が揃わない行を混ぜれば、列の数が
+    // 行ごとに変わる。
+    let mut human_rows = rows_of(&person_split.partners);
+    for s in m.others {
+        let h = &measured[s.name].humanness;
+        if !h.all_measured() {
+            continue;
+        }
+        human_rows.push(
+            h.flat()
+                .into_iter()
+                .filter_map(|(_, v)| v.value())
+                .collect(),
+        );
+    }
+    let humanness = HumannessScale::fit(&human_rows, &rows_of(&baseline_split.partners));
     let side = |us: &[Unit]| -> Vec<f64> {
         us.iter()
             .filter_map(|u| humanness.value(&measured[&u.name].humanness.flat()).ok())
@@ -296,11 +332,15 @@ pub fn assemble(
         frozen,
         calibration,
         band,
-        partners: person_split
-            .partners
-            .iter()
-            .map(|u| u.name.clone())
-            .collect(),
+        selection: {
+            let names = |us: &[Unit]| us.iter().map(|u| u.name.clone()).collect();
+            crate::Selection {
+                person_partners: names(&person_split.partners),
+                person_points: names(&person_split.points),
+                baseline_partners: names(&baseline_split.partners),
+                baseline_points: names(&baseline_split.points),
+            }
+        },
         humanness,
         humanness_band,
     })
@@ -442,12 +482,12 @@ mod tests {
             .collect()
     }
 
-    struct Material {
+    struct Fixture {
         person: Vec<(String, Document)>,
         baseline: Vec<(String, Document)>,
     }
 
-    impl Material {
+    impl Fixture {
         fn new(n: usize) -> Self {
             Self {
                 person: (0..n)
@@ -473,10 +513,13 @@ mod tests {
     #[test]
     fn 素材が足りなければ目盛りを作らない() {
         // 作れないことは失敗ではない。<strong>判定できないが返る。</strong>
-        let m = Material::new(4);
+        let m = Fixture::new(4);
         let e = assemble(
-            &Material::samples(&m.person),
-            &Material::samples(&m.baseline),
+            Material {
+                person: &Fixture::samples(&m.person),
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
             Some(&Chars),
         )
         .unwrap_err();
@@ -486,10 +529,13 @@ mod tests {
     #[test]
     fn 解析器が無ければ系統が揃わない() {
         // 5 系統のうち 2 つが形態素を要る。<strong>抜いて合算しない。</strong>
-        let m = Material::new(10);
+        let m = Fixture::new(10);
         let e = assemble(
-            &Material::samples(&m.person),
-            &Material::samples(&m.baseline),
+            Material {
+                person: &Fixture::samples(&m.person),
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
             None,
         )
         .unwrap_err();
@@ -498,25 +544,72 @@ mod tests {
 
     #[test]
     fn 端まで通ると目盛りができる() {
-        let m = Material::new(10);
+        let m = Fixture::new(10);
         let scale = assemble(
-            &Material::samples(&m.person),
-            &Material::samples(&m.baseline),
+            Material {
+                person: &Fixture::samples(&m.person),
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
             Some(&Chars),
         )
         .expect("目盛りができる");
         assert_eq!(scale.frozen.len(), 5, "判定に使う 5 系統");
-        assert_eq!(scale.partners.len(), 5);
+        assert_eq!(scale.partners().len(), 5);
         assert_eq!(scale.calibration.systems().len(), 5);
+    }
+
+    #[test]
+    fn 他人の文書は人らしさの較正にだけ効く() {
+        // <strong>足せる形を決めておく。</strong> 決めずに置くと、素材だけ入って判定に効かないと
+        // いういちばん質の悪い状態になる——使う側は効いていると思って集め続ける。
+        let m = Fixture::new(10);
+        let extra = Fixture::new(14);
+        // 別の場面の他人。**名前が本人・基準と衝突しないようにする。**
+        let others: Vec<(String, Document)> = extra.person[10..]
+            .iter()
+            .map(|(n, d)| (format!("o-{n}"), d.clone()))
+            .collect();
+        let bare = assemble(
+            Material {
+                person: &Fixture::samples(&m.person),
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
+            Some(&Chars),
+        )
+        .expect("目盛りができる");
+        let with = assemble(
+            Material {
+                person: &Fixture::samples(&m.person),
+                baseline: &Fixture::samples(&m.baseline),
+                others: &Fixture::samples(&others),
+            },
+            Some(&Chars),
+        )
+        .expect("目盛りができる");
+
+        // <strong>照合の側は 1 ミリも動かない。</strong> 動けば、相手集合か語彙か天井に
+        // 他人が混ざっている。
+        assert_eq!(with.selection, bare.selection, "割りが動かない");
+        assert_eq!(with.frozen, bare.frozen, "語彙が動かない");
+        assert_eq!(with.band, bare.band, "照合値の帯が動かない");
+        assert_eq!(with.calibration, bare.calibration, "照合値の較正が動かない");
+
+        // <strong>人らしさの較正だけが動く。</strong> 動かなければ、入れたものが読まれていない。
+        assert_ne!(with.humanness, bare.humanness, "人らしさの較正は動く");
     }
 
     #[test]
     fn 語彙は割る前に全体から固定する() {
         // 側ごとに違う語彙を使えば、側ごとに次元の意味が変わる。
-        let m = Material::new(10);
+        let m = Fixture::new(10);
         let scale = assemble(
-            &Material::samples(&m.person),
-            &Material::samples(&m.baseline),
+            Material {
+                person: &Fixture::samples(&m.person),
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
             Some(&Chars),
         )
         .unwrap();
@@ -536,13 +629,21 @@ mod tests {
 
     #[test]
     fn 検めは目盛りを受け取るだけである() {
-        let m = Material::new(10);
-        let person = Material::samples(&m.person);
-        let scale = assemble(&person, &Material::samples(&m.baseline), Some(&Chars)).unwrap();
+        let m = Fixture::new(10);
+        let person = Fixture::samples(&m.person);
+        let scale = assemble(
+            Material {
+                person: &person,
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
+            Some(&Chars),
+        )
+        .unwrap();
         // 相手集合の 5 本を名前で引く。
         let partners: Vec<Sample<'_>> = person
             .iter()
-            .filter(|s| scale.partners.iter().any(|n| n == s.name))
+            .filter(|s| scale.partners().iter().any(|n| n == s.name))
             .copied()
             .collect();
         assert_eq!(partners.len(), 5);
@@ -554,12 +655,20 @@ mod tests {
 
     #[test]
     fn 系統が欠ければ照合値を出さない() {
-        let m = Material::new(10);
-        let person = Material::samples(&m.person);
-        let scale = assemble(&person, &Material::samples(&m.baseline), Some(&Chars)).unwrap();
+        let m = Fixture::new(10);
+        let person = Fixture::samples(&m.person);
+        let scale = assemble(
+            Material {
+                person: &person,
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
+            Some(&Chars),
+        )
+        .unwrap();
         let partners: Vec<Sample<'_>> = person
             .iter()
-            .filter(|s| scale.partners.iter().any(|n| n == s.name))
+            .filter(|s| scale.partners().iter().any(|n| n == s.name))
             .copied()
             .collect();
         // 短い文書は除外に掛かる。<strong>0 ではなく、出ないである。</strong>

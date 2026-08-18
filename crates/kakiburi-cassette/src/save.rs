@@ -334,8 +334,17 @@ fn verify(tmp: &Path, expected: &Cassette) -> Result<(), SaveError> {
     if got.corpus != expected.corpus {
         return Err(SaveError::Verify("本文が戻らない".into()));
     }
-    if got.decided != expected.decided {
-        return Err(SaveError::Verify("人が決めたことが戻らない".into()));
+    // <strong>トラックは鍵ごと検める。</strong> 場面が 1 つ消えても本文は戻るので、本文だけを
+    // 見ていると、決めたことが丸ごと落ちたことに気付けない。
+    if got.scenes() != expected.scenes() {
+        return Err(SaveError::Verify("場面が戻らない".into()));
+    }
+    for (scene, t) in &expected.tracks {
+        if got.track(scene).map(|g| &g.decided) != Some(&t.decided) {
+            return Err(SaveError::Verify(format!(
+                "人が決めたことが戻らない: {scene}"
+            )));
+        }
     }
     if got.generation != expected.generation {
         return Err(SaveError::Verify("世代が戻らない".into()));
@@ -370,34 +379,44 @@ mod tests {
         Cassette {
             version: store::VERSION,
             generation: 0,
-            scene: "試験".into(),
             fingerprint: Fingerprint::build(Inputs {
-                metric_definitions: "試験".into(),
-                unit_definitions: "試験".into(),
-                vocabulary: BTreeMap::new(),
-                z_scores: BTreeMap::new(),
-                morphology: Tool::unused(),
-                dependency: Tool::unused(),
-                compressor: Tool::unused(),
-                external_tables: BTreeMap::new(),
-                normalization: Normalization {
-                    sources: vec!["plain-markdown".into()],
-                    implementation: "kakiburi-normalize".into(),
-                    version: "0.0.0".into(),
-                    mapping: BTreeMap::new(),
+                common: crate::Common {
+                    metric_definitions: "試験".into(),
+                    unit_definitions: "試験".into(),
+                    morphology: Tool::unused(),
+                    dependency: Tool::unused(),
+                    compressor: Tool::unused(),
+                    external_tables: BTreeMap::new(),
+                    normalization: Normalization {
+                        sources: vec!["plain-markdown".into()],
+                        implementation: "kakiburi-normalize".into(),
+                        version: "0.0.0".into(),
+                        mapping: BTreeMap::new(),
+                    },
                 },
-                baseline: baseline.clone(),
-                decided: BTreeMap::new(),
+                scenes: [(
+                    "試験".to_owned(),
+                    crate::SceneInputs {
+                        baseline: baseline.clone(),
+                        ..crate::SceneInputs::default()
+                    },
+                )]
+                .into(),
             }),
             provisional: vec![],
-            decided: Decided {
-                scene: "試験".into(),
-                boilerplate: vec![],
-                baseline,
-                movement: BTreeMap::new(),
-            },
             corpus: Corpus::new(vec![]),
-            derived: Derived::dropped(),
+            tracks: [(
+                "試験".to_owned(),
+                crate::Track {
+                    decided: Decided {
+                        boilerplate: vec![],
+                        baseline,
+                        movement: BTreeMap::new(),
+                    },
+                    derived: Derived::dropped(),
+                },
+            )]
+            .into(),
         }
     }
 

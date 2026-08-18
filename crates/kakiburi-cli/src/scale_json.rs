@@ -143,7 +143,28 @@ pub fn write(s: &Scale) -> String {
         ("語彙".to_owned(), frozen_v),
         ("較正".to_owned(), calibration),
         ("帯".to_owned(), band(s.band)),
-        ("相手集合".to_owned(), strings(&s.partners)),
+        // <strong>割りは 4 つとも書く。</strong> 相手集合だけでは、どこで割れたかが読めない。
+        (
+            "割り".to_owned(),
+            Value::obj([
+                (
+                    "本人の相手集合".to_owned(),
+                    strings(&s.selection.person_partners),
+                ),
+                (
+                    "本人の測る分".to_owned(),
+                    strings(&s.selection.person_points),
+                ),
+                (
+                    "基準の較正分".to_owned(),
+                    strings(&s.selection.baseline_partners),
+                ),
+                (
+                    "基準の床の点".to_owned(),
+                    strings(&s.selection.baseline_points),
+                ),
+            ]),
+        ),
         ("人らしさ".to_owned(), humanness),
         ("人らしさの帯".to_owned(), band(s.humanness_band)),
     ])
@@ -187,7 +208,15 @@ pub fn read(text: &str) -> Option<Scale> {
         frozen,
         calibration,
         band: read_band(v.get("帯")?)?,
-        partners: read_strings(v.get("相手集合"))?,
+        selection: {
+            let s = v.get("割り")?;
+            kakiburi_scale::Selection {
+                person_partners: read_strings(s.get("本人の相手集合"))?,
+                person_points: read_strings(s.get("本人の測る分"))?,
+                baseline_partners: read_strings(s.get("基準の較正分"))?,
+                baseline_points: read_strings(s.get("基準の床の点"))?,
+            }
+        },
         humanness,
         humanness_band: read_band(v.get("人らしさの帯")?)?,
     })
@@ -205,6 +234,23 @@ mod tests {
         let text = write(&s);
         let back = read(&text).expect("読み戻せる");
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn 割りは_4_つとも残る() {
+        // 相手集合だけでは、どこで割れたかが読めない。単位名の昇順で取るので、
+        // 名前に年や媒体が入っていれば境目で分かれる——出さなければ気付けない。
+        let s = fixture::scale();
+        let back = read(&write(&s)).expect("読み戻せる");
+        for names in [
+            &back.selection.person_partners,
+            &back.selection.person_points,
+            &back.selection.baseline_partners,
+            &back.selection.baseline_points,
+        ] {
+            assert_eq!(names.len(), kakiburi_scale::split::PER_SIDE);
+        }
+        assert_eq!(back.selection, s.selection);
     }
 
     #[test]

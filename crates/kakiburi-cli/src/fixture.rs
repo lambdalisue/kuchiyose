@@ -101,5 +101,13 @@ pub fn samples(v: &[(String, Document)]) -> Vec<Sample<'_>> {
 /// 目盛りを作る。<strong>作れなければ試験を落とす。</strong>
 pub fn scale() -> Scale {
     let (person, baseline) = corpus();
-    assemble(&samples(&person), &samples(&baseline), Some(&Chars)).expect("目盛りができる")
+    assemble(
+        kakiburi_scale::assemble::Material {
+            person: &samples(&person),
+            baseline: &samples(&baseline),
+            others: &[],
+        },
+        Some(&Chars),
+    )
+    .expect("目盛りができる")
 }

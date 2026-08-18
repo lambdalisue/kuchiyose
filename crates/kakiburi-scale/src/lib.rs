@@ -172,12 +172,41 @@ pub struct Scale {
     pub calibration: Calibration,
     /// 照合値の帯。
     pub band: Band,
-    /// 相手集合の単位の名前。<strong>検めはこれと対にする。</strong>
-    pub partners: Vec<String>,
+    /// 単位をどう割ったか。<strong>検めは相手集合と対にする。</strong>
+    pub selection: Selection,
     /// 人らしさの較正。
     pub humanness: HumannessScale,
     /// 人らしさ値の帯。<strong>天井にあたるのが人の側、床にあたるのが機械の側。</strong>
     pub humanness_band: Band,
+}
+
+impl Scale {
+    /// 相手集合の単位の名前。<strong>あらゆる照合の相手である。</strong>
+    #[must_use]
+    pub fn partners(&self) -> &[String] {
+        &self.selection.person_partners
+    }
+}
+
+/// 単位をどう割ったか。<strong>名前だけを持つ。</strong>
+///
+/// <strong>正本ではない。</strong>[単位名の昇順](../../../docs/spec/200-extract.md#相手集合を-1-つ決める)
+/// から決定的に導けるので、持つのは<strong>覗くため</strong>である。
+///
+/// <strong>覗けないと、割りが偏っていることに気付けない。</strong> 昇順で取るので、単位名に
+/// 年や媒体が入っていれば、相手集合と測る分がその境目で分かれる——<strong>値は出るし、
+/// エラーにもならない。</strong> 帯は「本人 対 本人」ではなく「ある時期 対 別の時期」に
+/// なっているのに、出力からは区別が付かない。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Selection {
+    /// 本人の相手集合。
+    pub person_partners: Vec<String>,
+    /// 本人の測る分。天井の点になる。
+    pub person_points: Vec<String>,
+    /// 基準の較正分。
+    pub baseline_partners: Vec<String>,
+    /// 基準の床の点。
+    pub baseline_points: Vec<String>,
 }
 
 #[cfg(test)]
