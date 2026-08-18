@@ -17,12 +17,35 @@ use Encode qw(decode_utf8);
 my ($pg, $bg, @opt) = @ARGV;
 die "usage: spike-calibrate.pl <本人 glob> <基準 glob> [--drop 系統] [--rotate N]\n"
   unless $pg && $bg;
-my (%drop, $rotate);
+my (%drop, $rotate, $types_only, $types_ja, $drop_nonja_cells, @check, $commas_only);
 while (@opt) {
   my $k = shift @opt;
   if    ($k eq '--drop')   { my $v = shift @opt; $drop{decode_utf8($v)} = 1 if defined $v }
   elsif ($k eq '--rotate') { $rotate = shift @opt }
+  elsif ($k eq '--types')  { $types_only = 1 }
+  elsif ($k eq '--types-ja') { $types_ja = 1 }
+  elsif ($k eq q{--drop-nonja-cells}) { $drop_nonja_cells = 1 }
+  elsif ($k eq q{--check}) { push @check, shift @opt }
+  elsif ($k eq q{--commas}) { $commas_only = 1 }
 }
+
+# ---- 日本語の文字 ----------------------------------------------------
+# スクリプト属性で書いてはいけない。\p{Hiragana} は Script_Extensions で
+# 照合されるため 。 、 まで飲み、約物が分母に入る。
+#
+# ブロックでも書いてはいけない。かなのブロックの中に約物がある——
+# ・ (U+30FB)、゠ (U+30A0)、濁点 (U+3099〜U+309C)。・ を入れると中黒が
+# 分母に入り、中黒の多い書き手ほど中黒の率が下がる。
+our $HIRA  = qr/[\x{3041}-\x{3096}\x{309D}-\x{309F}]/;
+# ー 々 はカタカナに入れる（指標「文字種」の分類に合わせる）
+our $KATA  = qr/[\x{30A1}-\x{30FA}\x{30FC}-\x{30FF}\x{FF66}-\x{FF9F}\x{3005}]/;
+our $KANJI = qr/[\x{2F00}-\x{2FDF}\x{3400}-\x{4DBF}\x{4E00}-\x{9FFF}\x{F900}-\x{FAFF}\x{20000}-\x{2FA1F}]/;
+our $JA    = qr/$HIRA|$KATA|$KANJI/;
+# 約物は閉じた列挙である。広く取ると「その他」が受け皿でなくなる。
+our $YAKU  = qr/[。、！？!?「」『』（）()・…〜～]/;
+# セルが地の文かを見るときは繰り返し記号と長音符を数に入れない。単独で語に
+# ならず、ー は比較表の「該当なし」に使われる。
+our $JA_PROSE = qr/[\x{3041}-\x{3096}\x{309F}\x{30A1}-\x{30FA}\x{30FF}\x{FF66}-\x{FF6F}\x{FF71}-\x{FF9F}]|$KANJI/;
 
 # ---- 取り込み --------------------------------------------------------
 sub prose {
@@ -38,7 +61,18 @@ sub prose {
     $l =~ s/`[^`]*`//g; $l =~ s/<[^>]+>//g;
     $l =~ s/\[([^\]]*)\]\([^)]*\)/$1/g;
     $l =~ s/^\s*[>#*\-]+\s*//; $l =~ s/^\s*\d+\.\s*//;
-    $l =~ s/^\s*\|\s*//; $l =~ s/\s*\|\s*$//;
+    # 表のセルは 1 つずつ別の node である。行のままにすると桁揃えの空白が
+    # 地の文に入り、書きぶりではなく整形を測る。
+    if ($l =~ /\|/) {
+      for my $cell (split /\|/, $l) {
+        $cell =~ s/^\s+//; $cell =~ s/\s+$//;
+        next if $cell =~ /^\s*$/;
+        # `o` `-` だけのセルは日本語の散文ではない。コードを外すのと同じ理由。
+        next if $drop_nonja_cells && $cell !~ $JA_PROSE;
+        push @o, $cell;
+      }
+      next;
+    }
     push @o, $l unless $l =~ /^\s*$/;
   }
   close $h; return \@o;
@@ -56,25 +90,42 @@ sub features {
         $bf{$i > 0 ? $c[$i-1] : '^'}++;
         $af{$i < $#c ? $c[$i+1] : '$'}++;
       }
-      $ty{ $c =~ /\p{Hiragana}/          ? 'hira'
-         : $c =~ /\p{Katakana}|\x{30FC}/ ? 'kata'
-         : $c =~ /\p{Han}|\x{3005}/      ? 'kanji'
-         : $c =~ /[A-Za-z]/              ? 'alpha'
-         : $c =~ /[0-9]/                 ? 'digit'
-         : $c =~ /[。、！？!?「」『』（）()・…〜～]/ ? 'punct'
-         : $c =~ /\s/                    ? 'space' : 'other' }++;
-      $ja++ if $c =~ /[\p{Hiragana}\p{Katakana}\p{Han}\x{30FC}\x{3005}]/;
+      # 仕様の 10 分類。最後の「その他」が真の受け皿になるよう、
+      # 上の 9 つはすべて閉じた範囲で書く。
+      $ty{ $c =~ $HIRA  ? 'hira'
+         : $c =~ $KATA  ? 'kata'
+         : $c =~ $KANJI ? 'kanji'
+         : $c =~ /[A-Za-z]/               ? 'alpha_h'
+         : $c =~ /[\x{FF21}-\x{FF3A}\x{FF41}-\x{FF5A}]/ ? 'alpha_f'
+         : $c =~ /[0-9]/                  ? 'digit_h'
+         : $c =~ /[\x{FF10}-\x{FF19}]/    ? 'digit_f'
+         : $c =~ $YAKU                    ? 'yaku'
+         : $c =~ /[ \t\x{3000}]/          ? 'space'
+         : 'other' }++;
+      $ja++ if $c =~ $JA;
     }
   }
-  return { bi => \%bi, before => \%bf, after => \%af, types => \%ty, ja => $ja || 0 };
+  # 日本語 3 種だけに絞った文字種。ラテン文字・記号の量は題材が強制するので、
+  # 「書き手の選択だけで分離するか」を切り分けるために別に持つ。
+  my %tyja = map { $_ => $ty{$_} || 0 } qw(hira kata kanji);
+  return { bi => \%bi, before => \%bf, after => \%af,
+           types => \%ty, types_ja => \%tyja, ja => $ja || 0 };
 }
 
 sub load {
   my @u;
   for my $p (sort glob shift) {
     my $f = features(prose($p));
-    next if $f->{ja} < 1000;
     (my $n = $p) =~ s{.*/}{};
+    # 日本語以外が主なら断る。分母から約物と空白を外す。
+    my $t = $f->{types};
+    my $den = sum(map { $t->{$_} || 0 } qw(hira kanji kata alpha_h alpha_f digit_h digit_f other)) || 1;
+    my $ja  = sum(map { $t->{$_} || 0 } qw(hira kanji kata)) || 0;
+    if ($ja / $den < 0.3) {
+      printf STDERR "断る %s（日本語 %.0f%%）\n", $n, 100 * $ja / $den;
+      next;
+    }
+    next if $f->{ja} < 1000;
     push @u, { name => $n, f => $f };
   }
   return @u;
@@ -82,19 +133,86 @@ sub load {
 
 my @person = load($pg);
 my @base   = load($bg);
+# 見る前に標本の長さの範囲を確かめる。揃っていなければ、離れていても
+# 重なっても信じられない——長さと連動する指標がすべて離れて見える。
+sub length_range_ok {
+  my ($p, $b) = @_;
+  my ($plo, $phi) = (min(map { $_->{f}{ja} } @$p), max(map { $_->{f}{ja} } @$p));
+  my ($blo, $bhi) = (min(map { $_->{f}{ja} } @$b), max(map { $_->{f}{ja} } @$b));
+  my $ov = min($phi, $bhi) - max($plo, $blo);
+  $ov = 0 if $ov < 0;
+  my ($pr, $br) = ($phi - $plo || 1, $bhi - $blo || 1);
+  printf "長さ  本人 %d〜%d  基準 %d〜%d  重なり %d（本人の %.0f%%、基準の %.0f%%）\n",
+         $plo, $phi, $blo, $bhi, $ov, 100 * $ov / $pr, 100 * $ov / $br;
+  return $ov / $pr >= 0.5 && $ov / $br >= 0.5;
+}
+
 die "本人が 6 単位に届かない\n" if @person < 6;
 die "基準が 4 単位に届かない\n" if @base < 4;
+
+# 文字種の内訳を見る。分類の定義を書き写さずに済ませるため、ここに置く。
+if ($types_only) {
+  my @k = qw(hira kanji kata alpha_h alpha_f digit_h digit_f yaku space other);
+  printf "%-34s %6s %s\n", '単位', '日本語', join ' ', map { sprintf '%6s', $_ } @k;
+  # 長さと連動していないかを見る。連動していれば、離れて見えるのは長さの差である。
+  sub pearson {
+    my ($x, $y) = @_;
+    my $n = @$x; return 0 if $n < 3;
+    my ($mx, $my) = (sum(@$x) / $n, sum(@$y) / $n);
+    my $c  = sum(map { ($x->[$_] - $mx) * ($y->[$_] - $my) } 0 .. $n - 1);
+    my $sx = sqrt(sum(map { ($_ - $mx) ** 2 } @$x));
+    my $sy = sqrt(sum(map { ($_ - $my) ** 2 } @$y));
+    return ($sx && $sy) ? $c / ($sx * $sy) : 0;
+  }
+  for my $set (['本人', \@person], ['基準', \@base]) {
+    printf "%s\n", '-' x 101;
+    my (@len, %col);
+    for my $u (@{$set->[1]}) {
+      my $t = $u->{f}{types};
+      my $tot = sum(values %$t) || 1;
+      printf "%-34s %6d %s\n", substr($u->{name}, 0, 33), $u->{f}{ja},
+             join ' ', map { sprintf '%5.1f%%', 100 * ($t->{$_} || 0) / $tot } @k;
+      push @len, $u->{f}{ja};
+      push @{$col{$_}}, 100 * ($t->{$_} || 0) / $tot for @k;
+    }
+    printf "%-34s %6s %s\n", "  $set->[0]：長さとの相関", '',
+           join ' ', map { sprintf '%+6.2f', pearson(\@len, $col{$_}) } @k;
+  }
+  exit 0;
+}
+
+# 読点の打ち方を見る。指摘を当て推量でなく実測から作るために置いた。
+if ($commas_only) {
+  for my $set (['本人', \@person], ['基準', \@base]) {
+    my (%bf, %af, $ja, $cm);
+    for my $u (@{$set->[1]}) {
+      $ja += $u->{f}{ja};
+      $bf{$_} += $u->{f}{before}{$_} for keys %{$u->{f}{before}};
+      $af{$_} += $u->{f}{after}{$_}  for keys %{$u->{f}{after}};
+    }
+    $cm = sum(values %bf) || 0;
+    printf "%s  読点 %d 個 / 日本語 %d 字 = 1,000 字あたり %.1f\n",
+           $set->[0], $cm, $ja, $ja ? 1000 * $cm / $ja : 0;
+    for my $pair (['直前', \%bf], ['直後', \%af]) {
+      my @k = sort { $pair->[1]{$b} <=> $pair->[1]{$a} || $a cmp $b } keys %{$pair->[1]};
+      printf "  %s  %s\n", $pair->[0],
+             join ' ', map { sprintf '%s(%.0f%%)', $_, 100 * $pair->[1]{$_} / ($cm || 1) }
+                       @k[0 .. min(7, $#k)];
+    }
+  }
+  exit 0;
+}
 
 my @systems = grep { !$drop{$_->{name}} } (
   { name => '文字bigram', key => 'bi',     n => 500 },
   { name => '読点前',      key => 'before', n => 50  },
   { name => '読点後',      key => 'after',  n => 50  },
-  { name => '文字種',      key => 'types',  n => 10  },
+  { name => '文字種',      key => ($types_ja ? 'types_ja' : 'types'), n => 10 },
 );
 
 # ---- 語彙と z 得点は割る前に 1 度だけ --------------------------------
 my @all = (@person, @base);
-my %vec;
+my (%vec, %frozen);
 for my $s (@systems) {
   my %tot;
   for my $u (@all) { $tot{$_} += $u->{f}{$s->{key}}{$_} for keys %{$u->{f}{$s->{key}}} }
@@ -111,11 +229,23 @@ for my $s (@systems) {
     my $m = sum(@col) / @col;
     push @mu, $m; push @sd, sqrt(sum(map { ($_-$m)**2 } @col) / @col);
   }
-  $vec{$s->{name}}{$all[$_]{name}} =
-    [ map { $sd[$_] > 0 ? ($raw[0][$_]) : 0 } 0 .. -1 ] for ();   # placeholder
   for my $i (0 .. $#all) {
     $vec{$s->{name}}{$all[$i]{name}} =
       [ map { $sd[$_] > 0 ? ($raw[$i][$_] - $mu[$_]) / $sd[$_] : 0 } 0 .. $d - 1 ];
+  }
+  # 検める文は、この語彙と z 得点に投影する。作り直さない。
+  $frozen{$s->{name}} = { vocab => $vocab, mu => \@mu, sd => \@sd, key => $s->{key} };
+}
+
+# 固定した語彙・z 得点へ投影する。
+sub project {
+  my ($u) = @_;
+  for my $s (@systems) {
+    my $f = $frozen{$s->{name}};
+    my $t = sum(values %{$u->{f}{$f->{key}}}) || 1;
+    my @r = map { ($u->{f}{$f->{key}}{$_} // 0) / $t } @{$f->{vocab}};
+    $vec{$s->{name}}{$u->{name}} =
+      [ map { $f->{sd}[$_] > 0 ? ($r[$_] - $f->{mu}[$_]) / $f->{sd}[$_] : 0 } 0 .. $#r ];
   }
 }
 
@@ -174,6 +304,10 @@ my @bfloor   = @base[$bsplit .. $#base];
 
 printf "本人 %d（相手集合 5 / 天井の点 %d）  基準 %d（較正 %d / 床の点 %d）\n",
        scalar @person, scalar @ceilpts, scalar @base, scalar @bcal, scalar @bfloor;
+unless (length_range_ok(\@person, \@base)) {
+  print "\n<< 長さの範囲が半分も重ならない。目盛りを作らない >>\n";
+  exit 1;
+}
 printf "系統 %s%s\n", join('・', map { $_->{name} } @systems),
        defined $rotate ? "  回転 $rotate" : '';
 
@@ -242,4 +376,38 @@ if ($clo > $fhi) {
   printf "重なった。重なり %.3f（天井の %.0f%%、床の %.0f%%）%s\n",
          $ov, $ov/$cs*100, $ov/$fs*100,
          (max($ov/$cs, $ov/$fs) > 0.5) ? '  ← 5 割超。目盛りを作らない' : '';
+}
+
+# ---- 検める ----------------------------------------------------------
+# 目盛りは上で固定した。ここから先は測るだけで、当てはめ直さない。
+if (@check) {
+  printf "\n%-34s %-9s %s\n", '検める文', '照合値', '位置';
+  printf "%s\n", '-' x 60;
+  for my $g (@check) {
+    for my $p (sort glob $g) {
+      my $f = features(prose($p));
+      (my $n = $p) =~ s{.*/}{};
+      my $u = { name => "検:$n", f => $f };
+      project($u);
+      my $v = matching_value($u);
+      my $where = $v >= $clo ? '天井の中'
+                : $v <= $fhi ? '床の側'
+                :              '帯の中';
+      # 系統ごとの対数尤度比も出す。合算値が動かないとき、
+      # 系統が動いていないのか重みが小さいのかを分けるため。
+      my (@per, @dist);
+      for my $s (@systems) {
+        my @d = map { cosd($vec{$s->{name}}{$u->{name}}, $vec{$s->{name}}{$_->{name}}) } @partners;
+        push @dist, median(@d);
+        push @per, median(map { apply_logistic($sysw{$s->{name}}, [$_]) } @d);
+      }
+      printf "%-34s %+9.3f %s\n", substr($n, 0, 33), $v, $where;
+      printf "%-34s %s\n", '  距離',
+             join '  ', map { sprintf '%s %.4f', $systems[$_]{name}, $dist[$_] } 0 .. $#systems;
+      printf "%-34s %s\n", '  尤度比',
+             join '  ', map { sprintf '%s %+.3f', $systems[$_]{name}, $per[$_] } 0 .. $#systems;
+    }
+  }
+  printf "%s\n", '-' x 60;
+  printf "床の上端 %+.3f   天井の下端 %+.3f\n", $fhi, $clo;
 }
