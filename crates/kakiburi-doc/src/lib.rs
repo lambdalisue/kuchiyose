@@ -66,21 +66,45 @@ impl Document {
         out
     }
 
-    /// 項目。箇条書きまたは番号リストの直接の子ひとつ。
+    /// 項目。<strong>最も外側のリストの直接の子ひとつ。</strong>
     ///
     /// 入れ子の子は数えない。数えると、深く入れ子にする書き手ほど項目が多いこと
     /// になり、入れ子の癖と項目数の癖が混ざる。
+    ///
+    /// <strong>「入れ子」は文書全体で見る。</strong> ほかのリストの中に入っているリストは、
+    /// それ自体が数えられないだけでなく、その子も数えない。「各リストの直接の
+    /// 子」と読むと入れ子の子が結局数に入り、上の理由がそのまま戻る。
     ///
     /// 箇条書きと番号リストで単位を分けない。どちらを選ぶかは別の指標が測る。
     #[must_use]
     pub fn items(&self) -> Vec<&Node> {
         let mut out = Vec::new();
-        walk(&self.nodes, &mut |n| {
-            if matches!(n.kind, Kind::Bullet | Kind::Ordered) {
-                out.extend(n.children.iter().filter(|c| c.kind == Kind::Item));
-            }
-        });
+        for n in &self.nodes {
+            collect_items(n, false, &mut out);
+        }
         out
+    }
+
+    /// 定型を落とした写しを返す。<strong>原本は変えない。</strong>
+    ///
+    /// 指定した文字列を <strong>どこかに含む[文](sentence)</strong> を、丸ごと落とす。文字列だけ
+    /// 抜くと残りが繋がって存在しない文ができ、文の数も文末も狂う。node ごと
+    /// 落とすと構造の指標が変わる——<strong>落とすのは中身であって node ではない。</strong>
+    ///
+    /// <strong>判定は部分一致である。</strong>「お世話になっております」は挨拶の一部として文の頭に
+    /// 付くので、文全体との一致を求めれば 1 つも落ちない。<strong>照合そのものは 1 文字ずつの
+    /// 完全一致で、字種も字幅も揃えない</strong>——半角で書いた挨拶と全角で書いた挨拶は、
+    /// 書き手にとって別の選択である。
+    ///
+    /// <strong>空になった node は残す。</strong> 落とせば構造の指標が動く。
+    #[must_use]
+    pub fn without_boilerplate(&self, patterns: &[String]) -> Self {
+        if patterns.is_empty() {
+            return self.clone();
+        }
+        Self {
+            nodes: self.nodes.iter().map(|n| strip_node(n, patterns)).collect(),
+        }
     }
 
     /// 最も浅い見出しを深さ 1 とした相対の深さ。
@@ -149,6 +173,34 @@ impl Document {
     }
 }
 
+/// node 1 つから定型を落とす。子にも掛ける。
+fn strip_node(n: &Node, patterns: &[String]) -> Node {
+    let mut out = n.clone();
+    out.text = sentence::sentences(&n.text)
+        .into_iter()
+        .filter(|s| !patterns.iter().any(|p| s.contains(p.as_str())))
+        .collect::<Vec<_>>()
+        .concat();
+    out.children = n.children.iter().map(|c| strip_node(c, patterns)).collect();
+    out
+}
+
+/// 最も外側のリストの直接の子だけを集める。
+///
+/// `inside` は「すでにリストの中にいるか」。中に入ったら、そこから下のリストは
+/// 入れ子なので数えない。<strong>リスト以外の node を挟んでも入れ子のままである</strong>——
+/// 引用の中の箇条書きも、外側のリストの下にあるなら入れ子である。
+fn collect_items<'a>(n: &'a Node, inside: bool, out: &mut Vec<&'a Node>) {
+    let is_list = matches!(n.kind, Kind::Bullet | Kind::Ordered);
+    if is_list && !inside {
+        out.extend(n.children.iter().filter(|c| c.kind == Kind::Item));
+    }
+    let inside = inside || is_list;
+    for c in &n.children {
+        collect_items(c, inside, out);
+    }
+}
+
 fn walk<'a>(nodes: &'a [Node], f: &mut impl FnMut(&'a Node)) {
     for n in nodes {
         f(n);
@@ -179,13 +231,21 @@ mod tests {
 
     #[test]
     fn 項目は入れ子の子を数えない() {
-        let inner = Node::branch(Kind::Bullet, vec![Node::leaf(Kind::Item, "内側")]);
-        let mut outer_item = Node::leaf(Kind::Item, "外側");
+        let inner = Node::branch(
+            Kind::Bullet,
+            vec![
+                Node::leaf(Kind::Item, "内側 1"),
+                Node::leaf(Kind::Item, "内側 2"),
+            ],
+        );
+        let mut outer_item = Node::leaf(Kind::Item, "外側 1");
         outer_item.children.push(inner);
-        let doc = Document::new(vec![Node::branch(Kind::Bullet, vec![outer_item])]);
-        // 直接の子は「外側」だけ。内側の箇条書きは別の親を持つので、
-        // その親の直接の子として 1 つ数える——合計 2。入れ子を親の子として
-        // 二重に数えないことを確かめる。
+        let doc = Document::new(vec![Node::branch(
+            Kind::Bullet,
+            vec![outer_item, Node::leaf(Kind::Item, "外側 2")],
+        )]);
+        // 最も外側のリストの直接の子だけ——「外側 1」「外側 2」の 2 つ。
+        // 内側のリストは入れ子なので、それ自身も子も数えない。
         let items = doc.items();
         assert_eq!(
             items.len(),
@@ -193,6 +253,30 @@ mod tests {
             "{:?}",
             items.iter().map(|i| &i.text).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn 入れ子は_node_を挟んでも入れ子である() {
+        // 引用を挟んでも、外側のリストの下にあるなら入れ子である。
+        let inner = Node::branch(Kind::Bullet, vec![Node::leaf(Kind::Item, "内側")]);
+        let mut quote = Node::leaf(Kind::Quote, "引用");
+        quote.children.push(inner);
+        let mut outer_item = Node::leaf(Kind::Item, "外側");
+        outer_item.children.push(quote);
+        let doc = Document::new(vec![Node::branch(Kind::Bullet, vec![outer_item])]);
+        assert_eq!(doc.items().len(), 1);
+    }
+
+    #[test]
+    fn 並んだリストはどちらも最も外側である() {
+        let doc = Document::new(vec![
+            Node::branch(Kind::Bullet, vec![Node::leaf(Kind::Item, "a")]),
+            Node::branch(
+                Kind::Ordered,
+                vec![Node::leaf(Kind::Item, "b"), Node::leaf(Kind::Item, "c")],
+            ),
+        ]);
+        assert_eq!(doc.items().len(), 3);
     }
 
     #[test]
@@ -267,5 +351,45 @@ mod tests {
     fn 分母は文書全体で_1_つ() {
         let doc = Document::new(vec![para("あいう"), Node::heading(1, "えお")]);
         assert_eq!(doc.japanese_chars(), 5);
+    }
+
+    #[test]
+    fn 定型は文ごと落とす() {
+        // 文字列だけ抜くと、残りが繋がって存在しない文ができる。
+        let doc = Document::new(vec![para("お世話になっております。本題である。")]);
+        let s = doc.without_boilerplate(&["お世話になっており".to_owned()]);
+        assert_eq!(s.nodes[0].text, "本題である。");
+    }
+
+    #[test]
+    fn 定型を落としても_node_は残す() {
+        // 落とせば構造の指標が動く。
+        let doc = Document::new(vec![para("挨拶である。"), para("本題である。")]);
+        let s = doc.without_boilerplate(&["挨拶".to_owned()]);
+        assert_eq!(s.nodes.len(), 2);
+        assert_eq!(s.nodes[0].text, "");
+        assert_eq!(s.paragraphs().len(), 2);
+    }
+
+    #[test]
+    fn 定型の照合は字幅を揃えない() {
+        // 半角で書いた挨拶と全角で書いた挨拶は、書き手にとって別の選択である。
+        let doc = Document::new(vec![para("これは Rust である。")]);
+        let s = doc.without_boilerplate(&["Ｒｕｓｔ".to_owned()]);
+        assert_eq!(s.nodes[0].text, "これは Rust である。");
+    }
+
+    #[test]
+    fn 定型は子にも掛ける() {
+        let inner = Node::leaf(Kind::Item, "挨拶である。");
+        let doc = Document::new(vec![Node::branch(Kind::Bullet, vec![inner])]);
+        let s = doc.without_boilerplate(&["挨拶".to_owned()]);
+        assert_eq!(s.nodes[0].children[0].text, "");
+    }
+
+    #[test]
+    fn 指定が無ければそのままである() {
+        let doc = Document::new(vec![para("本題である。")]);
+        assert_eq!(doc.without_boilerplate(&[]), doc);
     }
 }

@@ -253,6 +253,15 @@ impl Builder {
                         text.push('\n');
                         continue;
                     }
+                    // <strong>node を作らず、中身を親へ透かす。</strong> 行と区分は node ではない。
+                    // `<pre>` の直下の `<code>` も同じ——そこはコードブロックの一部で
+                    // あって、インラインコードではない。
+                    if markup::is_transparent(&name) || (name == "code" && until == Some("pre")) {
+                        let inner = self.children(Some(&name))?;
+                        text.push_str(&inner.text);
+                        nodes.extend(inner.nodes);
+                        continue;
+                    }
                     let Some(kind) = markup::html_kind(&name) else {
                         return Err(Refusal::UnknownMarkup {
                             markup: format!("<{name}>"),
@@ -363,6 +372,57 @@ mod tests {
     fn 対応表に無い要素は断る() {
         let e = parse("<blink>点滅</blink>").unwrap_err();
         assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    /// 木を平らにして種類だけ並べる。入れ子まで見る。
+    fn all_kinds(doc: &Document) -> Vec<Kind> {
+        fn walk(ns: &[Node], out: &mut Vec<Kind>) {
+            for n in ns {
+                out.push(n.kind);
+                walk(&n.children, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(&doc.nodes, &mut out);
+        out
+    }
+
+    #[test]
+    fn 表は_1_つの表_node_になる() {
+        // 行や区分まで表に数えると、ふつうの表 1 つで密度が何倍にもなる。
+        let d = parse("<table><thead><tr><th>見出し</th></tr></thead><tbody><tr><td>本文</td></tr></tbody></table>")
+            .unwrap();
+        let ks = all_kinds(&d);
+        assert_eq!(
+            ks.iter().filter(|&&k| k == Kind::Table).count(),
+            1,
+            "{ks:?}"
+        );
+        assert_eq!(ks.iter().filter(|&&k| k == Kind::Cell).count(), 2, "{ks:?}");
+    }
+
+    #[test]
+    fn pre_だけがコードブロックである() {
+        let d = parse("<pre><code>let x = 1;</code></pre>").unwrap();
+        let ks = all_kinds(&d);
+        assert_eq!(ks, vec![Kind::CodeBlock], "{ks:?}");
+        assert_eq!(d.nodes[0].text, "let x = 1;", "中身は畳んで持つ");
+    }
+
+    #[test]
+    fn 段落の中の_code_はインラインコードである() {
+        // コードブロックにすると、インラインコードが永久に 0 になる。
+        let d = parse("<p>設定は <code>--force</code> である。</p>").unwrap();
+        let ks = all_kinds(&d);
+        assert_eq!(ks, vec![Kind::Paragraph, Kind::InlineCode], "{ks:?}");
+    }
+
+    #[test]
+    fn インラインコードの中身は地の文に入らない() {
+        let d = parse("<p>設定は <code>--force</code> である。</p>").unwrap();
+        let p = d.prose();
+        assert_eq!(p.len(), 1);
+        assert!(!p[0].text.contains("--force"), "{:?}", p[0].text);
     }
 
     #[test]

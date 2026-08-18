@@ -110,6 +110,13 @@ pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
             .ok_or_else(|| missing("manifest.json", "version"))? as i64,
     )
     .unwrap_or(0);
+    // <strong>世代は欠けていてもよい。</strong> 世代を持たない頃のカセットは 0 から数え直す
+    // ——止めるほどのことではない。次に書いた時点で 1 になる。
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let generation = manifest
+        .get("generation")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0) as u64;
     let scene = manifest
         .get("scene")
         .and_then(Value::as_str)
@@ -161,8 +168,16 @@ pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
             _ => continue,
         };
         let v = read_json(&e, &name)?;
+        let id = file.trim_end_matches(".json").to_owned();
+        // <strong>`unit` が無ければ `id` と同じ。</strong> 束ねる前のカセットは、1 本が 1 単位である。
+        let unit = v
+            .get("unit")
+            .and_then(Value::as_str)
+            .unwrap_or(&id)
+            .to_owned();
         units.push(Unit {
-            name: file.trim_end_matches(".json").to_owned(),
+            name: id,
+            unit,
             role,
             document: read_document(&v)?,
         });
@@ -179,6 +194,7 @@ pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
 
     Ok(Cassette {
         version,
+        generation,
         scene: scene.clone(),
         fingerprint: read_fingerprint(&manifest)?,
         provisional,
@@ -211,8 +227,11 @@ fn derived_files(d: &Derived) -> Vec<(&'static str, String)> {
 }
 
 fn manifest(c: &Cassette) -> Value {
+    #[allow(clippy::cast_precision_loss)]
+    let generation = c.generation as f64;
     Value::obj([
         ("version".into(), Value::Number(f64::from(c.version))),
+        ("generation".into(), Value::Number(generation)),
         ("scene".into(), Value::s(&c.scene)),
         (
             "provisional".into(),
@@ -317,7 +336,9 @@ fn baseline_json(b: &Baseline) -> Value {
 
 fn unit_json(u: &Unit) -> Value {
     Value::obj([
-        ("unit".into(), Value::s(&u.name)),
+        ("id".into(), Value::s(&u.name)),
+        // <strong>測る単位を別に持つ。</strong> 束ねた文書は同じ `unit` を共有する。
+        ("unit".into(), Value::s(&u.unit)),
         ("role".into(), Value::s(u.role.dir())),
         (
             "nodes".into(),
@@ -610,6 +631,7 @@ mod tests {
 
         Cassette {
             version: 1,
+            generation: 3,
             scene: "技術記事".into(),
             fingerprint: Fingerprint::build(Inputs {
                 metric_definitions: "51 本".into(),
@@ -653,11 +675,13 @@ mod tests {
             corpus: Corpus::new(vec![
                 Unit {
                     name: "p01".into(),
+                    unit: "p01".into(),
                     role: Role::Person,
                     document: Document::new(vec![Node::heading(1, "題"), para, table]),
                 },
                 Unit {
                     name: "b01".into(),
+                    unit: "b01".into(),
                     role: Role::BaselineOutput,
                     document: Document::new(vec![Node::leaf(Kind::Paragraph, "基準である。")]),
                 },
@@ -762,6 +786,7 @@ mod tests {
         let c = Cassette {
             corpus: Corpus::new(vec![Unit {
                 name: "p01".into(),
+                unit: "p01".into(),
                 role: Role::Person,
                 document: Document::new(vec![Node::heading(3, "項")]),
             }]),

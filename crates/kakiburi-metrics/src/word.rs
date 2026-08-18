@@ -90,6 +90,26 @@ impl Position {
     }
 }
 
+/// 接続詞直後の読点が展開する軸の名前。<strong>12 語彙素 × 2 位置 = 24 本。</strong>
+///
+/// <strong>解析器が無くても名前は決まる。</strong> 一覧が定義の一部なので、コーパスから選ばない
+/// ——選べば書き手ごとに軸の名前が変わり、
+/// [名前は 1 度しか書かない](../../../docs/spec/100-metrics.md#名前は-1-度しか書かない)が
+/// 守れなくなる。
+///
+/// 登録簿は<strong>展開後の軸</strong>を持つ。親の名前だけを置くと、値の側にある 24 本と
+/// 一致しなくなる。
+#[must_use]
+pub fn conjunction_comma_names() -> Vec<String> {
+    let mut out = Vec::with_capacity(CONJUNCTIONS.len() * 2);
+    for lemma in CONJUNCTIONS {
+        for pos in [Position::Head, Position::Middle] {
+            out.push(format!("接続詞直後の読点・{lemma}・{}", pos.name()));
+        }
+    }
+    out
+}
+
 /// 接続詞直後の読点。<strong>語彙素 × 位置ごとのスカラー。</strong>
 ///
 /// 名前は「接続詞直後の読点・&lt;語彙素&gt;・&lt;文頭|文中&gt;」。12 × 2 = 24 本になる。
@@ -133,11 +153,16 @@ pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Measured> {
     let mut out = BTreeMap::new();
     for ((lemma, pos), (hit, total)) in tally {
         let name = format!("接続詞直後の読点・{lemma}・{}", pos.name());
-        let m = if total < 10 {
-            Measured::BelowFloor
-        } else {
-            #[allow(clippy::cast_precision_loss)]
-            Measured::Value(hit as f64 / total as f64)
+        // <strong>1 度も現れないのと、現れたが足りないのを分ける。</strong> 前者は素材を足しても
+        // 直るとは限らない——その語彙素をその位置で使わない書き手である。
+        let m = match total {
+            0 => Measured::NoDenominator,
+            n if n < 10 => Measured::BelowFloor,
+            _ =>
+            {
+                #[allow(clippy::cast_precision_loss)]
+                Measured::Value(hit as f64 / total as f64)
+            }
         };
         out.insert(name, m);
     }
@@ -282,8 +307,8 @@ mod tests {
         assert!(m["接続詞直後の読点・しかし・文頭"].is_measured());
         assert_eq!(
             m["接続詞直後の読点・しかし・文中"],
-            Measured::BelowFloor,
-            "文中側は測れない"
+            Measured::NoDenominator,
+            "文中側は 1 度も現れないので分母が 0"
         );
     }
 

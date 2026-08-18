@@ -151,6 +151,16 @@ impl HumannessScale {
         if per_dim.len() != dims.len() {
             return None;
         }
+        // <strong>本数だけでは足りない。</strong> 傾きが 0 本の重みは、どんな入力でも切片だけを
+        // 返す——<strong>壊れた目盛りが「いつも同じ値」を出す判定器として正常に動く。</strong>
+        //
+        // 次元ごとは値 1 つを受けるので 1 次元、合算は指標の数だけ受ける。
+        if per_dim.iter().any(|w| w.slopes().len() != 1) {
+            return None;
+        }
+        if fusion.slopes().len() != Metric::ALL.len() {
+            return None;
+        }
         Some(Self {
             dims,
             per_dim,
@@ -261,6 +271,73 @@ mod tests {
         assert!(h > m, "人のほうが大きい: {h} vs {m}");
     }
 
+    /// 実測に近い値。<strong>次元の尺度が 3 桁ちがう。</strong>
+    ///
+    /// 繰り返しの 8 次元と異なり語率は 0.003〜0.4、語のエントロピーは 7 前後、
+    /// 圧縮率は 6 前後である。
+    fn wide_row(human: bool, i: usize) -> Vec<f64> {
+        // 並びは 圧縮率 1 / 繰り返し 8 / 異なり語率 1 / エントロピー 2。
+        //
+        // <strong>繰り返しと異なり語率は両側が重なる。</strong> 実測がそうだった——
+        // 3gram の最多率は人 0.0043〜0.0144、機械 0.0048〜0.0257 で、
+        // 異なり語率は人 0.259〜0.362、機械 0.250〜0.340 である。
+        let rep = if human {
+            [0.0043, 0.0060, 0.0080, 0.0110, 0.0144][i]
+        } else {
+            [0.0048, 0.0090, 0.0150, 0.0210, 0.0257][i]
+        };
+        let rich = if human {
+            [0.259, 0.280, 0.310, 0.340, 0.362][i]
+        } else {
+            [0.250, 0.270, 0.300, 0.320, 0.340][i]
+        };
+        // <strong>語のエントロピーだけが分ける。値は 7 前後で、繰り返しの 3 桁上である。</strong>
+        // 機械の側に 1 本だけ人の側へ食い込む値がある——AI に書かせた記事が
+        // 人並みに散ることは実際に起きる。
+        let ent = if human {
+            [7.23, 7.45, 7.60, 7.80, 7.96][i]
+        } else {
+            [6.99, 7.02, 7.05, 7.08, 7.91][i]
+        };
+        let mut row = vec![if human { 6.40 } else { 6.35 } + i as f64 * 0.02];
+        row.extend(std::iter::repeat_n(rep, 8));
+        row.push(rich);
+        row.push(ent);
+        row.push(ent - 2.0);
+        row
+    }
+
+    #[test]
+    fn 尺度が_3_桁ちがっても人のほうが大きく出る() {
+        // <strong>標準化しないと、値の大きい 1 次元で符号が逆転して合算を支配する。</strong>
+        // 実測では人らしさ値がどの文書でも同じ 1 点に潰れ、しかも向きが逆だった
+        // ——天井と床が重なるので、素材を何に替えても止まる。
+        let human: Vec<Vec<f64>> = (0..5).map(|i| wide_row(true, i)).collect();
+        let machine: Vec<Vec<f64>> = (0..5).map(|i| wide_row(false, i)).collect();
+        let s = HumannessScale::fit(&human, &machine);
+
+        let hs: Vec<f64> = human.iter().map(|r| s.value(&named(r)).unwrap()).collect();
+        let ms: Vec<f64> = machine
+            .iter()
+            .map(|r| s.value(&named(r)).unwrap())
+            .collect();
+        let lo = hs.iter().copied().fold(f64::INFINITY, f64::min);
+        let hi = ms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        assert!(lo > hi, "人の側が丸ごと上に来る: 人 {hs:?} / 機械 {ms:?}");
+    }
+
+    #[test]
+    fn 人らしさ値が_1_点に潰れない() {
+        // 潰れれば天井と床の広がりが 0 になり、帯が作れない。
+        let human: Vec<Vec<f64>> = (0..5).map(|i| wide_row(true, i)).collect();
+        let machine: Vec<Vec<f64>> = (0..5).map(|i| wide_row(false, i)).collect();
+        let s = HumannessScale::fit(&human, &machine);
+        let hs: Vec<f64> = human.iter().map(|r| s.value(&named(r)).unwrap()).collect();
+        let spread = hs.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+            - hs.iter().copied().fold(f64::INFINITY, f64::min);
+        assert!(spread > 1e-3, "広がりが 0 では端が決まらない: {hs:?}");
+    }
+
     #[test]
     fn 次元が_1_つでも欠けたら出さない() {
         // 欠けた分を抜いて合算しない。
@@ -301,6 +378,19 @@ mod tests {
         let s = scale();
         assert!(HumannessScale::restore(s.per_dim().to_vec(), s.fusion().clone()).is_some());
         assert!(HumannessScale::restore(vec![], s.fusion().clone()).is_none());
+
+        // <strong>本数だけでは足りない。</strong> 傾きが 0 本の重みは、どんな入力でも切片だけを
+        // 返す——壊れた目盛りが「いつも同じ値」を出す判定器として正常に動く。
+        let empty = Weights::restore(0.0, vec![], vec![], vec![]).expect("組める");
+        assert!(
+            HumannessScale::restore(vec![empty.clone(); dims().len()], s.fusion().clone())
+                .is_none(),
+            "次元ごとの傾きが空でも通っている"
+        );
+        assert!(
+            HumannessScale::restore(s.per_dim().to_vec(), empty).is_none(),
+            "合算の傾きが空でも通っている"
+        );
     }
 
     #[test]

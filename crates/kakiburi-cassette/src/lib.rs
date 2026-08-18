@@ -10,6 +10,7 @@
 
 pub mod fingerprint;
 pub mod json;
+pub mod save;
 pub mod store;
 pub mod zip;
 
@@ -89,8 +90,17 @@ impl Corpus {
 /// 1 単位。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Unit {
-    /// 単位の名前。<strong>ファイル名ではない</strong>——束ねた単位では食い違う。
+    /// 取り込んだ 1 本の名前。<strong>ファイル 1 つに 1 つ。</strong>
+    ///
+    /// カセット全体で一意である。<strong>役を跨いでも重複を許さない</strong>——役で名前空間を
+    /// 分けると、本人の `Rust入門` と基準の `Rust入門` が別物として通る。
     pub name: String,
+    /// 測る 1 単位の名前。<strong>束ねなければ [`name`](Self::name) と同じ。</strong>
+    ///
+    /// 1 文書では指標が意味を持たないほど短いものは、何本かをまとめて 1 単位にする。
+    /// <strong>[10 単位の下限](../../../docs/spec/200-extract.md#対が何本あれば信じるか)は単位で
+    /// 数える</strong>——ファイルで数えれば、束ねた分だけ実際より多く見える。
+    pub unit: String,
     /// 役。
     pub role: Role,
     /// 正規形。
@@ -139,6 +149,15 @@ impl Derived {
 pub struct Cassette {
     /// 版。
     pub version: u32,
+    /// 世代。<strong>書くたびに 1 つ増える。</strong>
+    ///
+    /// 同時に 2 つが書くと、片方の変更が正常終了のまま消える。<strong>落ちるより悪い</strong>
+    /// ——誰も気付かない。読んだときの世代と、置き換える直前の世代が同じことを
+    /// 確かめて防ぐ。
+    ///
+    /// <strong>[指紋](Fingerprint)では検出できない。</strong> 指紋は測った条件を表すもので、
+    /// 本文を差し替えても条件が同じなら変わらない。
+    pub generation: u64,
     /// 場面。`decided` の写しではなく、`manifest` に出す値。
     pub scene: String,
     /// 指紋。
@@ -174,6 +193,33 @@ impl Cassette {
         out
     }
 
+    /// 測る単位。<strong>束ねたものは 1 つにまとめて返す。</strong>
+    ///
+    /// <strong>文書の境界は node の境界として残す。</strong> 連結して 1 本の地の文にしない——
+    /// [node を跨がない](../../../docs/spec/020-document.md#地の文は-1-本の文字列ではない)
+    /// はずの bigram と文が、文書を跨いで繋がる。
+    ///
+    /// <strong>束の中の並びは `id` の昇順に固定する。</strong> 並びが変われば node の並びが変わり、
+    /// 決定性が壊れる。
+    #[must_use]
+    pub fn bundles(&self, role: Role) -> Vec<(String, Document)> {
+        let mut by_unit: BTreeMap<&str, Vec<&Unit>> = BTreeMap::new();
+        for u in self.units(role) {
+            by_unit.entry(u.unit.as_str()).or_default().push(u);
+        }
+        by_unit
+            .into_iter()
+            .map(|(unit, mut members)| {
+                members.sort_by(|a, b| a.name.cmp(&b.name));
+                let nodes = members
+                    .iter()
+                    .flat_map(|u| u.document.nodes.iter().cloned())
+                    .collect();
+                (unit.to_owned(), Document::new(nodes))
+            })
+            .collect()
+    }
+
     /// 前に出す指標から外すか。
     ///
     /// <strong>書いていなければ「未知」で、前に出す指標に入る。</strong> 動かないと分かるまでは使う。
@@ -195,6 +241,7 @@ mod tests {
     fn cassette() -> Cassette {
         Cassette {
             version: 1,
+            generation: 0,
             scene: "技術記事".into(),
             fingerprint: Fingerprint::build(Inputs {
                 metric_definitions: "51 本".into(),
@@ -234,16 +281,19 @@ mod tests {
             corpus: Corpus::new(vec![
                 Unit {
                     name: "p02".into(),
+                    unit: "p02".into(),
                     role: Role::Person,
                     document: document("本人の文書である。"),
                 },
                 Unit {
                     name: "p01".into(),
+                    unit: "p01".into(),
                     role: Role::Person,
                     document: document("もう 1 本の本人の文書。"),
                 },
                 Unit {
                     name: "b01".into(),
+                    unit: "b01".into(),
                     role: Role::BaselineOutput,
                     document: document("基準の文書である。"),
                 },

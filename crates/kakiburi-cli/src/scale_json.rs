@@ -36,18 +36,31 @@ fn read_strings(v: Option<&Value>) -> Option<Vec<String>> {
     )
 }
 
+/// 重み。<strong>平均と標準偏差も書く。</strong>
+///
+/// 落とせば、検めが標準化なしの値に標準化ずみの重みを当てることになり、
+/// <strong>値だけが静かに変わる</strong>。エラーにはならない。
 fn weights(w: &Weights) -> Value {
     Value::obj([
         ("切片".to_owned(), Value::Number(w.intercept())),
         ("傾き".to_owned(), numbers(w.slopes())),
+        ("平均".to_owned(), numbers(w.centers())),
+        ("標準偏差".to_owned(), numbers(w.scales())),
     ])
 }
 
 fn read_weights(v: &Value) -> Option<Weights> {
-    Some(Weights::restore(
+    // <strong>欠けていたら読まない。</strong> 平均 0・標準偏差 1 で補うと、標準化して当てはめた
+    // 重みを標準化なしの値に当てることになる。
+    //
+    // <strong>欄があることだけでは足りない。</strong> 長さが揃わなければ足りない次元だけが
+    // 埋められるので、`restore` が中身まで検める。
+    Weights::restore(
         v.get("切片")?.as_f64()?,
         read_numbers(v.get("傾き"))?,
-    ))
+        read_numbers(v.get("平均"))?,
+        read_numbers(v.get("標準偏差"))?,
+    )
 }
 
 fn frozen(f: &Frozen) -> Value {
@@ -200,6 +213,33 @@ mod tests {
         let text = write(&fixture::scale());
         let broken = text.replace("\"帯\"", "\"おび\"");
         assert!(read(&broken).is_none());
+    }
+
+    #[test]
+    fn 標準化が半端な重みは組み立てない() {
+        // <strong>足りない次元は「平均 0・標準偏差 1」で埋まる。</strong> つまりその次元だけ
+        // 標準化が外れた値が、エラーにならずに出る——仕様が名指しで禁じている経路。
+        let s = fixture::scale();
+        let text = write(&s);
+        // 平均の配列を 1 つ短くする。
+        let broken = text.replacen("\"平均\":[", "\"平均\":[0,", 1);
+        assert!(read(&broken).is_none(), "長さが揃わなければ読まない");
+    }
+
+    #[test]
+    fn 標準偏差_0_の重みは組み立てない() {
+        // 割れば無限大か NaN になり、そこから先の比較がすべて壊れる。
+        // 広がり 0 の次元は 1 として持つのが仕様なので、0 は壊れている印である。
+        let bad = kakiburi_scale::calibrate::Weights::restore(
+            0.0,
+            vec![1.0, 1.0],
+            vec![0.0, 0.0],
+            vec![1.0, 0.0],
+        );
+        assert!(bad.is_none());
+        let nan =
+            kakiburi_scale::calibrate::Weights::restore(f64::NAN, vec![1.0], vec![0.0], vec![1.0]);
+        assert!(nan.is_none(), "有限でない切片も断る");
     }
 
     #[test]

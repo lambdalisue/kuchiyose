@@ -38,6 +38,29 @@ impl FromDefinitions {
         self.defs.len()
     }
 
+    /// 指紋に入れる、定義の集合そのもの。
+    ///
+    /// <strong>本数ではない。</strong> 同じ本数のまま数え方・除外・直し方を変えれば、値の意味が
+    /// 変わったのに指紋が動かず、古い派生値が使い回される。
+    ///
+    /// <strong>1 本も読めなければ、そう書く。</strong> 定義が無い環境では[指摘の文](Self::load)が
+    /// 出ないので、同じ条件で測ったとは言えない。
+    #[must_use]
+    pub fn digest(&self) -> String {
+        if self.defs.is_empty() {
+            return "定義を読めない".to_owned();
+        }
+        // <strong>本数も添える。</strong> 合わないときに、何が変わったかを人が見当を付けられる。
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for d in &self.defs {
+            for b in d.file.as_bytes().iter().chain(&d.digest.to_le_bytes()) {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        format!("定義 {} 本 fnv1a:{h:016x}", self.defs.len())
+    }
+
     /// 空か。
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -64,6 +87,19 @@ impl FromDefinitions {
         } else {
             kakiburi_review::Lower::Spread
         }
+    }
+
+    /// [層 3](kakiburi_metrics::Layer::Three) か。<strong>指摘にも判定にも使わない。</strong>
+    ///
+    /// どの系統から切り出したのかを言えないものである。<strong>止めた理由を言えないものは
+    /// 止めてはいけない</strong>ので、判定の 3 段目から外す。
+    ///
+    /// <strong>札が読めなければ層 3 として扱う。</strong> 分からないものを前に出す側へ倒さない。
+    #[must_use]
+    pub fn is_layer_three(&self, name: &str) -> bool {
+        self.registry
+            .get(name)
+            .is_none_or(|e| e.tag.layer() == Some(kakiburi_metrics::Layer::Three))
     }
 
     /// その向きの直し方。<strong>札が持たない向きは返さない。</strong>

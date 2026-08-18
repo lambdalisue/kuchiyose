@@ -105,11 +105,19 @@ fn main() {
             match f(d) {
                 Measured::Value(v) => print!("{v:>11.3}"),
                 Measured::BelowFloor => print!("{:>11}", "—"),
+                Measured::NoDenominator => print!("{:>11}", "0/0"),
                 Measured::NotWritable => print!("{:>11}", "×"),
+                Measured::ToolMissing => print!("{:>11}", "道具無"),
+                Measured::ToolFailed => print!("{:>11}", "道具失"),
             }
         }
         println!();
     }
     println!("{}", "-".repeat(26 + 11 * docs.len()));
-    println!("`—` は測っていない（下限を下回った）。<strong>0 ではない。</strong>");
+    println!("測っていない印。<strong>どれも 0 ではない。</strong>");
+    println!("  —      下限未満。長い文書を足せば直る");
+    println!("  0/0    分母が 0。その文書では測れない");
+    println!("  ×      書けない記法。別の取り込み元で集め直す");
+    println!("  道具無 形態素解析器や外部の表が無い。<strong>環境を直す</strong>");
+    println!("  道具失 道具が返さなかった。<strong>報告する</strong>");
 }

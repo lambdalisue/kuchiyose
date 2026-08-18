@@ -69,7 +69,11 @@ kakiburi add <カセット> <ファイル...> --source <取り込み元> --as pe
 
 <strong>`--as baseline` で入れるときは `--model` と `--version` が要る。</strong> 外で作った基準でも、
 [版と推論設定が指紋に入る](../spec/200-extract.md#版と推論設定まで記録する)——記録の無い
-基準で作った値は次に測ったときに比べられない。
+基準で作った値は次に測ったときに比べられない。推論設定は `--param <鍵>=<値>`、
+[題材](../spec/010-strategy.md#題材を統制する)は `--topic` で渡す。
+
+<strong>作り方の違う基準は混ぜない。</strong> 既に入っている基準と `--model` か `--version` が
+違えば <strong>断る</strong>。混ぜれば、測っているのが版の差になる——別のカセットにする。
 
 <strong>`--unit` は短い文書を[束ねる](100-cassette.md#短い文書は束ねる)。</strong> 同じ名前を渡した
 ものが 1 単位になる。チャットの場面では常用する。
@@ -121,6 +125,12 @@ kakiburi decide <カセット> boilerplate <文字列...>
 kakiburi decide <カセット> movement <指標> moves|stuck
 ```
 
+<strong>落とす定型は、渡した一覧で置き換える。</strong> 足していく形にしない——<strong>いま何を落として
+いるかが 1 度で読める</strong>ようにするためである。積み上げると、消すのに別の操作が要る。
+
+<strong>知らない指標の名前は受けない。</strong> 綴りを間違えたまま書けば、直したつもりの指標が
+いつまでも指摘に出続ける——<strong>エラーにならないので気付けない。</strong>
+
 | | なぜコマンドが要るか |
 | --- | --- |
 | 落とす定型 | [場面ごとに人が決める](../spec/200-extract.md#定型を落とす)。文章から当てにいかない |
@@ -144,32 +154,35 @@ kakiburi decide <カセット> movement <指標> moves|stuck
 <strong>打ったら派生物が古くなる。</strong>[前に出す指標](100-cassette.md#effectivejson)は movement
 から導くので、書き換えたのに作り直さなければ <strong>`stuck` にした指標が指摘に出続ける。</strong>
 
-> <strong>`decide movement` は、movement と `derived/effective.json` と指紋を一度に書く。</strong>
-> 途中で止まった状態を残さない。
+> <strong>`decide movement` は、書き換えたときに[効くかの判定](100-cassette.md#effectivejson)を
+> 捨てる。</strong> 捨てたカセットで `review` すると、判定できないが返る。
 
-<strong>ほかの派生物は作り直さない。</strong> 値も目盛りも movement では変わらない——変わるのは
+<strong>その場で作り直さない。</strong> 作り直すには全単位を測り直すことになり、`decide` が
+`build` と同じ重さになる。<strong>捨てて `build` に任せる</strong>——古いまま残すよりよい。
+
+<strong>ほかの派生物は触らない。</strong> 値も目盛りも movement では変わらない——変わるのは
 「どれを前に出すか」だけである。
 
 <strong>どちらも作り直せない原本である。</strong> 書く道が無ければ、実装する人が「文章から推定する」
 を発明する——仕様がどちらについても名指しで禁じている道である。
 
-### baseline
+### 基準は外で作る
 
-```
-kakiburi baseline <カセット> --model <名前> --version <版>
-                             --topic <要約> [--topic <要約>...]
-                             [--param <鍵>=<値>...]
-```
+<strong>基準を作るコマンドを持たない。</strong> 書かせる側は
+[軸の外](../spec/000-axis.md#だからしないこと)である——文章を作ることは、渡されれば済む。
 
-[基準](../spec/200-extract.md#基準を置く)を作る。<strong>`--version` も `--topic` も省略できない。</strong>
+作ったものは `add --as baseline` で入る。<strong>版と推論設定と題材を一緒に渡す</strong>
+（[add](#add)）。
 
-<strong>題材を引数で受けるのが要点である。</strong> 本文から作れるようにすると、書き出しの癖が
-依頼文に漏れて基準値が <strong>28 ポイント</strong>膨らむ
-（[漏らさない](../spec/200-extract.md#依頼文に書き方を漏らさない)）。<strong>`--topic` は
-「何について書くか」の中立な要約</strong>であり、本文を渡す口は持たない。
+#### 依頼文の作り方は、人が守る規則である
 
-<strong>`--topic` は 10 以上要る。</strong> 基準の側にも[下限](../spec/200-extract.md#対が何本あれば信じるか)
-が掛かり、1 題材から 1 本作るので、<strong>10 本に満たなければ目盛りが作れない。</strong>
+作る道具を持たない以上、ここは検めようがない。<strong>だが決めておく</strong>——決めなければ、
+測っているのが題材になる。
+
+<strong>本文を依頼文に入れない。</strong> 本文の書き出しから依頼文を作ると、書き出しの癖が
+そのまま手掛かりになり、基準値が <strong>28 ポイント</strong>膨らむ
+（[漏らさない](../spec/200-extract.md#依頼文に書き方を漏らさない)）。<strong>渡すのは
+「何について書くか」の中立な要約だけである。</strong>
 
 <strong>題材は本人の文書から取る</strong>——[題材を揃える](../spec/200-extract.md#題材の統制は対ではなく素材に効かせる)
 以上、本人が書いた題材について書かせることになる。<strong>ただし要約は人が書く。</strong> 本文から
@@ -182,16 +195,11 @@ kakiburi baseline <カセット> --model <名前> --version <版>
 <strong>ただし名前の表記までは写さない。</strong>「Vim script」か「Vim スクリプト」か、版番号を半角か
 全角か——そこは書きぶりの層であり、写せば漏れる。
 
-<strong>この 2 つは検めようがない。</strong> `--topic` は自由な文字列で、名前が入っているかも表記を
-写したかも機械には見えない。<strong>[要約は人が書く](#baseline)以上、ここは人が守る規則である</strong>
-——`doctor` の一覧にも載らない。
+<strong>10 本以上作る。</strong> 基準の側にも[下限](../spec/200-extract.md#対が何本あれば信じるか)が
+掛かる。1 題材から 1 本作るなら、題材も 10 要る。
 
-`--topic` `--param` `--model` `--version` は `decided/baseline.json` に残り、<strong>そのまま指紋に
-入る</strong>（[人が決めたこと](../spec/200-extract.md#何で測ったかを指紋にする)）。<strong>`--topic` を
-外さない</strong>——題材の言葉づかいだけで帯が動くので、外せば古い目盛りが黙って使われる。
-
-<strong>使わなくてもよい。</strong> 外で作った基準は `add --as baseline` で入る
-（[理由](000-architecture.md#kakiburi-baseline)）。
+<strong>この規則はどれも機械には見えない。</strong> 題材は自由な文字列で、名前が入っているかも
+表記を写したかも判らない。<strong>`doctor` の一覧にも載らない</strong>——人が守る。
 
 ### build
 
@@ -344,6 +352,13 @@ kakiburi doctor <カセット>
 - 指紋が現在の環境と合っているか（辞書の版、圧縮器、正規化の実装）
 - 派生物が原本と整合しているか
 - `provisional` が立っていないか
+
+<strong>相手集合は検査から外す。</strong> 較正に使った単位で測れば、分離するように合わせたものの
+分離具合を見ることになる（[較正と天井・床](../spec/200-extract.md#較正と天井床)）。
+
+<strong>疑わしければ `2` で返す。</strong> 検査が通らないことは「使う前の問題」ではない——
+カセットは読めているし、判定も出せる。<strong>出た値を信じてよいかが分からない</strong>だけで
+あり、それは判定できないと同じ側である。
 
 ### metrics
 

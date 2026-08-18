@@ -99,18 +99,20 @@ impl std::error::Error for BandError {}
 pub const OVERLAP_LIMIT: f64 = 0.5;
 
 impl Band {
-    /// 帯を作る。
+    /// 照合値の帯を作る。
     ///
     /// <strong>重なりが大きすぎるなら、そこで止める。</strong> 帯を狭めて判定を出すのではない——
     /// 分離していないという事実が出ている。
+    ///
+    /// 止めるのは重なりが <strong>天井の広がりと床の広がりのどちらに対しても</strong>
+    /// [限度](OVERLAP_LIMIT)を超えたときである。<strong>片方だけで止めない</strong>——片方が
+    /// 広ければ、その広さだけで割合が上がる。
     pub fn build(ceiling: &[f64], floor: &[f64]) -> Result<Self, BandError> {
-        let ceiling = Ends::of(ceiling).ok_or(BandError::NoSpread { side: "天井" })?;
-        let floor = Ends::of(floor).ok_or(BandError::NoSpread { side: "床" })?;
-        let band = Self { ceiling, floor };
+        let band = Self::of_ends(ceiling, floor)?;
         if let Some(ov) = band.overlap() {
-            let of_ceiling = ov / ceiling.spread();
-            let of_floor = ov / floor.spread();
-            if of_ceiling.max(of_floor) > OVERLAP_LIMIT {
+            let of_ceiling = ov / band.ceiling.spread();
+            let of_floor = ov / band.floor.spread();
+            if of_ceiling.min(of_floor) > OVERLAP_LIMIT {
                 return Err(BandError::TooMuchOverlap {
                     of_ceiling,
                     of_floor,
@@ -118,6 +120,25 @@ impl Band {
             }
         }
         Ok(band)
+    }
+
+    /// 人らしさの帯を作る。<strong>重なりでは止めない。</strong>
+    ///
+    /// 人らしさの帯が全体を覆うのは設計どおりの結果である——当てはまらないことが
+    /// 判定不能として出る仕組みなので、<strong>止めれば自己診断が消える</strong>。重なった帯は
+    /// そのまま書き出す。
+    ///
+    /// 広がりが 0 のときだけ作らない。端が決まらなければ、重なっているのかどうかも
+    /// 読めない。
+    pub fn build_humanness(human: &[f64], machine: &[f64]) -> Result<Self, BandError> {
+        Self::of_ends(human, machine)
+    }
+
+    fn of_ends(ceiling: &[f64], floor: &[f64]) -> Result<Self, BandError> {
+        Ok(Self {
+            ceiling: Ends::of(ceiling).ok_or(BandError::NoSpread { side: "天井" })?,
+            floor: Ends::of(floor).ok_or(BandError::NoSpread { side: "床" })?,
+        })
     }
 
     /// 分離しているか。天井の下端 > 床の上端。
@@ -215,6 +236,28 @@ mod tests {
         // 帯を狭めて判定を出すのではない。分離していない事実が出ている。
         let e = Band::build(&[0.0, 2.0], &[0.0, 2.0]).unwrap_err();
         assert!(matches!(e, BandError::TooMuchOverlap { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn 片側だけ超えても帯は作る() {
+        // 天井 0.0〜10.0、床 4.0〜6.0。重なりは 4.0〜6.0 の 2.0。
+        // 床に対しては 100% だが、天井に対しては 20%。片方だけでは止めない。
+        let b = Band::build(&[0.0, 10.0], &[4.0, 6.0]).expect("片側だけなら作る");
+        assert_eq!(b.overlap(), Some(2.0));
+    }
+
+    #[test]
+    fn 人らしさは重なっても帯を作る() {
+        // 覆っていることが判定不能として出る仕組みなので、止めれば自己診断が消える。
+        let b = Band::build_humanness(&[0.0, 2.0], &[0.0, 2.0]).expect("覆っていても作る");
+        assert_eq!(b.overlap(), Some(2.0));
+    }
+
+    #[test]
+    fn 人らしさでも広がりが_0_なら作らない() {
+        // 端が決まらなければ、重なっているのかどうかも読めない。
+        let e = Band::build_humanness(&[1.0, 1.0], &[0.0, 2.0]).unwrap_err();
+        assert!(matches!(e, BandError::NoSpread { .. }), "{e:?}");
     }
 
     #[test]

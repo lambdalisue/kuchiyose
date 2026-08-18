@@ -185,6 +185,13 @@ pub fn char_types(prose: &[Segment]) -> Counts {
 ///
 /// 直前の文字 / 直後の文字 / 間隔。<strong>連結する前に、それぞれの中で相対頻度に直す</strong>——
 /// 1 つにまとめて割れば、間隔の分布が文字の分布の分母に混ざる。
+///
+/// <strong>間隔は「`、` から次の `、` または文末まで」である。</strong> 文頭から最初の読点までは
+/// 数えない——そこは読点が作った間隔ではない。逆に、最後の読点から文末までは
+/// 数える。読点の数と間隔の数が一致する。
+///
+/// 読点の直後がすぐ文末なら間隔は 0 字になるが、次元は 1 字から始まるので
+/// 1 字に寄せる。<strong>捨てない</strong>——捨てると読点の数と間隔の数がずれる。
 #[must_use]
 pub fn comma_position(prose: &[Segment]) -> Vec<Counts> {
     let mut before: Counts = BTreeMap::new();
@@ -195,10 +202,18 @@ pub fn comma_position(prose: &[Segment]) -> Vec<Counts> {
     }
     for seg in prose {
         let cs: Vec<char> = seg.text.chars().collect();
-        // 間隔は「前の読点または文の頭」から数える。文末で切る。
+        // 間隔は「その読点の直後」から「次の読点または文末」まで数える。
+        // 開いたままの読点の位置。`Some` なら、そこから数えている最中である。
+        let mut open: Option<usize> = None;
+        let close = |open: &mut Option<usize>, n: usize, gaps: &mut Counts| {
+            if open.take().is_some() {
+                *gaps.entry(gap_name(n.max(1))).or_default() += 1;
+            }
+        };
         let mut since = 0usize;
         for (i, &c) in cs.iter().enumerate() {
             if c == '、' {
+                close(&mut open, since, &mut gaps);
                 let b = if i == 0 {
                     SENTINEL.to_owned()
                 } else {
@@ -210,11 +225,12 @@ pub fn comma_position(prose: &[Segment]) -> Vec<Counts> {
                     .filter(|n| !is_sentence_end(**n))
                     .map_or_else(|| SENTINEL.to_owned(), ToString::to_string);
                 *after.entry(a).or_default() += 1;
-                *gaps.entry(gap_name(since.max(1))).or_default() += 1;
+                open = Some(i);
                 since = 0;
                 continue;
             }
             if is_sentence_end(c) {
+                close(&mut open, since, &mut gaps);
                 since = 0;
                 continue;
             }
@@ -222,6 +238,8 @@ pub fn comma_position(prose: &[Segment]) -> Vec<Counts> {
                 since += 1;
             }
         }
+        // node の末尾も文の終わりである。開いたままの読点をここで閉じる。
+        close(&mut open, since, &mut gaps);
     }
     vec![before, after, gaps]
 }
@@ -265,16 +283,19 @@ pub fn parts(
         return None;
     }
     match system {
-        System::CharBigram => Some(vec![char_bigrams(prose)]),
+        System::CharBigram => enough(vec![char_bigrams(prose)], crate::floor::BIGRAMS),
         System::CharType => Some(vec![char_types(prose)]),
         System::Comma => Some(comma_position(prose)),
         // <strong>語の側は延べ語数の下限を別に持つ。</strong> 字数で足りていても語で足りないことがある。
-        System::FunctionWord => analyzed
-            .filter(|a| a.enough_tokens())
-            .map(|a| vec![crate::word::function_words(a)]),
+        System::FunctionWord => analyzed.filter(|a| a.enough_tokens()).and_then(|a| {
+            enough(
+                vec![crate::word::function_words(a)],
+                crate::floor::FUNCTION_WORDS,
+            )
+        }),
         System::PosBigram => analyzed
             .filter(|a| a.enough_tokens())
-            .map(|a| vec![crate::word::pos_bigrams(a)]),
+            .and_then(|a| enough(vec![crate::word::pos_bigrams(a)], crate::floor::BIGRAMS)),
         // 判定に使わない系統。<strong>ここから値を出さない。</strong>
         System::BunsetsuPattern
         | System::Embedding
@@ -304,6 +325,16 @@ pub fn limits(system: System) -> Vec<Option<usize>> {
         System::PosBigram => vec![None],
         _ => vec![],
     }
+}
+
+/// 実際に割る分母が下限に届いているか。届かなければ <strong>測れない</strong>。
+///
+/// 見るのは素材の量ではなく、<strong>その系統が実際に数えた事象の数</strong>である。0 のベクトルを
+/// 返してはいけない——返せば距離が計算でき、値が出て、判定が回る。そして
+/// [0 と測れないの区別](../../../docs/spec/100-metrics.md#除外の既定)がそこで崩れる。
+fn enough(parts: Vec<Counts>, floor: usize) -> Option<Vec<Counts>> {
+    let total: usize = parts.iter().flat_map(BTreeMap::values).sum();
+    (total >= floor).then_some(parts)
 }
 
 /// この単位でこの系統を測れるか。<strong>除外はここで 1 度だけ決める。</strong>
@@ -418,24 +449,61 @@ mod tests {
     }
 
     #[test]
-    fn 間隔は日本語の文字で数える() {
-        // 「これは」の 3 字。
+    fn 間隔は読点から次の読点または文末まで数える() {
+        // 「そうだ」の 3 字。文頭から読点までの「これは」は数えない——
+        // そこは読点が作った間隔ではない。
         let p = comma_position(&[seg("これは、そうだ。")]);
-        assert_eq!(p[2].get("3字"), Some(&1));
+        assert_eq!(p[2].get("3字"), Some(&1), "{:?}", p[2]);
+        assert_eq!(p[2].values().sum::<usize>(), 1, "読点 1 つに間隔 1 つ");
     }
 
     #[test]
-    fn 間隔は文末で切る() {
-        // 前の文の長さが次の文の間隔に混ざってはいけない。
-        let p = comma_position(&[seg("あいうえお。かき、")]);
-        assert_eq!(p[2].get("2字"), Some(&1));
+    fn 間隔は次の読点で切る() {
+        // 「あい」「うえお」——読点 2 つに間隔 2 つ。
+        let p = comma_position(&[seg("かき、あい、うえお。")]);
+        assert_eq!(p[2].get("2字"), Some(&1), "{:?}", p[2]);
+        assert_eq!(p[2].get("3字"), Some(&1), "{:?}", p[2]);
+        assert_eq!(p[2].values().sum::<usize>(), 2);
+    }
+
+    #[test]
+    fn 最後の読点から文末までも数える() {
+        // 文頭から数えていたときは、ここが落ちていた。
+        let p = comma_position(&[seg("あいうえお。かき、くけ。")]);
+        assert_eq!(p[2].get("2字"), Some(&1), "{:?}", p[2]);
+        assert_eq!(p[2].values().sum::<usize>(), 1);
+    }
+
+    #[test]
+    fn 読点の数と間隔の数は一致する() {
+        let p = comma_position(&[seg("あ、い、う。え、お")]);
+        assert_eq!(p[2].values().sum::<usize>(), 3);
+    }
+
+    #[test]
+    fn 文末で終わる読点の間隔は_1_字に寄せる() {
+        // 0 字は次元に無い。捨てると読点の数と間隔の数がずれる。
+        let p = comma_position(&[seg("これは、。")]);
+        assert_eq!(p[2].get("1字"), Some(&1), "{:?}", p[2]);
     }
 
     #[test]
     fn 間隔は_21_字以上をまとめる() {
-        let p = comma_position(&[seg(&format!("{}、", "あ".repeat(30)))]);
+        let p = comma_position(&[seg(&format!("、{}", "あ".repeat(30)))]);
         assert_eq!(p[2].get("21字以上"), Some(&1));
         assert_eq!(p[2].len(), COMMA_GAP_MAX, "次元は固定である");
+    }
+
+    #[test]
+    fn node_が_1_文字ずつなら文字_bigram_は測れない() {
+        // 素材は足りているのに bigram が 1 つも作られない。0 のベクトルを
+        // 返せば距離が計算でき、値が出て、判定が回る。
+        let prose: Vec<Segment> = (0..1200).map(|_| seg("あ")).collect();
+        assert!(
+            kakiburi_doc::prose::japanese_chars(&prose) >= crate::floor::JAPANESE_CHARS,
+            "素材は足りている"
+        );
+        assert_eq!(parts(System::CharBigram, &prose, None), None);
     }
 
     #[test]

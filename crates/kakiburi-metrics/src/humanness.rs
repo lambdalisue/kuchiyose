@@ -23,7 +23,10 @@ pub const COMPRESSION_LEVEL: u32 = 6;
 ///
 /// <strong>「zlib」だけでは値が決まらない。</strong> zlib 形式（RFC 1950）が決めているのは容器で
 /// あって、同じ水準 6 でも実装ごとに符号化の選び方が違う。<strong>だから実装と版まで名乗る。</strong>
-pub const COMPRESSOR: (&str, &str) = ("miniz_oxide (flate2, zlib 形式 水準 6)", "0.8");
+///
+/// <strong>版は丸めない。</strong> `0.8` と書くと `0.8.9` と `0.8.10` が同じ指紋になり、符号化が
+/// 変わっても[圧縮率](../../../docs/spec/metrics/圧縮率.md)の古い値が使い回される。
+pub const COMPRESSOR: (&str, &str) = ("miniz_oxide (flate2, zlib 形式 水準 6)", "0.8.9");
 
 /// 繰り返しで見る n の並び。
 pub const REPETITION_N: [usize; 4] = [2, 3, 4, 5];
@@ -178,11 +181,13 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
     }
     let mut z =
         flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(COMPRESSION_LEVEL));
+    // <strong>圧縮器が返さないのは環境の壊れである。</strong> 素材が短いのと混ぜない——混ぜれば、
+    // 壊れた道具が「素材が足りない」という顔で回り続ける。
     if z.write_all(raw).is_err() {
-        return Measured::BelowFloor;
+        return Measured::ToolFailed;
     }
     let Ok(out) = z.finish() else {
-        return Measured::BelowFloor;
+        return Measured::ToolFailed;
     };
     #[allow(clippy::cast_precision_loss)]
     Measured::Value(out.len() as f64 / raw.len() as f64)
@@ -201,9 +206,14 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
 #[must_use]
 pub fn repetition(analyzed: Option<&Analyzed>) -> Vec<Measured> {
     let n_dims = REPETITION_N.len() * 2;
-    let Some(a) = analyzed.filter(|a| a.enough_tokens()) else {
-        return vec![Measured::BelowFloor; n_dims];
+    // <strong>解析器が無いのと、語が足りないのを分ける。</strong> 前者は環境の壊れで、素材を
+    // いくら足しても直らない。
+    let Some(a) = analyzed else {
+        return vec![Measured::ToolMissing; n_dims];
     };
+    if !a.enough_tokens() {
+        return vec![Measured::BelowFloor; n_dims];
+    }
     #[allow(clippy::cast_precision_loss)]
     let tokens = a.tokens() as f64;
     let mut out = Vec::with_capacity(n_dims);
@@ -216,9 +226,10 @@ pub fn repetition(analyzed: Option<&Analyzed>) -> Vec<Measured> {
             }
         }
         if counts.is_empty() {
-            // n-gram が 1 つも取れない。割合と呼べる形にならない。
-            out.push(Measured::BelowFloor);
-            out.push(Measured::BelowFloor);
+            // <strong>n-gram が 1 つも取れない。分母が 0 である。</strong> node がすべて n 語未満なら
+            // 素材を足しても同じことが起きる——下限未満とは別の理由である。
+            out.push(Measured::NoDenominator);
+            out.push(Measured::NoDenominator);
             continue;
         }
         let again = counts.values().filter(|&&c| c >= 2).count();
@@ -239,9 +250,12 @@ pub fn repetition(analyzed: Option<&Analyzed>) -> Vec<Measured> {
 /// <strong>窓は重ねず、順に切る。</strong> 端の 1,000 語に満たない分は捨てる。
 #[must_use]
 pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
-    let Some(a) = analyzed.filter(|a| a.enough_tokens()) else {
-        return Measured::BelowFloor;
+    let Some(a) = analyzed else {
+        return Measured::ToolMissing;
     };
+    if !a.enough_tokens() {
+        return Measured::BelowFloor;
+    }
     // 約物と記号の形態素も含める——外すと、読点の多い書き手ほど窓が長くなる。
     let words: Vec<&str> = a.all().map(|m| m.surface.as_str()).collect();
     let mut ratios = Vec::new();
@@ -251,7 +265,8 @@ pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
         ratios.push(types.len() as f64 / w.len() as f64);
     }
     if ratios.is_empty() {
-        return Measured::BelowFloor;
+        // 窓が 1 つも取れない。<strong>平均を取る分母が 0 である。</strong>
+        return Measured::NoDenominator;
     }
     #[allow(clippy::cast_precision_loss)]
     Measured::Value(ratios.iter().sum::<f64>() / ratios.len() as f64)
@@ -268,9 +283,12 @@ pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
 /// 違う下限を持たない。
 #[must_use]
 pub fn entropy(prose: &[Segment], analyzed: Option<&Analyzed>) -> Vec<Measured> {
-    let Some(a) = analyzed.filter(|a| a.enough_tokens()) else {
-        return vec![Measured::BelowFloor; 2];
+    let Some(a) = analyzed else {
+        return vec![Measured::ToolMissing; 2];
     };
+    if !a.enough_tokens() {
+        return vec![Measured::BelowFloor; 2];
+    }
     let words = shannon(a.all().map(|m| m.surface.as_str()));
     // 文字は日本語の文字に限らない全文字である。
     let chars = shannon(prose.iter().flat_map(|s| s.text.chars()).map(CharKey));

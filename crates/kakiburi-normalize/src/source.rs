@@ -31,7 +31,54 @@ pub enum Writable {
     No,
 }
 
+/// 対応表の版。<strong>升目の意味を変えたら手で上げる。</strong>
+///
+/// 升目そのものも指紋に出るので、上げ忘れても中身の差で気付ける。<strong>逆も同じで、
+/// 升目が同じまま解釈だけを変えたときは、この版でしか気付けない。</strong>
+pub const MAPPING_VERSION: &str = "対応表 1";
+
+/// 升目が分かれる node。<strong>これ以外はどの取り込み元でも書ける。</strong>
+const GATED: [Kind; 5] = [
+    Kind::Note,
+    Kind::Warning,
+    Kind::Footnote,
+    Kind::Details,
+    Kind::Table,
+];
+
 impl Source {
+    /// 扱う取り込み元をすべて。<strong>指紋は全部の升目を写す。</strong>
+    #[must_use]
+    pub fn all() -> [Source; 4] {
+        [
+            Source::GithubMarkdown,
+            Source::DirectiveMarkdown,
+            Source::Html,
+            Source::PlainMarkdown,
+        ]
+    }
+
+    /// 升目の中身。<strong>指紋に入る。</strong>
+    ///
+    /// <strong>実装の版だけでは足りない。</strong> 升目を書き換えて版を上げ忘れれば、指紋が同じ
+    /// まま別の木が出る——そして「0」と「測れない」の出方が静かに入れ替わる。
+    ///
+    /// 平文で残す。ハッシュだけでは、<strong>どの升目が変わったか</strong>が分からない。
+    ///
+    /// <strong>版も一緒に持つ。</strong> 手で上げる版と、機械が出す升目の両方が変わらないときだけ、
+    /// 過去の値と比べてよい。
+    #[must_use]
+    pub fn mapping_digest(self) -> String {
+        let cells: String = GATED
+            .iter()
+            .map(|&k| match self.writable(k) {
+                Writable::Yes => '1',
+                Writable::No => '0',
+            })
+            .collect();
+        format!("{MAPPING_VERSION} 補足警告脚注折表:{cells}")
+    }
+
     /// 名前。指紋に入る。
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -71,7 +118,7 @@ impl Source {
             Source::PlainMarkdown => false,
         };
         // 上の 5 つ以外は、どの取り込み元でも書ける記法がある。
-        if yes || !matches!(kind, Note | Warning | Footnote | Details | Table) {
+        if yes || !GATED.contains(&kind) {
             Writable::Yes
         } else {
             Writable::No

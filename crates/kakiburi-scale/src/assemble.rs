@@ -279,7 +279,9 @@ pub fn assemble(
     };
     let human = side(&person_split.points);
     let machine = side(&baseline_split.points);
-    let humanness_band = Band::build(&human, &machine).map_err(|source| {
+    // <strong>重なりでは止めない。</strong> 人らしさの帯が全体を覆うのは設計どおりの結果で、
+    // 当てはまらないことが判定不能として出る。止めれば自己診断が消える。
+    let humanness_band = Band::build_humanness(&human, &machine).map_err(|source| {
         ScaleError::Band(Box::new(crate::BandStop {
             source,
             which: "人らしさ値",
@@ -424,7 +426,9 @@ mod tests {
                     // 人の側。<strong>同じ言い回しを繰り返す。</strong>
                     (wordy(seed % 2), wordy(0), wordy(1), wordy(seed % 3))
                 };
-                Node::leaf(Kind::Paragraph, format!("{a}は、{b}であり、{c}だと{d}。"))
+                // 機能語を 5 つ含める。<strong>対象の形態素の下限を越えるためである</strong>——
+                // 越えなければ機能語が測れず、判定に使う 5 系統が揃わない。
+                Node::leaf(Kind::Paragraph, format!("{a}は、{b}の{c}を{d}に{a}が。"))
             })
             .collect();
         Document::new(nodes)

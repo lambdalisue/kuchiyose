@@ -22,6 +22,30 @@ pub struct Definition {
     pub tag_line: String,
     /// 直し方の節。<strong>無ければ空である。</strong>
     pub remedy: String,
+    /// 正規化した本文の digest。<strong>指紋に入る。</strong>
+    ///
+    /// <strong>本数を指紋にしてはいけない。</strong> 同じ本数のまま数え方・除外・直し方を変えれば、
+    /// 値の意味が変わったのに指紋が動かず、<strong>古い派生値がそのまま使い回される</strong>。
+    /// この欄が本文ごと変わる。
+    pub digest: u64,
+}
+
+/// 本文を正規化して digest を取る。
+///
+/// <strong>取る前に正規化する。</strong> 改行や行末の空白の違いで digest が動けば、意味の変わって
+/// いない編集で全部の値が捨てられる——捨てられるのが嫌になって、指紋を見なくなる。
+fn digest_of(body: &str) -> u64 {
+    // FNV-1a。<strong>暗号のためではない</strong>——同じ本文から同じ値が出ればよい。
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for line in body.lines() {
+        for b in line.trim_end().as_bytes() {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        h ^= u64::from(b'\n');
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
 }
 
 impl Definition {
@@ -127,6 +151,7 @@ fn parse(file: &str, body: &str) -> Definition {
         name,
         tag_line,
         remedy: section(body, "## 直し方"),
+        digest: digest_of(body),
     }
 }
 
@@ -171,7 +196,31 @@ mod tests {
             name: "ためし".into(),
             tag_line: "指示 / なし / 記号 / 両側 / 割合。".into(),
             remedy: remedy.to_owned(),
+            digest: digest_of(remedy),
         }
+    }
+
+    #[test]
+    fn 数え方を変えれば_digest_が変わる() {
+        // 本数を指紋にすると、ここが動かない。数え方・除外・直し方を変えても
+        // 本数が同じなら、古い派生値がそのまま使い回される。
+        let a = parse(
+            "x",
+            "# 名前\n\n照合 / 記号。\n\n## 数え方\n\n1 つ数える。\n",
+        );
+        let b = parse(
+            "x",
+            "# 名前\n\n照合 / 記号。\n\n## 数え方\n\n2 つ数える。\n",
+        );
+        assert_ne!(a.digest, b.digest);
+    }
+
+    #[test]
+    fn 行末の空白では_digest_が変わらない() {
+        // 意味の変わっていない編集で全部の値が捨てられると、指紋を見なくなる。
+        let a = parse("x", "# 名前\n\n照合 / 記号。\n");
+        let b = parse("x", "# 名前  \n\n照合 / 記号。   \n");
+        assert_eq!(a.digest, b.digest);
     }
 
     #[test]

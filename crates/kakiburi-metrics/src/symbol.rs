@@ -71,14 +71,96 @@ pub fn em_dash(prose: &[Segment]) -> Measured {
     per_1000(prose, |c| c == '\u{2014}')
 }
 
-/// 絵文字。Unicode の Emoji_Presentation を持つ文字の数。
+/// 絵文字。<strong>数える単位は書記素クラスタである。</strong>
 ///
-/// 表の全体を持たないので、実務上使われる範囲を挙げる。<strong>暫定である。</strong>
+/// 見た目が 1 つだからである——ゼロ幅接合子で繋いだ列、国旗（地域指標符号の対）、
+/// 肌の色の指定、異体字セレクタ付きのものは、どれも 1 と数える。
+///
+/// <strong>符号位置で数えてはいけない。</strong> 国旗は 2、家族の ZWJ 列は 5 以上になり、
+/// <strong>絵文字を 1 つ置いた書き手が 5 つ置いたことになる。</strong>
 #[must_use]
 pub fn emoji(prose: &[Segment]) -> Measured {
-    per_1000(prose, is_emoji_presentation)
+    let ja = japanese(prose);
+    if ja < floor::JAPANESE_CHARS {
+        return Measured::BelowFloor;
+    }
+    let n: usize = chars_per_node(prose).map(|cs| clusters(&cs)).sum();
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(1000.0 * n as f64 / ja as f64)
 }
 
+/// 絵文字の列を、書記素クラスタの数として数える。<strong>最長一致で取る。</strong>
+fn clusters(chars: &[char]) -> usize {
+    let mut n = 0usize;
+    let mut i = 0;
+    while i < chars.len() {
+        let Some(end) = cluster_end(chars, i) else {
+            i += 1;
+            continue;
+        };
+        n += 1;
+        i = end;
+    }
+    n
+}
+
+/// `i` から始まる絵文字クラスタの終わり。絵文字で始まらなければ `None`。
+fn cluster_end(chars: &[char], i: usize) -> Option<usize> {
+    // 国旗。<strong>地域指標符号は 2 つで 1 つである。</strong>
+    if is_regional(chars[i]) {
+        return Some(if chars.get(i + 1).is_some_and(|&c| is_regional(c)) {
+            i + 2
+        } else {
+            i + 1
+        });
+    }
+    // keycap。`1️⃣` は数字・異体字セレクタ・囲みの 3 つで 1 つである。
+    if matches!(chars[i], '0'..='9' | '#' | '*')
+        && chars.get(i + 1) == Some(&'\u{FE0F}')
+        && chars.get(i + 2) == Some(&'\u{20E3}')
+    {
+        return Some(i + 3);
+    }
+    if !is_emoji_presentation(chars[i]) {
+        return None;
+    }
+    let mut j = i + 1;
+    loop {
+        j = tail(chars, j);
+        // ゼロ幅接合子で繋がっていれば、その先も同じ 1 つである。
+        if chars.get(j) == Some(&'\u{200D}') && chars.get(j + 1).is_some() {
+            j += 2;
+            continue;
+        }
+        return Some(j);
+    }
+}
+
+/// 異体字セレクタ・肌の色・タグ列を読み飛ばす。
+fn tail(chars: &[char], mut j: usize) -> usize {
+    while let Some(&c) = chars.get(j) {
+        let follows = c == '\u{FE0F}'
+            || ('\u{1F3FB}'..='\u{1F3FF}').contains(&c)
+            || ('\u{E0020}'..='\u{E007F}').contains(&c);
+        if !follows {
+            break;
+        }
+        j += 1;
+    }
+    j
+}
+
+fn is_regional(c: char) -> bool {
+    ('\u{1F1E6}'..='\u{1F1FF}').contains(&c)
+}
+
+/// 絵文字として数える文字の範囲。<strong>暫定である。</strong>
+///
+/// 本来は Unicode の `Emoji_Presentation` と推奨列の表で決める
+/// （[定義](../../../docs/spec/metrics/絵文字.md#数え方)）。<strong>その表をまだ持っていない</strong>ので、
+/// 実務上使われる区画を挙げている。
+///
+/// <strong>暫定であることを[指紋](EMOJI_RANGES_VERSION)に出す。</strong> 表を入れたら値が変わる。
 fn is_emoji_presentation(c: char) -> bool {
     matches!(c,
         '\u{1F300}'..='\u{1F5FF}'   // 記号と絵文字
@@ -89,6 +171,12 @@ fn is_emoji_presentation(c: char) -> bool {
         | '\u{2600}'..='\u{27BF}'   // その他の記号（既定で絵文字表示のもの）
     )
 }
+
+/// 絵文字の範囲表の版。<strong>指紋に出す。</strong>
+///
+/// 表を [`is_emoji_presentation`] から Unicode の正規の表へ替えたら上げる——
+/// 上げなければ、範囲が変わったのに古い値が使い回される。
+pub const EMOJI_RANGES_VERSION: &str = "暫定の区画表 1";
 
 /// 中黒。`・` の数。
 ///
@@ -251,29 +339,27 @@ fn ratio(hit: usize, total: usize, min: usize) -> Measured {
 pub fn missing_space(prose: &[Segment]) -> Measured {
     let (mut chance, mut missing) = (0usize, 0usize);
     for chars in chars_per_node(prose) {
-        for i in 0..chars.len() {
+        let mut i = 0;
+        while i < chars.len() {
             let a = chars[i];
-            // 空白を挟んだ隣接。機会に数える。
-            if a == ' ' {
-                let Some(prev) = i.checked_sub(1).map(|j| chars[j]) else {
-                    continue;
-                };
-                let Some(next) = chars.get(i + 1).copied() else {
-                    continue;
-                };
-                if is_cross(prev, next) {
-                    chance += 1;
-                }
+            if !is_side(a) {
+                i += 1;
                 continue;
             }
-            // 直に隣接。機会と欠落の両方に数える。
-            let Some(next) = chars.get(i + 1).copied() else {
-                continue;
-            };
-            if is_cross(a, next) {
+            // 空白列を読み飛ばす。<strong>0 個でも機会である</strong>——「隣接」だけを機会に
+            // すると、空白を挟んだ側が分母から消えて値が必ず 1.0 になる。
+            let mut j = i + 1;
+            while chars.get(j).is_some_and(|&c| is_gap(c)) {
+                j += 1;
+            }
+            let Some(&b) = chars.get(j) else { break };
+            if is_cross(a, b) {
                 chance += 1;
-                missing += 1;
+                if j == i + 1 {
+                    missing += 1;
+                }
             }
+            i = j;
         }
     }
     if chance < 20 {
@@ -283,10 +369,32 @@ pub fn missing_space(prose: &[Segment]) -> Measured {
     Measured::Value(missing as f64 / chance as f64)
 }
 
+/// 和欧の境目になりうる文字か。
+fn is_side(c: char) -> bool {
+    text::is_japanese(c) || is_alnum(c)
+}
+
+/// 英数字。<strong>半角だけである。</strong>
+///
+/// 全角の `Ｒ` や `１` は和文と同じ字幅で組まれるので、`日本語Ａ` はベタ組みが
+/// 普通である——入れれば、<strong>全角を選んだというだけで欠落率が上がる</strong>。そして
+/// 字幅は[数字の字幅](../../../docs/spec/metrics/数字の字幅.md)が別に測っている。
+fn is_alnum(c: char) -> bool {
+    c.is_ascii_alphanumeric()
+}
+
+/// 和欧のあいだに置かれた空白と認めるか。
+///
+/// 半角スペースと全角スペースだけ。<strong>タブと改行は認めない</strong>——どちらも node の中の
+/// 折り返しとして現れるもので、桁揃えや自動折り返しで入る。機会に数えれば、
+/// 改行位置の癖がこの指標に化ける。
+fn is_gap(c: char) -> bool {
+    c == ' ' || c == '\u{3000}'
+}
+
 /// 日本語の文字と英数字の境目か。約物を挟むものは含めない。
 fn is_cross(a: char, b: char) -> bool {
-    let alnum = |c: char| c.is_ascii_alphanumeric();
-    (text::is_japanese(a) && alnum(b)) || (alnum(a) && text::is_japanese(b))
+    (text::is_japanese(a) && is_alnum(b)) || (is_alnum(a) && text::is_japanese(b))
 }
 
 /// 笑い。差し込んだ<strong>箇所</strong>の数。
@@ -501,6 +609,99 @@ mod tests {
             "{}",
             value(missing_space(&p))
         );
+    }
+
+    /// 絵文字の数だけを取る。<strong>分母は同じなので、比べられる。</strong>
+    fn emoji_count(extra: &str) -> f64 {
+        value(emoji(&prose_with(extra)))
+    }
+
+    #[test]
+    fn 国旗は_1_つと数える() {
+        // 地域指標符号の対である。符号位置で数えると 2 になる。
+        assert!((emoji_count("🇯🇵") - emoji_count("😀")).abs() < 1e-9);
+    }
+
+    #[test]
+    fn zwj_で繋いだ列は_1_つと数える() {
+        // 家族の絵文字は符号位置で数えると 5 以上になる。
+        let family = "👨\u{200D}👩\u{200D}👧\u{200D}👦";
+        assert!((emoji_count(family) - emoji_count("😀")).abs() < 1e-9);
+    }
+
+    #[test]
+    fn 肌の色の指定は_1_つと数える() {
+        assert!((emoji_count("👍\u{1F3FB}") - emoji_count("😀")).abs() < 1e-9);
+    }
+
+    #[test]
+    fn keycap_は_1_つと数える() {
+        // 数字・異体字セレクタ・囲みの 3 つで 1 つである。
+        assert!((emoji_count("1\u{FE0F}\u{20E3}") - emoji_count("😀")).abs() < 1e-9);
+    }
+
+    #[test]
+    fn 並んだ絵文字は別々に数える() {
+        // 畳みすぎれば、3 つ置いた書き手が 1 つ置いたことになる。
+        let one = emoji_count("😀");
+        assert!((emoji_count("😀😀😀") - one * 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn 絵文字でない文字は数えない() {
+        assert!(emoji_count("あいうえお").abs() < 1e-9);
+    }
+
+    #[test]
+    fn 全角スペースも空白として数える() {
+        let mut text = String::new();
+        for _ in 0..20 {
+            text.push_str("あ　a。");
+        }
+        let p = prose_with(&text);
+        assert!(
+            value(missing_space(&p)).abs() < 1e-9,
+            "全角スペースを空白と認めなければ 1.0 になる: {}",
+            value(missing_space(&p))
+        );
+    }
+
+    #[test]
+    fn 空白が複数でも機会は_1_つである() {
+        // 1 文字ずつ見ていた頃は、2 つ並ぶと機会から消えて値が上がった。
+        let mut text = String::new();
+        for _ in 0..20 {
+            text.push_str("あ  a。");
+        }
+        let p = prose_with(&text);
+        assert!(
+            value(missing_space(&p)).abs() < 1e-9,
+            "{}",
+            value(missing_space(&p))
+        );
+    }
+
+    #[test]
+    fn 全角英数字は機会にしない() {
+        // 和文と同じ字幅で組まれるのでベタ組みが普通である。数えれば、
+        // 全角を選んだというだけで欠落率が上がる。
+        let mut text = String::new();
+        for _ in 0..20 {
+            text.push_str("あＡ。");
+        }
+        let p = prose_with(&text);
+        assert_eq!(missing_space(&p), Measured::BelowFloor);
+    }
+
+    #[test]
+    fn タブは空白と認めない() {
+        // node の中の折り返しであって、書き手が和欧の間に置いた空白ではない。
+        let mut text = String::new();
+        for _ in 0..20 {
+            text.push_str("あ\ta。");
+        }
+        let p = prose_with(&text);
+        assert_eq!(missing_space(&p), Measured::BelowFloor, "機会にしない");
     }
 
     #[test]

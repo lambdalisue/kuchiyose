@@ -4,7 +4,6 @@
 //! 使う書き手の文が黙って連結され、文を数えるものすべてが狂う。
 
 use crate::prose::Segment;
-use crate::text;
 
 /// 終端記号。半角を含む。
 const TERMINATORS: [char; 5] = ['。', '！', '？', '!', '?'];
@@ -32,6 +31,17 @@ fn opener_of(c: char) -> Option<char> {
 /// node を跨がない。node の末尾は、終端記号が無くても文の終わりである——
 /// 見出しや箇条書きの項目は `。` で終わらないことが多く、0 文として捨てると
 /// 見出しの多い文書ほど文が少ないことになり、構造の癖が文の癖に化ける。
+///
+/// <strong>切ったあとで文を捨てない。</strong> 日本語の文字を 1 つも含まない文——地の文に
+/// 混ざる英文——も 1 文として数える。地の文から落とすものと理由が違う：
+/// コードブロックと記号だけのセルを落とすのは書き手が日本語で書いた部分では
+/// ないからだが、<strong>地の文に混ざる英文は書き手が書いた散文である</strong>。落とせば
+/// 文数・段落あたりの文数・1 文だけの段落の割合・文末表現がまとめて狂い、
+/// 英語を挟む書き手ほど文が少ないことになる。
+///
+/// <strong>ASCII のピリオドでは切らない</strong>（[`TERMINATORS`] に入れていない）。入れれば
+/// `0.5` も `v1.2` も切れ目になる。そのぶん、続けて書かれた英文はまとめて
+/// 1 文になる——承知のうえの制限である。
 #[must_use]
 pub fn sentences(text: &str) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
@@ -73,7 +83,6 @@ pub fn sentences(text: &str) -> Vec<String> {
     if !cur.trim().is_empty() {
         out.push(cur);
     }
-    out.retain(|s| s.chars().any(text::is_japanese));
     out
 }
 
@@ -166,8 +175,23 @@ mod tests {
     }
 
     #[test]
-    fn 日本語を含まない断片は文に数えない() {
-        let s = sentences("OK. Fine.");
-        assert!(s.is_empty(), "{s:?}");
+    fn 日本語を含まない文も数える() {
+        // 落とせば、英語を挟む書き手ほど文が少ないことになる。
+        let s = sentences("Rust is fast.");
+        assert_eq!(s.len(), 1, "{s:?}");
+    }
+
+    #[test]
+    fn 英文が連なると_1_文になる() {
+        // ASCII のピリオドで切らないので、まとめて 1 文である。
+        // 切ると `0.5` や `v1.2` も切れ目になる——承知のうえの制限である。
+        let s = sentences("Rust is fast. Go is simple.");
+        assert_eq!(s.len(), 1, "{s:?}");
+    }
+
+    #[test]
+    fn 版番号や小数は切れ目にならない() {
+        let s = sentences("v1.2 では 0.5 秒になった。");
+        assert_eq!(s.len(), 1, "{s:?}");
     }
 }

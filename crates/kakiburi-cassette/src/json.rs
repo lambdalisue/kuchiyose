@@ -56,6 +56,15 @@ impl Value {
         }
     }
 
+    /// 真偽として読む。
+    #[must_use]
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
     /// 配列として読む。
     #[must_use]
     pub fn as_array(&self) -> Option<&[Value]> {

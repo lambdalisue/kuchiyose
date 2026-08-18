@@ -64,6 +64,43 @@ impl<'a> Parser<'a> {
         // 閉じが無ければ front matter ではなかったことにする。
     }
 
+    /// 中身を block として解釈し直す。
+    ///
+    /// <strong>子を持つ node の中身を 1 本の文字列に畳まない。</strong> 畳めば内側の段落・リスト・
+    /// 表・コードブロックがまるごと消え、<strong>コードブロックの中身が地の文に混ざる</strong>。
+    /// [文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
+    /// 引用・補足・警告・折りたたみ・脚注が子を持つと定めている。
+    fn blocks_of(&self, body: &[&'a str]) -> Result<Vec<Node>, Refusal> {
+        let mut p = Parser {
+            lines: body.to_vec(),
+            at: 0,
+            source: self.source,
+        };
+        let mut nodes = Vec::new();
+        while p.at < p.lines.len() {
+            let before = p.at;
+            let node = p.block()?;
+            if p.at == before {
+                return Err(Refusal::Broken {
+                    detail: format!(
+                        "中身の {} 行目を読み進められない: {}",
+                        before + 1,
+                        p.lines[before]
+                    ),
+                });
+            }
+            if let Some(n) = node {
+                nodes.push(n);
+            }
+        }
+        Ok(nodes)
+    }
+
+    /// 中身を持つ node を組む。<strong>文字は子が持つ。</strong>
+    fn container(&self, kind: Kind, body: &[&'a str]) -> Result<Node, Refusal> {
+        Ok(Node::branch(kind, self.blocks_of(body)?))
+    }
+
     fn block(&mut self) -> Result<Option<Node>, Refusal> {
         let Some(line) = self.peek() else {
             return Ok(None);
@@ -147,11 +184,10 @@ impl<'a> Parser<'a> {
                         markup: format!("[!{name}]"),
                     });
                 };
-                let inner = body[1..].join("\n");
-                return Ok(Node::leaf(kind, inline_checked(&inner)?));
+                return self.container(kind, &body[1..]);
             }
         }
-        Ok(Node::leaf(Kind::Quote, inline_checked(body.join("\n"))?))
+        self.container(Kind::Quote, &body)
     }
 
     /// 引用の中身を取る。行頭の `>` を外す。
@@ -179,8 +215,14 @@ impl<'a> Parser<'a> {
         let mut body = Vec::new();
         while let Some(l) = self.peek() {
             self.at += 1;
-            if l.trim_end() == ":::" {
-                return Ok(Node::leaf(kind, inline_checked(body.join("\n"))?));
+            // <strong>開きと同じ規則で閉じる。</strong> 開きは字下げを許すので、閉じだけを
+            // 行頭に縛ると<strong>字下げして開いた directive は決して閉じられない。</strong>
+            //
+            // 実素材で踏んだ。箇条書きの直後の `:::` が 2 字下がっていると、
+            // そこで閉じずに次の `:::` まで飲み込み、飲み込んだ中の `:::message` が
+            // 「閉じていない」として出てくる——<strong>本当の原因から遠い場所で断る。</strong>
+            if l.trim() == ":::" {
+                return self.container(kind, &body);
             }
             body.push(l);
         }
@@ -619,7 +661,29 @@ mod tests {
         let md = "> [!NOTE]\n> ここは補足である。\n";
         let d = parse(md, Source::GithubMarkdown).unwrap();
         assert_eq!(kinds(&d), vec![Kind::Note]);
-        assert_eq!(d.nodes[0].text, "ここは補足である。");
+        // 中身は子が持つ。畳めば内側の構造が消える。
+        assert_eq!(d.nodes[0].children.len(), 1);
+        assert_eq!(d.nodes[0].children[0].kind, Kind::Paragraph);
+        assert_eq!(d.nodes[0].children[0].text, "ここは補足である。");
+    }
+
+    #[test]
+    fn 引用の中の構造は残る() {
+        // 畳めば、内側のリストも表もコードブロックも消える。
+        let md = "> 説明である。\n>\n> - ひとつ\n> - ふたつ\n";
+        let d = parse(md, Source::GithubMarkdown).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Quote]);
+        let inner: Vec<Kind> = d.nodes[0].children.iter().map(|n| n.kind).collect();
+        assert_eq!(inner, vec![Kind::Paragraph, Kind::Bullet], "{inner:?}");
+    }
+
+    #[test]
+    fn 引用の中のコードは地の文に混ざらない() {
+        // 畳めば `let x = 1;` が地の文に入り、記号の率が題材で動く。
+        let md = "> 例である。\n>\n> ```\n> let x = 1;\n> ```\n";
+        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let joined: String = d.prose().iter().map(|s| s.text.clone()).collect();
+        assert!(!joined.contains("let x"), "{joined:?}");
     }
 
     #[test]
@@ -701,6 +765,24 @@ mod tests {
         let md = ":::message\n補足である。\n:::\n";
         let e = parse(md, Source::GithubMarkdown).unwrap_err();
         assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn 字下げした閉じでも閉じる() {
+        // <strong>開きは字下げを許す。</strong> 閉じだけを行頭に縛れば、字下げして開いた
+        // directive は決して閉じられない。整形器が箇条書きの直後の `:::` を
+        // 下げることは実素材で普通に起きる。
+        let md = ":::message\n- あ\n- い\n  :::\n";
+        let doc = parse(md, Source::DirectiveMarkdown).expect("通る");
+        assert_eq!(doc.nodes.len(), 1);
+        assert_eq!(doc.nodes[0].kind, Kind::Note);
+    }
+
+    #[test]
+    fn 字下げして開いた_directive_も閉じる() {
+        let md = "  :::message\n  補足である。\n  :::\n";
+        let doc = parse(md, Source::DirectiveMarkdown).expect("通る");
+        assert_eq!(doc.nodes[0].kind, Kind::Note);
     }
 
     #[test]
@@ -949,12 +1031,12 @@ mod tests {
     fn 入れ子の項目は親の項目として数えない() {
         let md = "- 外側\n  - 内側\n";
         let d = parse(md, Source::GithubMarkdown).unwrap();
-        // 外側 1 つ + 内側の箇条書きの直接の子 1 つ = 2。
-        // 入れ子を外側の兄弟として数えないことを確かめる。
+        // 最も外側のリストの直接の子だけ——「外側」の 1 つ。
+        // 内側のリストは入れ子なので、それ自身も子も数えない。
         let items = d.items();
         assert_eq!(
             items.len(),
-            2,
+            1,
             "{:?}",
             items.iter().map(|i| &i.text).collect::<Vec<_>>()
         );

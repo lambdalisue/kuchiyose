@@ -49,17 +49,18 @@ pub fn html_kind(tag: impl AsRef<str>) -> Option<Kind> {
     match tag.as_ref() {
         "aside" => Some(Kind::Note),
         "details" => Some(Kind::Details),
-        // 行を表そのものに畳む。<strong>行は node ではない</strong>——
-        // [文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
-        // 表がセルを持つと定めており、あいだに段を置かない。
-        "table" | "thead" | "tbody" | "tfoot" | "tr" => Some(Kind::Table),
+        "table" => Some(Kind::Table),
         "td" | "th" => Some(Kind::Cell),
         "blockquote" => Some(Kind::Quote),
         "p" => Some(Kind::Paragraph),
         "ul" => Some(Kind::Bullet),
         "ol" => Some(Kind::Ordered),
         "li" => Some(Kind::Item),
-        "pre" | "code" => Some(Kind::CodeBlock),
+        // <strong>`<pre>` だけがコードブロックである。</strong> 段落の中の `<code>` まで
+        // コードブロックにすると、インラインコードが永久に 0 になり、
+        // コードブロックの密度は地の文に混ざらない記号のぶんだけ跳ね上がる。
+        "pre" => Some(Kind::CodeBlock),
+        "code" => Some(Kind::InlineCode),
         "hr" => Some(Kind::Divider),
         "img" => Some(Kind::Image),
         "em" | "strong" | "b" | "i" => Some(Kind::Emphasis),
@@ -67,6 +68,19 @@ pub fn html_kind(tag: impl AsRef<str>) -> Option<Kind> {
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => Some(Kind::Heading),
         _ => None,
     }
+}
+
+/// node を作らず、中身を親へ透かす要素か。
+///
+/// <strong>行と区分は node ではない</strong>——[文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
+/// 表がセルを持つと定めており、あいだに段を置かない。node にすると、`<table>` と
+/// `<tr>` の両方が表として数えられ、<strong>ふつうの表 1 つで表の密度が何倍にもなる</strong>。
+///
+/// `<code>` も `<pre>` の直下では透かす（[`html_kind`] を参照）が、そちらは
+/// 文脈で決まるのでここには入らない。
+#[must_use]
+pub fn is_transparent(tag: impl AsRef<str>) -> bool {
+    matches!(tag.as_ref(), "thead" | "tbody" | "tfoot" | "tr")
 }
 
 /// この取り込み元が Alert 記法を持つか。
