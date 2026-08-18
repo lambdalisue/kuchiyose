@@ -14,7 +14,7 @@
 
 | 漏れると何が起きるか | どこで止めるか |
 | --- | --- |
-| 非決定的なものが数える側に入る | [基準の生成](#kakiburi-baseline)を隔離する |
+| 非決定的なものが数える側に入る | [基準を作らない](#基準は作らない)。どのクレートも LLM を呼ばない |
 | 単位の意味が指標ごとに変わる | [文書](#kakiburi-doc)が単位を独占する |
 | 指標の一覧が 2 か所に現れる | [指標](#kakiburi-metrics)が登録簿を独占する |
 | <strong>検める対象で目盛りが動く</strong> | [検め](#kakiburi-review)が[目盛り](#kakiburi-scale)に依存できないようにする |
@@ -30,8 +30,7 @@
 
 ```mermaid
 flowchart TB
-    src["取り込み元<br/>Markdown 3 種 / HTML"]
-    base["kakiburi-baseline<br/>基準を作る"]
+    src["取り込み元<br/>本人の文章 / 基準<br/>Markdown 3 種 / HTML"]
     norm["kakiburi-normalize<br/>記法 → 意味"]
     doc["kakiburi-doc<br/>node と単位"]
     met["kakiburi-metrics<br/>登録簿と計測"]
@@ -40,7 +39,6 @@ flowchart TB
     cas[("kakiburi-cassette")]
 
     src --> norm
-    base --> norm
     norm --> doc
     doc --> met
     met --> scale
@@ -50,11 +48,14 @@ flowchart TB
     met --> rev
 ```
 
-<strong>横に 2 つ。</strong>[カセット](#kakiburi-cassette)が全部を保存し、
-[基準](#kakiburi-baseline)が材料の片側を作る。
+<strong>横に 1 つ。</strong>[カセット](#kakiburi-cassette)が全部を保存する。
 
-<strong>検めが `kakiburi-scale` から直接ではなくカセットを経由して読む</strong>のが、この図の要で
-ある。目盛りを作る経路と使う経路が繋がっていなければ、検めは目盛りを作り直せない。
+<strong>基準は取り込み元の 1 つである。</strong> 本人の文章と同じ口から入る——
+[作らない](#基準は作らない)ので、作る経路が図に出ない。
+
+<strong>検めが目盛りを作る側と繋がっていない</strong>のが、この図の要である。値はカセットを経由して
+渡り、検めは受け取った数を読むだけになる——<strong>作る経路と使う経路が繋がっていなければ、
+検めは目盛りを作り直せない。</strong>
 
 ## クレート
 
@@ -115,14 +116,16 @@ flowchart TB
 添える。</strong>[標本の範囲](../spec/200-extract.md#見る前に標本の範囲を確かめる)は指標ごとの
 門ではない——覆えていなければ <strong>場面まるごと目盛りを作らない</strong>ので、ここまで来ない。
 
-<strong>成果物の型は自分で持たない。</strong>[カセット](#kakiburi-cassette)の型に書き出す。
+<strong>成果物の型はここが持つ。</strong> 作り終えた形しか公開しない——[カセット](#kakiburi-cassette)へは
+JSON にして渡す。<strong>だからカセットは中身の形を知らない</strong>（[理由](#カセットは中身の形を知らない)）。
 
 ### kakiburi-review
 
 [検めて、直す](../spec/300-revise.md)。<strong>目盛りに載せて、判定と指摘を返す。</strong>
 
 <strong>`kakiburi-scale` に依存しない。</strong> 当てはめる関数が視界に入らないので、検める対象を
-見てから目盛りを作り直す経路が <strong>このクレートには書けない</strong>。読むのはカセットだけである。
+見てから目盛りを作り直す経路が <strong>このクレートには書けない</strong>。受け取るのは、
+<strong>作り終えた値と幅と集合</strong>だけである。
 （[組み立て層は別である](#守られるのはクレートの中だけである)。）
 
 <strong>判定にも指摘にも[前に出す指標](../spec/300-revise.md#3-種類を合わせて通るを出す)を使う。</strong>
@@ -130,35 +133,42 @@ flowchart TB
 
 ### kakiburi-cassette
 
-保存形式と <strong>成果物の型</strong>。[カセットの構造](100-cassette.md)が中身を決める。
+保存形式と <strong>原本の型</strong>。[カセットの構造](100-cassette.md)が中身を決める。
 
-<strong>型をここに置くのは、作る側と読む側の両方から見えるからである。</strong> どちらかに置けば、
-もう片方がそちらに依存することになる。
+<strong>原本の型だけを持つ。</strong> 本文・人が決めたこと・指紋である。<strong>派生物はテキストとして
+抱えるだけで、形を知らない</strong>（[理由](#カセットは中身の形を知らない)）。
+
+<strong>`kakiburi-doc` にだけ依存する。</strong> 指標も目盛りも知らないので、それらが増えても
+保存の側は変わらない。
 
 指紋の組み立ても持つ。<strong>入力の一部を混ぜ忘れる事故</strong>を型で防ぐ——指紋を作る関数が
 全部の材料を引数に取り、1 つでも欠ければ組み立てられないようにする。<strong>材料が増えれば
 型が変わり、既存の呼び出しがコンパイルで止まる。</strong>
 
-### kakiburi-baseline
+## 基準は作らない
 
-<strong>基準（LLM の既定出力）を作る。</strong> このクレートだけが非決定的である。
+<strong>基準（LLM の既定出力）を作るクレートを置かない。</strong> どのクレートも LLM を呼ばない。
 
-> [!WARNING]
-> <strong>これは[軸](../spec/000-axis.md#だからしないこと)への意図した例外である。</strong> 軸の判定基準
-> ——言うために内側になければならないか、外から渡されれば済むか——に当てると、基準の
-> <strong>生成</strong>は渡されれば済む側に落ちる。<strong>基準の文書</strong>は言うために要るが、それを作る手続き
-> は要らない。
->
-> <strong>基準にならって置いたのではない。例外として置いた。</strong> 理由は
-> [評価](../spec/200-extract.md#基準を置く)が言う <strong>「集めてくるのではなく作れるので、
-> 素材が手に入らずに止まらない」</strong> ——実際に止まらないことのほうを取った。
->
-> <strong>だから例外の範囲を狭く保つ。</strong> ほかのどのクレートもこれに依存しない。外から入れた
-> 基準だけで全部が動く。<strong>このクレートを消しても、消えるのは便利さだけである。</strong>
+[軸](../spec/000-axis.md#だからしないこと)の判定基準——言うために内側になければならないか、
+外から渡されれば済むか——に当てると、<strong>基準の生成は渡されれば済む側に落ちる</strong>。基準の
+文書は言うために要るが、それを作る手続きは要らない。
 
-依頼文の作り方（[書き方を漏らさない](../spec/200-extract.md#依頼文に書き方を漏らさない)）と、
-版・推論設定の記録が責務である。<strong>題材は外から受け取る</strong>——文章から当てにいけば、
-[題材を統制する](../spec/010-strategy.md#題材を統制する)が禁じた漏れがここで起きる。
+<strong>作れば例外を 1 つ抱えることになる。</strong> 非決定的なものが 1 つ入り、外への繋ぎこみが
+1 つ増え、それを外しても何も失われない——<strong>その 3 つが揃うなら、置かないほうがよい。</strong>
+
+| | どこでやるか |
+| --- | --- |
+| 基準の文書を作る | <strong>外</strong>。書かせる道具は世に多い |
+| 版・推論設定・題材を記録する | <strong>内</strong>。[`add --as baseline`](200-command.md#add)が受け取り、指紋に入る |
+| 依頼文の作り方を決める | <strong>[規則として書く](200-command.md#基準は外で作る)</strong>。人が守る |
+
+<strong>記録の側だけを内に持つ。</strong> 記録が無ければ、次に測ったときに比べられない——
+そこは言うために要る側である。
+
+> [!NOTE]
+> <strong>[評価](../spec/200-extract.md#基準を置く)が「集めてくるのではなく作れる」と言うのは、
+> 素材が手に入らずに止まらないという意味である。</strong> 作る道具を我々が持つ、という意味では
+> ない。外で作れることは変わらない。
 
 ### kakiburi
 
@@ -169,7 +179,6 @@ flowchart TB
 ```mermaid
 flowchart TB
     cli["kakiburi<br/><i>コマンド</i>"]
-    base["kakiburi-baseline"]
     scale["kakiburi-scale"]
     rev["kakiburi-review"]
     cas["kakiburi-cassette"]
@@ -177,24 +186,41 @@ flowchart TB
     norm["kakiburi-normalize"]
     doc["kakiburi-doc"]
 
-    cli --> base
     cli --> scale
     cli --> rev
     cli --> cas
     cli --> met
     cli --> norm
-    scale --> cas
+    cli --> doc
     scale --> met
-    rev --> cas
+    scale --> doc
     rev --> met
-    cas --> met
+    cas --> doc
+    met --> norm
     met --> doc
     norm --> doc
 ```
 
 <strong>`kakiburi-review` から `kakiburi-scale` への線が無いことが、この図の要である。</strong>
-検めは目盛りを <strong>カセット越しに読む</strong>。当てはめる関数が視界に入らないので、
-<strong>検める対象を見てから作り直す経路が、そのクレートの中には書けない。</strong>
+当てはめる関数が視界に入らないので、<strong>検める対象を見てから作り直す経路が、そのクレートの
+中には書けない。</strong>
+
+<strong>`kakiburi-metrics` から `kakiburi-normalize` への線がある。</strong> 取り込み元ごとの
+[書ける・書けないの升目](../spec/030-normalize.md#対応表は取り込み元ごとに持つ)を引くため
+である——[書けない記法](../spec/100-metrics.md#測れない理由を分けて返す)を返せなければ、
+0 と測れないが混ざる。<strong>向きは逆にしない</strong>：正規化は指標を知らないまま木を作る。
+
+### カセットは中身の形を知らない
+
+<strong>派生物はテキストとして持つ。</strong> 目盛りの型は `kakiburi-scale` にあり、カセットは
+その JSON を[捨ててよいもの](100-cassette.md#何を収めるか)として抱えるだけである。
+
+<strong>だから `kakiburi-cassette` は `kakiburi-metrics` にも `kakiburi-scale` にも依存しない。</strong>
+形を知らなければ、派生物が増えても保存の側は変わらない。
+
+<strong>繋ぐのは組み立て層である。</strong> 目盛りを JSON にする道も、読み戻す道も、`kakiburi` が
+持つ。<strong>読み戻したものが元と一致することは[試験が確かめる](300-test.md)</strong>——
+一致しなければ、保存したカセットで測った値は作ったときの値と違う。
 
 ### 守られるのはクレートの中だけである
 
@@ -217,9 +243,6 @@ flowchart TB
 <strong>クレートを割る意味は、守る範囲を狭めたことにある。</strong> 見張るのは組み立て層 1 か所で
 済み、残りは型が持つ。
 
-<strong>成果物の型は `kakiburi-cassette` が持つ。</strong> 語彙・重み・天井・床・帯・幅・効く指標の
-判定は、作る側と読む側の両方から見えるので、どちらでもない場所に置く。
-
 <strong>逆向きの依存を作らない。</strong> とくに `kakiburi-metrics` が `kakiburi-scale` を知らない
 ことが効く——指標は「誰にどう効くか」を知らないまま定義できる、という仕様の要求
 （[集合は広く持つ](../spec/100-metrics.md#集合は広く持つ絞るのはあとである)）が、
@@ -227,15 +250,16 @@ flowchart TB
 
 ## なぜこの粒度か
 
-<strong>8 つは多い。</strong> それでも割るのは、<strong>1 つ 1 つが仕様の要求と対応している</strong>からである。
+<strong>7 つは多い。</strong> それでも割るのは、<strong>1 つ 1 つが仕様の要求と対応している</strong>からである。
 
 | もし統合したら | 何が守れなくなるか |
 | --- | --- |
 | doc + normalize | 単位の定義に取り込み元の都合が混ざる |
 | metrics + scale | 指標が「効くかどうか」を知ってしまう |
 | <strong>scale + review</strong> | <strong>検めが、検める対象を見てから目盛りを作り直せてしまう</strong> |
-| cassette + scale | 成果物の型が作る側に付き、検めが作る側に依存することになる |
-| baseline を混ぜる | 非決定的なものが数える側に入る |
+| cassette + scale | <strong>保存が目盛りの形を知ってしまう。</strong> 派生物が増えるたびに保存の側が変わる |
+
+<strong>[基準を作るクレートは無い](#基準は作らない)。</strong> 割る前に、置かないと決めている。
 
 ## 登録簿は定義ファイルから作る
 
@@ -258,7 +282,7 @@ flowchart TB
 | 形態素解析 | <strong>辞書と版を[指紋](../spec/200-extract.md#何で測ったかを指紋にする)に出す。</strong> 解析器と対象がずれると精度が落ちる（[柳・金 2023](../references/yanagi-jin-2023.md)） |
 | 係り受け解析 | 同上。<strong>[保留中](../spec/metrics/文節パターン.md#保留)</strong> |
 | 圧縮 | <strong>圧縮器と設定を指紋に出す。</strong> ヘッダが短い文書の結果を支配する |
-| LLM | `kakiburi-baseline` のみ。<strong>版と推論設定を指紋に出す</strong>（[林・相澤](../references/japanese-llm-style.md)） |
+| LLM | <strong>呼ばない</strong>（[基準は作らない](#基準は作らない)）。外で作った基準の<strong>版と推論設定を受け取り、指紋に出す</strong>（[林・相澤](../references/japanese-llm-style.md)） |
 
 <strong>埋め込みは使わない</strong>（[保留](../spec/100-metrics.md#埋め込みは保留する)）。使うと
 決めたときは `kakiburi-metrics` に系統が 1 つ増え、モデルと版が指紋に増える。

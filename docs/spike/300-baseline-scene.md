@@ -157,7 +157,7 @@ perl tools/spike-rotate.pl '<本人の記事>/*.md' '.spike/baseline/*.md' --typ
 | [200 指紋](../spec/200-extract.md#何で測ったかを指紋にする) | 数える単位の定義を指紋に入れる |
 | [010 題材を統制する](../spec/010-strategy.md#題材を統制する) | 題材には名指しする物を含める。<strong>ただし表記は写さない</strong> |
 | [200 依頼文](../spec/200-extract.md#依頼文に書き方を漏らさない) | 同じことを、契約を持つ側に書く |
-| [設計 baseline](../design/200-command.md#baseline) | `--topic` を指紋に入れる。人が守る規則だと明記する |
+| [設計 baseline](../design/200-command.md#基準は外で作る) | `--topic` を指紋に入れる。人が守る規則だと明記する |
 | [設計 試験](../design/300-test.md) | 地の文と表の並び、単位の定義の指紋に golden test を置く |
 
 <strong>この表の半分は実測ではなく監査で出た。</strong> セルの粒度が未定義だったこと、`ー` が

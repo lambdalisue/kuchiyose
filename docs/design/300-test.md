@@ -39,11 +39,8 @@
 <strong>性質試験にする。</strong> 生成した入力で繰り返す。並びや反復回数に依存する実装が混ざれば、
 ここで落ちる。
 
-<strong>`kakiburi-baseline` だけは除く</strong>——[唯一の非決定的なクレート](000-architecture.md#kakiburi-baseline)
-である。
-
-<strong>数える側のどれもこれに依存していないことを、依存関係の試験で確かめる</strong>——doc /
-normalize / metrics / scale / review / cassette の 6 つ。<strong>コマンドだけが依存してよい。</strong>
+<strong>除くクレートは無い。</strong>[基準を作らない](000-architecture.md#基準は作らない)ので、
+非決定的なものがどこにも入っていない——<strong>全部が同じ入力から同じ値を返す。</strong>
 
 同じ形で、<strong>`kakiburi-review` が `kakiburi-scale` に依存していないこと</strong>も確かめる
 （[理由](000-architecture.md#依存の向き)）。
