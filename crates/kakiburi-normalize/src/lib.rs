@@ -1,0 +1,107 @@
+//! 入力を正規形にする。記法から意味への対応表。
+//!
+//! 取り込み元ごとの実装を持つ唯一の場所である。GitHub の Alert を引用より先に
+//! 認識する、といった取り込み元固有の知識をここに閉じこめる。
+//!
+//! <strong>決定的である。</strong> 推測しない。落ちない入力は断る。
+
+pub mod html;
+pub mod markdown;
+pub mod markup;
+pub mod refuse;
+pub mod source;
+
+use kakiburi_doc::Document;
+
+pub use refuse::Refusal;
+pub use source::{Source, Writable};
+
+/// 取り込む。読んで、断るかを決める。
+///
+/// <strong>取り込み元は内容から判定しない。</strong> 呼ぶ側が指定する——推測を混ぜれば
+/// 決定的でなくなる。
+pub fn normalize(input: impl AsRef<str>, source: Source) -> Result<Document, Refusal> {
+    let doc = match source {
+        Source::GithubMarkdown | Source::DirectiveMarkdown | Source::PlainMarkdown => {
+            markdown::parse(input, source)?
+        }
+        Source::Html => html::parse(input)?,
+    };
+    refuse::admit(&doc)?;
+    Ok(doc)
+}
+
+/// この取り込み元で測れる node か。
+///
+/// 書けない記法の値は 0 ではなく「測れない」である。0 を並べれば、その書き手は
+/// 補足を使わない人だと判定される。
+#[must_use]
+pub fn measurable(source: Source, kind: kakiburi_doc::node::Kind) -> bool {
+    source.writable(kind) == Writable::Yes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kakiburi_doc::node::Kind;
+
+    #[test]
+    fn 日本語以外が主なら取り込みで断る() {
+        let e = normalize("this is english only text\n", Source::PlainMarkdown).unwrap_err();
+        assert!(matches!(e, Refusal::NotJapanese { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn 日本語の文書は通る() {
+        let md = "# 題\n\nこれは日本語の文章である。十分な長さを持っている。\n";
+        let d = normalize(md, Source::GithubMarkdown).unwrap();
+        assert_eq!(d.paragraphs().len(), 1);
+    }
+
+    #[test]
+    fn 書けない記法は測れないになる() {
+        assert!(!measurable(Source::PlainMarkdown, Kind::Note));
+        assert!(!measurable(Source::Html, Kind::Warning));
+        assert!(measurable(Source::GithubMarkdown, Kind::Note));
+    }
+
+    #[test]
+    fn html_も通る() {
+        let html = "<h1>題</h1><p>これは日本語の文章である。十分な長さを持っている。</p>";
+        let d = normalize(html, Source::Html).unwrap();
+        assert_eq!(d.paragraphs().len(), 1);
+        assert_eq!(d.sections().len(), 1);
+    }
+
+    #[test]
+    fn html_の警告は測れない() {
+        // 対応表に無いので、書けない升目である。0 ではない。
+        assert!(!measurable(Source::Html, Kind::Warning));
+        // aside は補足に落ちる。
+        let d = normalize("<aside>補足である。</aside>", Source::Html).unwrap();
+        assert_eq!(d.nodes[0].kind, Kind::Note);
+    }
+
+    #[test]
+    fn 取り込み元ごとに正規形が変わる() {
+        // 同じ意味を、記法の違う 4 つで書いても同じ node に落ちる。
+        let gh = normalize(
+            "> [!NOTE]\n> 補足である。十分に長い日本語の文章。\n",
+            Source::GithubMarkdown,
+        )
+        .unwrap();
+        let dir = normalize(
+            ":::note\n補足である。十分に長い日本語の文章。\n:::\n",
+            Source::DirectiveMarkdown,
+        )
+        .unwrap();
+        let h = normalize(
+            "<aside>補足である。十分に長い日本語の文章。</aside>",
+            Source::Html,
+        )
+        .unwrap();
+        for d in [&gh, &dir, &h] {
+            assert_eq!(d.nodes[0].kind, Kind::Note, "記法が違っても補足になる");
+        }
+    }
+}

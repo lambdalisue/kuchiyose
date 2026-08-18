@@ -1,0 +1,18 @@
+[package]
+name = "kakiburi-metrics"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+kakiburi-doc = { path = "../kakiburi-doc" }
+# 圧縮率がこれで測る。<strong>器と版が値を決めるので、指紋に入れる。</strong>
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+
+[dev-dependencies]
+kakiburi-normalize = { path = "../kakiburi-normalize" }
+
+[lints]
+workspace = true

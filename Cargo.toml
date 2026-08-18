@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kakiburi-doc",
+    "crates/kakiburi-normalize",
+    "crates/kakiburi-metrics",
+    "crates/kakiburi-scale",
+    "crates/kakiburi-review",
+    "crates/kakiburi-cassette",
+    "crates/kakiburi-cli",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"

@@ -1,0 +1,244 @@
+//! 定義ファイルを読む。<strong>1 指標 1 ファイルの、その 1 か所である。</strong>
+//!
+//! <strong>名前も札も直し方も、ここから引く。</strong> 実装の側に書き写せば、定義を直したときに
+//! 書き写しが古いまま残り、<strong>エラーにならない。</strong>
+//!
+//! 検めが返す指摘の文も定義ファイルの[直し方](Definition::remedy)である——
+//! <strong>指摘の文を実装に持つと、仕様と食い違ったことに誰も気づかない。</strong>
+
+use std::path::{Path, PathBuf};
+
+use crate::registry::{Registry, RegistryError};
+use crate::tag::Direction;
+
+/// 定義ファイル 1 つ。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Definition {
+    /// ファイル名（拡張子なし）。
+    pub file: String,
+    /// 1 行目の見出し。<strong>指標の名前である。</strong>
+    pub name: String,
+    /// 札の行。
+    pub tag_line: String,
+    /// 直し方の節。<strong>無ければ空である。</strong>
+    pub remedy: String,
+}
+
+impl Definition {
+    /// 向きに応じた直し方。<strong>書いていなければ `None`。</strong>
+    ///
+    /// 両側の指標は `<strong>上</strong>:` と `<strong>下</strong>:` で分けて書く。片側だけの指標は
+    /// 節の全体がその向きの直し方である。
+    #[must_use]
+    pub fn remedy(&self, want: Direction) -> Option<String> {
+        let marked = |mark: &str| -> Option<String> {
+            self.remedy
+                .split("<strong>")
+                .find_map(|part| part.strip_prefix(mark))
+                .map(|s| trim_remedy(s.trim_start_matches([':', '：']).trim()))
+        };
+        let upper = marked("上</strong>");
+        let lower = marked("下</strong>");
+        if upper.is_some() || lower.is_some() {
+            return match want {
+                Direction::Upper => upper,
+                Direction::Lower => lower,
+                // 両側を訊かれたら 2 つとも返す。
+                Direction::Both => match (upper, lower) {
+                    (Some(u), Some(l)) => Some(format!("{u} / {l}")),
+                    (u, l) => u.or(l),
+                },
+            };
+        }
+        let whole = trim_remedy(self.remedy.trim());
+        if whole.is_empty() {
+            return None;
+        }
+        Some(whole)
+    }
+}
+
+/// 印より後ろを 1 文にする。<strong>指摘は短くする。</strong>
+fn trim_remedy(s: &str) -> String {
+    let first = s.split("\n\n").next().unwrap_or(s);
+    first.replace('\n', "").trim().to_owned()
+}
+
+/// 定義ファイルの置き場を探す。<strong>呼ばれた場所から遡る。</strong>
+#[must_use]
+pub fn find_dir(from: impl AsRef<Path>) -> Option<PathBuf> {
+    let mut at = from.as_ref().to_path_buf();
+    loop {
+        let p = at.join("docs/spec/metrics");
+        if p.is_dir() {
+            return Some(p);
+        }
+        if !at.pop() {
+            return None;
+        }
+    }
+}
+
+/// 定義ファイルを全部読む。<strong>ファイル名の昇順。</strong>
+#[must_use]
+pub fn read(dir: impl AsRef<Path>) -> Vec<Definition> {
+    let Ok(entries) = std::fs::read_dir(dir.as_ref()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for e in entries.filter_map(Result::ok) {
+        let path = e.path();
+        if path.extension().is_none_or(|x| x != "md") {
+            continue;
+        }
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+        // README は定義ではない。
+        if stem == "README" {
+            continue;
+        }
+        let Ok(body) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        out.push(parse(&stem, &body));
+    }
+    out.sort();
+    out
+}
+
+/// 1 ファイルを読む。
+///
+/// 1 行目が見出し、空行を挟んだ次の行が札である。
+#[must_use]
+fn parse(file: &str, body: &str) -> Definition {
+    let mut lines = body.lines();
+    let name = lines
+        .next()
+        .unwrap_or("")
+        .trim_start_matches('#')
+        .trim()
+        .to_owned();
+    let tag_line = lines
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim()
+        .to_owned();
+    Definition {
+        file: file.to_owned(),
+        name,
+        tag_line,
+        remedy: section(body, "## 直し方"),
+    }
+}
+
+/// 見出しから次の同じ深さの見出しまで。
+fn section(body: &str, heading: &str) -> String {
+    let Some(at) = body.find(heading) else {
+        return String::new();
+    };
+    let rest = &body[at + heading.len()..];
+    let end = rest.find("\n## ").unwrap_or(rest.len());
+    rest[..end].trim().to_owned()
+}
+
+/// 定義ファイルから登録簿を組む。
+pub fn registry(defs: &[Definition]) -> Result<Registry, RegistryError> {
+    let mut r = Registry::new();
+    for d in defs {
+        r.insert(&d.name, &d.tag_line)?;
+    }
+    Ok(r)
+}
+
+impl PartialOrd for Definition {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Definition {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.file.cmp(&other.file)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn definition(remedy: &str) -> Definition {
+        Definition {
+            file: "ためし".into(),
+            name: "ためし".into(),
+            tag_line: "指示 / なし / 記号 / 両側 / 割合。".into(),
+            remedy: remedy.to_owned(),
+        }
+    }
+
+    #[test]
+    fn 見出しと札を読む() {
+        let body = "# 絵文字\n\n指示 / なし / 記号 / 両側 / 割合。\n\n## 意味\n\nある。\n";
+        let d = parse("絵文字", body);
+        assert_eq!(d.name, "絵文字");
+        assert_eq!(d.tag_line, "指示 / なし / 記号 / 両側 / 割合。");
+    }
+
+    #[test]
+    fn 直し方の節だけを取る() {
+        let body = "# x\n\n札。\n\n## 直し方\n\n減らす。\n\n## 覚え書き\n\n別の話。\n";
+        let d = parse("x", body);
+        assert_eq!(d.remedy, "減らす。");
+        assert!(!d.remedy.contains("別の話"), "次の節を含めない");
+    }
+
+    #[test]
+    fn 両側は印で分ける() {
+        let d = definition(
+            "<strong>上</strong>: 絵文字を減らす。\n\n<strong>下</strong>: 絵文字を足す。",
+        );
+        assert_eq!(
+            d.remedy(Direction::Upper).as_deref(),
+            Some("絵文字を減らす。")
+        );
+        assert_eq!(
+            d.remedy(Direction::Lower).as_deref(),
+            Some("絵文字を足す。")
+        );
+    }
+
+    #[test]
+    fn 片側だけの指標は節の全体を返す() {
+        let d = definition("<strong>下限だけを持つ</strong>——段落の長さに緩急をつける。");
+        assert!(d.remedy(Direction::Lower).unwrap().contains("緩急をつける"));
+    }
+
+    #[test]
+    fn 書いていなければ返さない() {
+        // 直し方の無い指標は指摘に出ない。<strong>だが判定は止まったままである。</strong>
+        assert_eq!(definition("").remedy(Direction::Upper), None);
+    }
+
+    #[test]
+    fn 片側しか書いていない両側の指標は片側だけ返す() {
+        let d = definition("<strong>上</strong>: 減らす。");
+        assert_eq!(d.remedy(Direction::Upper).as_deref(), Some("減らす。"));
+        assert_eq!(d.remedy(Direction::Lower), None);
+    }
+
+    #[test]
+    fn 指摘は_1_文にする() {
+        let d = definition("<strong>上</strong>: 減らす。\n\n続きの段落は入れない。");
+        assert_eq!(d.remedy(Direction::Upper).as_deref(), Some("減らす。"));
+    }
+
+    #[test]
+    fn 定義ファイルが実際に読める() {
+        // <strong>置き場を遡って見つける。</strong> 見つからなければ空を返す——試験は落とさない。
+        let Some(dir) = find_dir(env!("CARGO_MANIFEST_DIR")) else {
+            return;
+        };
+        let defs = read(&dir);
+        assert!(defs.len() > 40, "{} 本しか読めていない", defs.len());
+        let r = registry(&defs).expect("札が読める");
+        assert_eq!(r.len(), defs.len());
+    }
+}

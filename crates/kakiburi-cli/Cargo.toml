@@ -1,0 +1,22 @@
+[package]
+name = "kakiburi-cli"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "kakiburi"
+path = "src/main.rs"
+
+[dependencies]
+kakiburi-cassette = { path = "../kakiburi-cassette" }
+kakiburi-doc = { path = "../kakiburi-doc" }
+kakiburi-metrics = { path = "../kakiburi-metrics" }
+kakiburi-normalize = { path = "../kakiburi-normalize" }
+kakiburi-review = { path = "../kakiburi-review" }
+kakiburi-scale = { path = "../kakiburi-scale" }
+
+[lints]
+workspace = true

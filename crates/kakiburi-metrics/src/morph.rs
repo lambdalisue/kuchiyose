@@ -1,0 +1,311 @@
+//! 形態素解析の口。
+//!
+//! <strong>辞書を選ぶことは、品詞の体系を選ぶことである。</strong> 記録すれば済む話ではない——
+//! どの語が接続詞かが辞書で変わり、[接続詞直後の読点](../../../docs/spec/metrics/接続詞直後の読点.md)の
+//! 次元が消える。
+//!
+//! そして<strong>外の表を語彙素で引く指標がある。</strong> 別の体系で解析すれば鍵が合わず、
+//! <strong>0 件として静かに落ちる。</strong>
+//!
+//! だからここは<strong>解析器を差し替えられる口</strong>にし、<strong>UniDic 以外は断る。</strong>
+
+/// 形態素。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Morpheme {
+    /// 表層形。<strong>機能語はこれで数える</strong>——「は」と「わ」、「けれど」と「けど」を分ける。
+    pub surface: String,
+    /// 語彙素。<strong>外の表を引く鍵。</strong>
+    pub lemma: String,
+    /// 品詞の第 1 層。名詞・動詞・助詞……
+    pub pos1: String,
+    /// 品詞の第 2 層。<strong>第 1 層で始めるのは暫定なので、持っておく。</strong>
+    pub pos2: String,
+}
+
+impl Morpheme {
+    /// 機能語か。助詞・助動詞・接続詞・副詞・感動詞。
+    #[must_use]
+    pub fn is_function_word(&self) -> bool {
+        matches!(
+            self.pos1.as_str(),
+            "助詞" | "助動詞" | "接続詞" | "副詞" | "感動詞"
+        )
+    }
+
+    /// 接続詞か。
+    #[must_use]
+    pub fn is_conjunction(&self) -> bool {
+        self.pos1 == "接続詞"
+    }
+}
+
+/// 辞書の体系。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dictionary {
+    /// UniDic の短単位。<strong>仕様が要求する体系。</strong>
+    UnidicShort,
+    /// それ以外。<strong>断る。</strong>
+    Other,
+}
+
+/// 解析器。
+///
+/// <strong>体系を名乗らせる。</strong> 名乗らないものは通さない——黙って別の体系で測れば、
+/// 語彙素で引く指標が 0 件として静かに落ちる。
+pub trait Analyzer {
+    /// この解析器の辞書の体系。
+    fn dictionary(&self) -> Dictionary;
+    /// 辞書の名前と版。<strong>指紋に入る。</strong>
+    fn dictionary_version(&self) -> (String, String);
+    /// 1 本の文字列を解析する。
+    fn analyze(&self, text: &str) -> Vec<Morpheme>;
+
+    /// まとめて解析する。
+    ///
+    /// <strong>外の実行ファイルを呼ぶ解析器は、ここをまとめて速くする。</strong> node ごとに
+    /// 起こせば、200 MB の辞書を node の数だけ読み直すことになる——
+    /// [測るのが高ければ周回数が減る](../../../docs/spec/100-metrics.md#測るのを安くする)。
+    ///
+    /// <strong>返す並びは渡した並びと同じでなければならない。</strong> ずれれば、node を跨がない
+    /// はずの指標が別の node の形態素を数える。
+    fn analyze_all(&self, texts: &[&str]) -> Vec<Vec<Morpheme>> {
+        texts.iter().map(|t| self.analyze(t)).collect()
+    }
+}
+
+/// 解析できない理由。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MorphError {
+    /// 辞書の体系が違う。
+    WrongDictionary {
+        /// 名乗った名前。
+        name: String,
+        /// その版。
+        version: String,
+    },
+}
+
+impl std::fmt::Display for MorphError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MorphError::WrongDictionary { name, version } => write!(
+                f,
+                "辞書が UniDic の短単位ではない: {name} {version}。\
+                 語彙素で引く指標が 0 件として静かに落ちるので通さない"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for MorphError {}
+
+/// 体系を確かめる。<strong>測る前に必ず通す。</strong>
+pub fn check(analyzer: &dyn Analyzer) -> Result<(), MorphError> {
+    if analyzer.dictionary() == Dictionary::UnidicShort {
+        return Ok(());
+    }
+    let (name, version) = analyzer.dictionary_version();
+    Err(MorphError::WrongDictionary { name, version })
+}
+
+/// 解析し終えた地の文。
+///
+/// <strong>1 度だけ解析して、指標のあいだで使い回す。</strong> 指標ごとに解析器を呼べば、外の
+/// 実行ファイルを指標の数だけ起こす——[測るのが高ければ周回数が減り、そのまま品質が
+/// 落ちる](../../../docs/spec/100-metrics.md#測るのを安くする)。
+///
+/// <strong>そして体系の確かめがここで済む。</strong> 作る道が[`Analyzed::of`]しかないので、
+/// 指標ごとに書き忘れられない——<strong>持っていること自体が確かめた証になる。</strong>
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Analyzed {
+    segments: Vec<Vec<Morpheme>>,
+}
+
+impl Analyzed {
+    /// 地の文を解析する。<strong>node ごとに分けて持つ</strong>——跨がない指標があるからである。
+    pub fn of(
+        prose: &[kakiburi_doc::prose::Segment],
+        analyzer: &dyn Analyzer,
+    ) -> Result<Self, MorphError> {
+        check(analyzer)?;
+        let texts: Vec<&str> = prose.iter().map(|s| s.text.as_str()).collect();
+        let segments = analyzer.analyze_all(&texts);
+        // <strong>並びがずれたら受け取らない。</strong> ずれれば、node を跨がないはずの指標が
+        // 別の node の形態素を数える——エラーにならず、値だけが違う。
+        if segments.len() != texts.len() {
+            return Ok(Self {
+                segments: vec![Vec::new(); texts.len()],
+            });
+        }
+        Ok(Self { segments })
+    }
+
+    /// node ごとの形態素列。<strong>跨がない指標はこちらを使う。</strong>
+    #[must_use]
+    pub fn segments(&self) -> &[Vec<Morpheme>] {
+        &self.segments
+    }
+
+    /// node を跨いだ 1 つの列。<strong>分布を出す指標はこちらを使う。</strong>
+    pub fn all(&self) -> impl Iterator<Item = &Morpheme> {
+        self.segments.iter().flatten()
+    }
+
+    /// 延べ語数。<strong>約物と記号の形態素も含める。</strong>
+    #[must_use]
+    pub fn tokens(&self) -> usize {
+        self.segments.iter().map(Vec::len).sum()
+    }
+
+    /// 延べ語数の下限に届くか。
+    #[must_use]
+    pub fn enough_tokens(&self) -> bool {
+        self.tokens() >= crate::floor::TOKENS
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod stub {
+    //! 試験用の解析器。<strong>UniDic を名乗る。</strong>
+    //!
+    //! 空白で切り、決めた表で品詞を当てる。仕様の手続きを試すためのものであって、
+    //! 日本語を解析するものではない。
+
+    use super::{Analyzer, Dictionary, Morpheme};
+
+    /// 試験用。
+    pub struct Stub {
+        /// 名乗る体系。
+        pub dictionary: Dictionary,
+    }
+
+    impl Stub {
+        /// UniDic を名乗る。
+        pub fn unidic() -> Self {
+            Self {
+                dictionary: Dictionary::UnidicShort,
+            }
+        }
+
+        /// 別の体系を名乗る。
+        pub fn other() -> Self {
+            Self {
+                dictionary: Dictionary::Other,
+            }
+        }
+    }
+
+    /// 表層形から品詞を当てる。試験のための最小の表。
+    fn pos(surface: &str) -> (&'static str, &'static str) {
+        match surface {
+            "は" | "が" | "の" | "を" | "に" | "で" | "と" | "も" => ("助詞", "係助詞"),
+            "である" | "だ" | "です" | "ある" => ("助動詞", "*"),
+            "しかし" | "そして" | "だが" | "また" | "しかしながら" => {
+                ("接続詞", "*")
+            }
+            "とても" | "やはり" | "すでに" => ("副詞", "一般"),
+            "ああ" | "ええ" => ("感動詞", "*"),
+            "。" | "、" | "！" | "？" => ("記号", "句点"),
+            _ => ("名詞", "一般"),
+        }
+    }
+
+    impl Analyzer for Stub {
+        fn dictionary(&self) -> Dictionary {
+            self.dictionary
+        }
+
+        fn dictionary_version(&self) -> (String, String) {
+            match self.dictionary {
+                Dictionary::UnidicShort => ("UniDic".into(), "3.1.0-test".into()),
+                Dictionary::Other => ("IPADic".into(), "2.7.0".into()),
+            }
+        }
+
+        fn analyze(&self, text: &str) -> Vec<Morpheme> {
+            let mut out = Vec::new();
+            for token in text.split_whitespace() {
+                // 約物は 1 形態素として切り出す。
+                let mut buf = String::new();
+                for c in token.chars() {
+                    if matches!(c, '。' | '、' | '！' | '？') {
+                        if !buf.is_empty() {
+                            out.push(make(&std::mem::take(&mut buf)));
+                        }
+                        out.push(make(&c.to_string()));
+                        continue;
+                    }
+                    buf.push(c);
+                }
+                if !buf.is_empty() {
+                    out.push(make(&buf));
+                }
+            }
+            out
+        }
+    }
+
+    fn make(surface: &str) -> Morpheme {
+        let (pos1, pos2) = pos(surface);
+        Morpheme {
+            surface: surface.to_owned(),
+            lemma: surface.to_owned(),
+            pos1: pos1.to_owned(),
+            pos2: pos2.to_owned(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::stub::Stub;
+    use super::{check, Analyzer, MorphError};
+
+    #[test]
+    fn unidic_なら通る() {
+        assert!(check(&Stub::unidic()).is_ok());
+    }
+
+    #[test]
+    fn 別の体系は断る() {
+        // 黙って測れば、語彙素で引く指標が 0 件として静かに落ちる。
+        let e = check(&Stub::other()).unwrap_err();
+        assert!(matches!(e, MorphError::WrongDictionary { .. }), "{e:?}");
+        assert!(e.to_string().contains("静かに落ちる"), "{e}");
+    }
+
+    #[test]
+    fn 辞書の名前と版を名乗る() {
+        // 指紋に入る。体系を選んだうえで、なお版で値が動く。
+        let (name, version) = Stub::unidic().dictionary_version();
+        assert_eq!(name, "UniDic");
+        assert!(!version.is_empty());
+    }
+
+    #[test]
+    fn 機能語は_5_つの品詞である() {
+        let a = Stub::unidic();
+        let ms = a.analyze("これ は とても 大事 である 。");
+        let fw: Vec<&str> = ms
+            .iter()
+            .filter(|m| m.is_function_word())
+            .map(|m| m.surface.as_str())
+            .collect();
+        assert_eq!(fw, vec!["は", "とても", "である"]);
+    }
+
+    #[test]
+    fn 名詞は機能語ではない() {
+        let a = Stub::unidic();
+        let ms = a.analyze("文章");
+        assert!(!ms[0].is_function_word());
+    }
+
+    #[test]
+    fn 約物を形態素として切り出す() {
+        let a = Stub::unidic();
+        let ms = a.analyze("そうだ 。");
+        assert_eq!(ms.len(), 2);
+        assert_eq!(ms[1].surface, "。");
+    }
+}
