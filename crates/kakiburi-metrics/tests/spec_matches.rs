@@ -91,7 +91,8 @@ fn 種別の内訳が仕様と合う() {
     assert_eq!(directive + matching + humanness, r.len());
     // 照合の系統は 8 本。判定に使える層 1 はそのうちの一部である。
     assert_eq!(matching, 8, "照合の系統は 8 本");
-    assert_eq!(humanness, 4, "人らしさは 4 本");
+    // 繰り返しは短いと長いに割れている。**まとめると向きが指標の中で割れる。**
+    assert_eq!(humanness, 5, "人らしさは 5 本");
 }
 
 #[test]

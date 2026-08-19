@@ -1468,6 +1468,34 @@ fn build_scene(
         scale.band.floor.low,
         scale.band.floor.high
     ));
+    // <strong>向きを支えられなかった次元を数える。</strong> 指標の定義は、先行研究に基づいて
+    // どちらが機械の側かを名乗っている。<strong>素材がその向きを否定したなら、目盛りは
+    // 作れても人らしさを名乗れない</strong>——黙って出せば、重なった帯が「判定できない」
+    // として出るだけで、原因が基準の側にあることが誰にも見えない。
+    let bad = scale.humanness.contradicting_dims();
+    if !bad.is_empty() {
+        say(format!(
+            "人らしさ: {} / {} 次元が定義と逆に出た（{}）",
+            bad.len(),
+            scale.humanness.dims().len(),
+            bad.join("、")
+        ));
+        // <strong>食い違いは止める理由ではない。</strong> 寄せる向きは較正から読むので、
+        // 定義と逆でも直し方は渡せる——<strong>逆だと分かったことを言うだけである。</strong>
+        let toward = scale.humanness.toward_human();
+        say(format!(
+            "  寄せる向き（較正が決めた）: {}",
+            if toward.is_empty() {
+                "無し。<strong>どの指標も次元の向きが割れている</strong>".to_owned()
+            } else {
+                toward
+                    .iter()
+                    .map(|(m, up)| format!("{m} を{}", if *up { "上げる" } else { "下げる" }))
+                    .collect::<Vec<_>>()
+                    .join("、")
+            }
+        ));
+    }
     say(format!(
         "人らしさの帯: 人 {:.3}〜{:.3} / 機械 {:.3}〜{:.3}",
         scale.humanness_band.ceiling.low,
@@ -1477,7 +1505,7 @@ fn build_scene(
     ));
     if scale.humanness.evenly_spread() {
         // 4 つは同じ現象を別の角度から見ている。<strong>均等に開いたら較正を疑う。</strong>
-        eprintln!("但し書き: 人らしさの合算が 4 指標に均等に開いている。較正を疑う");
+        eprintln!("但し書き: 人らしさの合算が 5 指標に均等に開いている。較正を疑う");
     }
 
     // <strong>効くかの判定はここで出す。</strong> 検めが作り直せる形にしておくと、検める文書を
@@ -1869,6 +1897,10 @@ fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) 
                 ("missing_systems".to_owned(), Value::Array(vec![])),
                 ("directives".to_owned(), Value::Number(0.0)),
                 ("points".to_owned(), Value::Array(vec![])),
+                // <strong>早く抜けても欄は同じである。</strong> 欄が消えれば、読む側は
+                // 「出なかった」と「そもそも無い」を区別できない。
+                ("humanness_points".to_owned(), Value::Array(vec![])),
+                ("humanness_by_metric".to_owned(), Value::obj([])),
                 ("provisional".to_owned(), machine::strings(&c.provisional)),
             ])
             .write()
@@ -2120,7 +2152,18 @@ fn review(args: &[String]) -> Exit {
             })
         })
         .collect();
-    let result = kakiburi_review::review(humanness, matching, &directives, &defs);
+    // <strong>人らしさの直し方は、指標ごとの値から組む。</strong> 合算した 1 つの値では
+    // 「機械の側にある」としか言えず、直し方を渡せない。
+    let by_metric: Vec<kakiburi_review::HumannessObserved> = got
+        .humanness_by_metric
+        .iter()
+        .map(|m| kakiburi_review::HumannessObserved {
+            name: m.name.clone(),
+            value: m.value,
+            raise: m.raise,
+        })
+        .collect();
+    let result = kakiburi_review::review(humanness, matching, &directives, &defs, &by_metric);
 
     if json {
         // <strong>人向けの表示は変えない。</strong> 出すのは同じ値の生の形である。
@@ -2143,6 +2186,24 @@ fn review(args: &[String]) -> Exit {
                     "missing_humanness".to_owned(),
                     machine::strings(&got.missing_humanness),
                 ),
+                (
+                    // <strong>指標ごとの観測。</strong> 合算した 1 つの値だけでは、どの指標が
+                    // 隔たりを担っているかを言えない——直し方を選ぶ根拠が消える。
+                    //
+                    // <strong>向きも出す。</strong> 落とせば、向きを知りたい読み手は
+                    // `humanness_points` の散文を切り出すしかなくなる——
+                    // [道具向けの出力](machine)が避けようとした経路そのものである。
+                    "humanness_by_metric".to_owned(),
+                    Value::obj(got.humanness_by_metric.iter().map(|m| {
+                        (
+                            m.name.clone(),
+                            Value::obj([
+                                ("value".to_owned(), Value::Number(m.value)),
+                                ("raise".to_owned(), Value::Bool(m.raise)),
+                            ]),
+                        )
+                    })),
+                ),
                 ("matching".to_owned(), machine::number(got.matching)),
                 (
                     "missing_systems".to_owned(),
@@ -2153,6 +2214,12 @@ fn review(args: &[String]) -> Exit {
                     // <strong>指摘は結果であって断り書きではない。</strong> ここに入れる。
                     "points".to_owned(),
                     Value::Array(result.points.iter().map(|p| Value::s(p.prose())).collect()),
+                ),
+                (
+                    // <strong>書きぶりの枠と混ぜない。</strong> 別の欄に出す——混ぜれば、
+                    // 機械臭さを消す指示と、その人へ寄せる指示が席を取り合う。
+                    "humanness_points".to_owned(),
+                    machine::strings(&result.humanness),
                 ),
                 ("provisional".to_owned(), machine::strings(&c.provisional)),
             ])
@@ -2180,6 +2247,13 @@ fn review(args: &[String]) -> Exit {
         println!("指摘 {} 本", result.points.len());
         for p in &result.points {
             println!("  - {}", p.prose());
+        }
+    }
+    if !result.humanness.is_empty() {
+        println!();
+        println!("人らしさの直し方 {} 本", result.humanness.len());
+        for h in &result.humanness {
+            println!("  - {h}");
         }
     }
     Exit::from_verdict(result.outcome.verdict)
@@ -2470,6 +2544,24 @@ fn measure(args: &[String]) -> Exit {
                 ("tokens".to_owned(), machine::number(tokens)),
                 ("structure".to_owned(), machine::structure(&doc)),
                 ("directives".to_owned(), machine::metrics(&measured(&doc))),
+                (
+                    // <strong>人らしさの生の値も出す。</strong> カセットが無くても測れる値であり、
+                    // 出さなければ<strong>素材が向きを支えているかを外から確かめられない</strong>。
+                    "humanness".to_owned(),
+                    machine::metrics(
+                        &kakiburi_metrics::humanness::Humanness::measure(
+                            &doc.prose(),
+                            analyzed_of(
+                                &doc.prose(),
+                                mecab
+                                    .as_ref()
+                                    .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+                            )
+                            .as_ref(),
+                        )
+                        .flat(),
+                    ),
+                ),
             ])
             .write()
         );

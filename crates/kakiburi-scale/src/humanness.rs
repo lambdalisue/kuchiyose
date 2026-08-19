@@ -9,7 +9,7 @@
 //! | 1 | 12 次元を測る |
 //! | 2 | <strong>次元ごとに</strong>、人の側と機械の側に照らして尤度比に変える |
 //! | 3 | <strong>指標ごとに</strong>、その指標の次元の対数尤度比を平均する |
-//! | 4 | 4 つを合算して 1 つの人らしさ値にする |
+//! | 4 | 5 つを合算して 1 つの人らしさ値にする |
 //!
 //! <strong>3 段目で平均するのは、当てはめる重みを 4 つに抑えるためである。</strong> 較正に使える単位は
 //! 10 本しかない。12 の重みを 10 点から当てはめれば、どうとでも決まってしまう——
@@ -54,6 +54,12 @@ pub struct HumannessScale {
     /// 指標ごとの対数尤度比の平均 → 1 つの人らしさ値。
     fusion: Weights,
 }
+
+/// 向きを持つとみなす傾きの下限。<strong>その指標のいちばん大きい傾きに対する割合。</strong>
+///
+/// <strong>暫定値である。</strong> 実測では、文字のエントロピーの傾きが語のエントロピーの
+/// 7% しかなく、それだけでエントロピーが指示できない指標になっていた。
+pub const FAINT: f64 = 0.2;
 
 /// 12 次元の並び。<strong>指標の並びから引く。</strong>
 #[must_use]
@@ -126,6 +132,39 @@ impl HumannessScale {
         Ok(self.fusion.log_lr(&per_metric(&self.per_dim, &row)))
     }
 
+    /// 指標ごとの人らしさ値。<strong>どれが機械の側にあるかを名指しできる。</strong>
+    ///
+    /// 合算した 1 つの値では「機械の側にある」としか言えず、直し方を渡せない。
+    /// <strong>正が人の側、負が機械の側である。</strong>
+    ///
+    /// <strong>欠けたら出さない</strong>のは[合算](Self::value)と同じ——一部の指標だけで
+    /// 直し方を出せば、測れていない指標が見落とされる。
+    pub fn by_metric(
+        &self,
+        measured: &[(String, Measured)],
+    ) -> Result<Vec<(&'static str, f64)>, HumannessError> {
+        let mut missing = Vec::new();
+        let mut row = Vec::with_capacity(self.dims.len());
+        for name in &self.dims {
+            match measured
+                .iter()
+                .find(|(n, _)| n == name)
+                .and_then(|(_, m)| m.value())
+            {
+                Some(v) => row.push(v),
+                None => missing.push(name.clone()),
+            }
+        }
+        if !missing.is_empty() {
+            return Err(HumannessError::MissingDims { names: missing });
+        }
+        Ok(Metric::ALL
+            .into_iter()
+            .map(Metric::name)
+            .zip(per_metric(&self.per_dim, &row))
+            .collect())
+    }
+
     /// 次元の名前と並び。
     #[must_use]
     pub fn dims(&self) -> &[String] {
@@ -168,9 +207,69 @@ impl HumannessScale {
         })
     }
 
-    /// 4 つに均等に開いていないか。
+    /// 較正が定義と逆を学んだ次元の名前。
     ///
-    /// <strong>開いていたら較正を疑う。</strong> 4 つは同じ現象を別の角度から見ているので、
+    /// <strong>判定には使う。</strong> 目盛りは素材から作るものであり、素材が言ったことを
+    /// 捨てれば判定が弱くなるだけである。
+    ///
+    /// <strong>直し方には使えない。</strong> 定義は「どちらが機械の側か」を先行研究に基づいて
+    /// 名乗っており、較正がその逆を学んだなら、<strong>その直し方に従うほど人らしさが
+    /// 下がる</strong>——道具が自分の指示で自分の判定を悪くする。
+    #[must_use]
+    pub fn contradicting_dims(&self) -> Vec<String> {
+        let owners = owners();
+        self.dims
+            .iter()
+            .enumerate()
+            .zip(&self.per_dim)
+            .filter(|((j, _), w)| !agrees(&owners, *j, w))
+            .map(|((_, n), _)| n.clone())
+            .collect()
+    }
+
+    /// 指標ごとの、<strong>人へ寄せる向き</strong>。`true` なら値を上げる。
+    ///
+    /// <strong>向きは較正から読む。</strong> 定義に固定すると、素材がその向きを支えていない
+    /// カセットで<strong>直し方に従うほど人らしさが下がる</strong>。先行研究が言うのは
+    /// 「普通はこちら」であって、この人とこの基準でそうなるとはかぎらない。
+    ///
+    /// <strong>次元の向きが割れている指標は返さない。</strong> どちらへ動かせばよいかを言えない
+    /// ものを指示にしない。
+    #[must_use]
+    pub fn toward_human(&self) -> Vec<(&'static str, bool)> {
+        let owners = owners();
+        Metric::ALL
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, m)| {
+                let slopes: Vec<f64> = self
+                    .per_dim
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| owners.get(*j) == Some(&i))
+                    .map(|(_, w)| w.slopes().first().copied().unwrap_or(0.0))
+                    .collect();
+                // <strong>向きを持たない次元は、向きの割れに数えない。</strong> 傾きがほぼ 0 の
+                // 次元はどちらへ動かしても値を変えないので、<strong>それが 1 本あるだけで
+                // 指標全体を指示できなくするのは、無い信号に判断を委ねること</strong>である。
+                let max = slopes.iter().fold(0.0f64, |a, b| a.max(b.abs()));
+                if max == 0.0 {
+                    return None;
+                }
+                let mut signs = slopes
+                    .iter()
+                    .filter(|x| x.abs() / max >= FAINT)
+                    .map(|x| *x > 0.0)
+                    .peekable();
+                let first = *signs.peek()?;
+                signs.all(|x| x == first).then_some((m.name(), first))
+            })
+            .collect()
+    }
+
+    /// 5 つに均等に開いていないか。
+    ///
+    /// <strong>開いていたら較正を疑う。</strong> 5 つは同じ現象を別の角度から見ているので、
     /// 較正が偏らせるはずである。
     #[must_use]
     pub fn evenly_spread(&self) -> bool {
@@ -181,6 +280,26 @@ impl HumannessScale {
         }
         w.iter().all(|x| x.abs() / max > 0.8)
     }
+}
+
+/// その次元の傾きが、定義の名乗る向きと合っているか。
+///
+/// 定義が「機械の側が高い」と言うなら、人へ寄るほど値は小さい——傾きは負である。
+fn agrees(owners: &[usize], j: usize, w: &Weights) -> bool {
+    let Some(upper) = owners
+        .get(j)
+        .and_then(|&i| Metric::ALL.get(i))
+        .map(|m| m.upper_bound())
+    else {
+        return false;
+    };
+    let slope = w.slopes().first().copied().unwrap_or(0.0);
+    // <strong>0 は合っていない。</strong> どちらへ動かしても値が変わらない次元では、直し方が
+    // 効いたかを次の周で確かめられない。
+    if slope == 0.0 {
+        return false;
+    }
+    (slope < 0.0) == upper
 }
 
 /// 指標ごとに、その指標の次元の<strong>対数尤度比を平均する</strong>。
@@ -252,6 +371,61 @@ mod tests {
     }
 
     #[test]
+    fn 向きが割れている指標には直し方を渡さない() {
+        // <strong>どちらへ動かせばよいかを言えない。</strong> 言えないものを指示にしない。
+        // <strong>判定には使う</strong>——素材が言ったことを捨てれば判定が弱くなるだけである。
+        //
+        // 繰り返しだけを逆に置く——機械の側が多く繰り返す素材である。
+        let flip = |human: bool, i: usize| {
+            let seed = f64::from(i as u32) * 0.01;
+            // ほかの 3 指標は定義どおりのまま、繰り返しだけを入れ替える。
+            let mut row = if human {
+                human_row(seed)
+            } else {
+                machine_row(seed)
+            };
+            let rep = if human { 0.10 } else { 0.50 } + seed;
+            for x in row.iter_mut().take(9).skip(1) {
+                *x = rep;
+            }
+            row
+        };
+        let human: Vec<Vec<f64>> = (0..5).map(|i| flip(true, i)).collect();
+        let machine: Vec<Vec<f64>> = (0..5).map(|i| flip(false, i)).collect();
+        let s = HumannessScale::fit(&human, &machine);
+        let bad = s.contradicting_dims();
+        assert_eq!(bad.len(), 8, "繰り返しの 8 次元が定義と食い違う: {bad:?}");
+        assert!(bad.iter().all(|n| n.contains("gram")), "{bad:?}");
+        // <strong>定義と食い違っても、向きが揃っていれば渡せる。</strong> 素材が言う向きへ
+        // 寄せればよい——繰り返しは<strong>減らす</strong>側が人になる。
+        let toward = s.toward_human();
+        assert_eq!(toward.len(), Metric::ALL.len(), "{toward:?}");
+        for m in ["短い繰り返し", "長い繰り返し", "圧縮率"] {
+            assert!(
+                !toward.iter().find(|(n, _)| *n == m).unwrap().1,
+                "{m}: {toward:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn 向きが定義どおりなら_4_つとも定義の側になる() {
+        let s = scale();
+        assert!(
+            s.contradicting_dims().is_empty(),
+            "{:?}",
+            s.contradicting_dims()
+        );
+        let toward = s.toward_human();
+        assert_eq!(toward.len(), Metric::ALL.len());
+        // 繰り返しは増やす側、ほかは減らす側が人である。
+        for m in ["短い繰り返し", "長い繰り返し"] {
+            assert!(toward.iter().find(|(n, _)| *n == m).unwrap().1, "{m}");
+        }
+        assert!(!toward.iter().find(|(m, _)| *m == "圧縮率").unwrap().1);
+    }
+
+    #[test]
     fn 次元は_12_である() {
         assert_eq!(dims().len(), 12);
     }
@@ -278,28 +452,31 @@ mod tests {
     fn wide_row(human: bool, i: usize) -> Vec<f64> {
         // 並びは 圧縮率 1 / 繰り返し 8 / 異なり語率 1 / エントロピー 2。
         //
-        // <strong>繰り返しと異なり語率は両側が重なる。</strong> 実測がそうだった——
-        // 3gram の最多率は人 0.0043〜0.0144、機械 0.0048〜0.0257 で、
-        // 異なり語率は人 0.259〜0.362、機械 0.250〜0.340 である。
+        // <strong>繰り返しと異なり語率は両側が重なる。</strong> 実測の広がりをそのまま使い、
+        // 向きだけ定義に合わせる——繰り返しは人が多い側、異なり語率は機械が高い側。
         let rep = if human {
-            [0.0043, 0.0060, 0.0080, 0.0110, 0.0144][i]
-        } else {
             [0.0048, 0.0090, 0.0150, 0.0210, 0.0257][i]
+        } else {
+            [0.0043, 0.0060, 0.0080, 0.0110, 0.0144][i]
         };
         let rich = if human {
-            [0.259, 0.280, 0.310, 0.340, 0.362][i]
-        } else {
             [0.250, 0.270, 0.300, 0.320, 0.340][i]
+        } else {
+            [0.259, 0.280, 0.310, 0.340, 0.362][i]
         };
         // <strong>語のエントロピーだけが分ける。値は 7 前後で、繰り返しの 3 桁上である。</strong>
-        // 機械の側に 1 本だけ人の側へ食い込む値がある——AI に書かせた記事が
-        // 人並みに散ることは実際に起きる。
+        // 人の側に 1 本だけ機械の側へ食い込む値がある——人が書いた記事が
+        // 機械並みに散らないことは実際に起きる。
+        //
+        // <strong>向きは定義に従う。</strong> エントロピーは上限だけを持つ——機械の側が高く出る。
+        // 逆に置けば[向きが割れている](HumannessScale::toward_human)として直し方を
+        // 渡せなくなるので、標準化を試すための素材にならない。
         let ent = if human {
-            [7.23, 7.45, 7.60, 7.80, 7.96][i]
-        } else {
             [6.99, 7.02, 7.05, 7.08, 7.91][i]
+        } else {
+            [7.23, 7.45, 7.60, 7.80, 7.96][i]
         };
-        let mut row = vec![if human { 6.40 } else { 6.35 } + i as f64 * 0.02];
+        let mut row = vec![if human { 6.35 } else { 6.40 } + i as f64 * 0.02];
         row.extend(std::iter::repeat_n(rep, 8));
         row.push(rich);
         row.push(ent);
@@ -358,19 +535,20 @@ mod tests {
     }
 
     #[test]
-    fn 重みは_4_つである() {
+    fn 重みは指標の数だけである() {
         // 12 の重みを 10 点から当てはめない。繰り返しの 8 次元が重みを持ち去る。
         let s = scale();
-        assert_eq!(s.fusion().slopes().len(), 4);
+        assert_eq!(s.fusion().slopes().len(), Metric::ALL.len());
         assert_eq!(s.per_dim().len(), 12);
     }
 
     #[test]
-    fn 繰り返しの_8_次元は_1_つぶんに畳まれる() {
+    fn 繰り返しの_8_次元は_2_つぶんに畳まれる() {
         // 平均する前と後で、合算の入力の数が変わる。
+        // <strong>短いと長いは別の指標</strong>なので、8 次元は 2 つになる。
         let s = scale();
         let row = human_row(0.0);
-        assert_eq!(per_metric(s.per_dim(), &row).len(), 4);
+        assert_eq!(per_metric(s.per_dim(), &row).len(), Metric::ALL.len());
     }
 
     #[test]

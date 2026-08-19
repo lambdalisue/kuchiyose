@@ -12,7 +12,9 @@ pub mod pairing;
 pub mod split;
 pub mod vocabulary;
 
-pub use assemble::{assemble, inspect, measure_against, Measured, Report, Sample};
+pub use assemble::{
+    assemble, inspect, measure_against, HumannessByMetric, Measured, Report, Sample,
+};
 pub use band::{Band, BandError, Ends, Verdict};
 pub use calibrate::{Calibration, MatchError, Weights};
 pub use effective::{Basis, Effective};

@@ -403,6 +403,31 @@ pub fn measure_against(
     Measured {
         matching: median(&values),
         humanness: scale.humanness.value(&t.humanness.flat()).ok(),
+        // <strong>合算した 1 つの値では直し方を渡せない。</strong>「機械の側にある」としか
+        // 言えず、どこをどうすればよいかが出てこない。
+        //
+        // <strong>寄せる向きは較正から読む。</strong> 定義に固定すると、素材がその向きを
+        // 支えていないカセットで<strong>直し方に従うほど人らしさが下がる</strong>。
+        //
+        // <strong>次元の向きが割れている指標は渡さない。</strong> どちらへ動かせばよいかを
+        // 言えないものを指示にしない。
+        humanness_by_metric: {
+            let toward = scale.humanness.toward_human();
+            scale
+                .humanness
+                .by_metric(&t.humanness.flat())
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|(n, v)| {
+                    let (_, up) = toward.iter().find(|(m, _)| *m == n)?;
+                    Some(HumannessByMetric {
+                        name: n.to_owned(),
+                        value: v,
+                        raise: *up,
+                    })
+                })
+                .collect()
+        },
         missing_humanness: t.humanness.missing(),
         missing_systems: FOR_VERDICT
             .iter()
@@ -412,6 +437,20 @@ pub fn measure_against(
     }
 }
 
+/// 指標 1 本ぶんの人らしさ値と、寄せる向き。
+///
+/// <strong>並びの位置で意味を持たせない。</strong> 3 つ組で渡すと、受け取る側が位置の意味を
+/// コメントで補うことになり、<strong>順番を入れ替えたときに型が何も言わない。</strong>
+#[derive(Debug, Clone, PartialEq)]
+pub struct HumannessByMetric {
+    /// 指標の名前。
+    pub name: String,
+    /// その指標だけで見た人らしさ値。<strong>正が人の側、負が機械の側。</strong>
+    pub value: f64,
+    /// 人へ寄せる向き。<strong>`true` なら値を上げる。</strong>
+    pub raise: bool,
+}
+
 /// 検める 1 本を測った結果。<strong>出なかったものは `None` である。</strong>
 #[derive(Debug, Clone, PartialEq)]
 pub struct Measured {
@@ -419,6 +458,11 @@ pub struct Measured {
     pub matching: Option<f64>,
     /// 人らしさ値。
     pub humanness: Option<f64>,
+    /// 指標ごとの人らしさ値と、<strong>人へ寄せる向き</strong>。
+    ///
+    /// <strong>測れなければ空である。</strong> 直し方を渡す側が、測れていないことと機械の
+    /// 側にあることを取り違えないようにする。
+    pub humanness_by_metric: Vec<HumannessByMetric>,
     /// 測れなかった人らしさの次元。
     pub missing_humanness: Vec<String>,
     /// 測れなかった系統。

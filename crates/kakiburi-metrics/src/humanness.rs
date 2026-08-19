@@ -1,9 +1,12 @@
-//! 人らしさの 4 指標。<strong>その人らしさではない。</strong>
+//! 人らしさの 5 指標。<strong>その人らしさではない。</strong>
 //!
 //! 人が書いたものに見えるかを測る（[通るための 2 つ目の条件](../../../docs/spec/010-strategy.md#通るには-2-つ要る)）。
 //!
-//! <strong>4 つを独立した 4 つの証拠として数えない。</strong> 圧縮率・繰り返し・語彙の豊富さ・
-//! エントロピーは<strong>同じ現象を別の角度から見ている</strong>——寄せる向きも同じである。
+//! <strong>5 つを独立した 5 つの証拠として数えない。</strong> 圧縮率・短い繰り返し・長い繰り返し・
+//! 語彙の豊富さ・エントロピーは<strong>同じ現象を別の角度から見ている</strong>。
+//!
+//! <strong>ただし寄せる向きは同じとはかぎらない。</strong> 短い言い回しの反復と長い言い回しの
+//! 再来は逆に出ることがあるので、[別の指標として持つ](Metric::RepetitionShort)。
 //!
 //! <strong>語は表層形で数える。</strong> 語彙素に畳むと、活用の使い分けが消えて値が下がる
 //! （[数え方](../../../docs/spec/100-metrics.md#語を数えるときは表層形である)）。
@@ -28,19 +31,42 @@ pub const COMPRESSION_LEVEL: u32 = 6;
 /// 変わっても[圧縮率](../../../docs/spec/metrics/圧縮率.md)の古い値が使い回される。
 pub const COMPRESSOR: (&str, &str) = ("miniz_oxide (flate2, zlib 形式 水準 6)", "0.8.9");
 
-/// 繰り返しで見る n の並び。
-pub const REPETITION_N: [usize; 4] = [2, 3, 4, 5];
+/// 短い繰り返しで見る n の並び。
+pub const SHORT_N: [usize; 2] = [2, 3];
+
+/// 長い繰り返しで見る n の並び。
+pub const LONG_N: [usize; 2] = [4, 5];
+
+/// 繰り返しで見る n の並び。<strong>短いほうが先である。</strong>
+///
+/// <strong>公開しない。</strong> 本番は[短い](SHORT_N)と[長い](LONG_N)を別々に測る——
+/// まとめた並びを外に出すと、<strong>混ぜてよいものとして読まれる</strong>。
+#[cfg(test)]
+const REPETITION_N: [usize; 4] = [2, 3, 4, 5];
 
 /// 語彙の豊富さを測る窓の大きさ。
 pub const WINDOW: usize = 1000;
 
-/// 人らしさの指標。<strong>4 つである。</strong>
+/// 人らしさの指標。<strong>5 つである。</strong>
+///
+/// 繰り返しは<strong>短いと長いに割れている</strong>——2〜3 語の反復と 4〜5 語の再来は別の
+/// 現象で、まとめると向きが指標の中で割れる。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Metric {
     /// 圧縮率。1 次元。
     Compression,
-    /// 繰り返し。8 次元。
-    Repetition,
+    /// 短い繰り返し。4 次元。
+    ///
+    /// <strong>長いほうと分ける。</strong> 2〜3 語の言い回しの反復と、4〜5 語の言い回しの
+    /// 再来は<strong>別の現象である</strong>——実測では、生成文は短いほうを人より多く
+    /// 繰り返し、長いほうを人より少なく再来させる。まとめると
+    /// <strong>向きが指標の中で割れ、どちらへ動かせばよいかを言えなくなる。</strong>
+    ///
+    /// [粗い括りに丸めない](../../../docs/spec/100-metrics.md#粗い括りに丸めない)を、
+    /// 人らしさの側で実行したものである。
+    RepetitionShort,
+    /// 長い繰り返し。4 次元。
+    RepetitionLong,
     /// 語彙の豊富さ。1 次元。
     Richness,
     /// エントロピー。2 次元。
@@ -49,9 +75,10 @@ pub enum Metric {
 
 impl Metric {
     /// 全部。<strong>合算の入力の並びはこの順である。</strong>
-    pub const ALL: [Metric; 4] = [
+    pub const ALL: [Metric; 5] = [
         Metric::Compression,
-        Metric::Repetition,
+        Metric::RepetitionShort,
+        Metric::RepetitionLong,
         Metric::Richness,
         Metric::Entropy,
     ];
@@ -61,7 +88,8 @@ impl Metric {
     pub fn name(self) -> &'static str {
         match self {
             Metric::Compression => "圧縮率",
-            Metric::Repetition => "繰り返し",
+            Metric::RepetitionShort => "短い繰り返し",
+            Metric::RepetitionLong => "長い繰り返し",
             Metric::Richness => "語彙の豊富さ",
             Metric::Entropy => "エントロピー",
         }
@@ -72,7 +100,11 @@ impl Metric {
     pub fn dims(self) -> Vec<String> {
         match self {
             Metric::Compression => vec!["圧縮率".into()],
-            Metric::Repetition => REPETITION_N
+            Metric::RepetitionShort => SHORT_N
+                .iter()
+                .flat_map(|n| [format!("{n}gram の再来率"), format!("{n}gram の最多率")])
+                .collect(),
+            Metric::RepetitionLong => LONG_N
                 .iter()
                 .flat_map(|n| [format!("{n}gram の再来率"), format!("{n}gram の最多率")])
                 .collect(),
@@ -81,13 +113,17 @@ impl Metric {
         }
     }
 
-    /// 寄せる向き。<strong>4 つとも片側だけを持つ。</strong>
+    /// 定義が名乗る「機械の側」。<strong>`true` なら機械が高い。</strong>
     ///
-    /// 繰り返しは<strong>下限</strong>——生成文は繰り返しが足りない側に出る。ほかの 3 つは上限で、
+    /// 繰り返しは<strong>下限</strong>——先行研究は生成文が足りない側に出ると言う。ほかは上限で、
     /// 機械の側が高く出る。
+    ///
+    /// <strong>寄せる向きそのものではない。</strong> どちらへ寄せるかは
+    /// [カセットごとの較正](../../../docs/spec/200-extract.md#人らしさの境目は同じ材料から出る)
+    /// が決める——素材がこの向きを支えていないことは実際に起きる。
     #[must_use]
     pub fn upper_bound(self) -> bool {
-        !matches!(self, Metric::Repetition)
+        !matches!(self, Metric::RepetitionShort | Metric::RepetitionLong)
     }
 }
 
@@ -108,7 +144,8 @@ impl Humanness {
         for m in Metric::ALL {
             let got = match m {
                 Metric::Compression => vec![compression_ratio(prose)],
-                Metric::Repetition => repetition(analyzed),
+                Metric::RepetitionShort => repetition(analyzed, &SHORT_N),
+                Metric::RepetitionLong => repetition(analyzed, &LONG_N),
                 Metric::Richness => vec![richness(analyzed)],
                 Metric::Entropy => entropy(prose, analyzed),
             };
@@ -133,7 +170,7 @@ impl Humanness {
             .collect()
     }
 
-    /// <strong>4 指標が全部測れたか。</strong>
+    /// <strong>5 指標が全部測れたか。</strong>
     ///
     /// 1 つでも欠ければ人らしさ値を出さない——[欠けた分を抜いて合算しない](crate::morph)。
     #[must_use]
@@ -204,8 +241,8 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
 ///
 /// <strong>回数は延べ語数で割る。</strong> 割らなければ、長い文書ほど大きく出る。
 #[must_use]
-pub fn repetition(analyzed: Option<&Analyzed>) -> Vec<Measured> {
-    let n_dims = REPETITION_N.len() * 2;
+pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
+    let n_dims = ns.len() * 2;
     // <strong>解析器が無いのと、語が足りないのを分ける。</strong> 前者は環境の壊れで、素材を
     // いくら足しても直らない。
     let Some(a) = analyzed else {
@@ -217,7 +254,7 @@ pub fn repetition(analyzed: Option<&Analyzed>) -> Vec<Measured> {
     #[allow(clippy::cast_precision_loss)]
     let tokens = a.tokens() as f64;
     let mut out = Vec::with_capacity(n_dims);
-    for n in REPETITION_N {
+    for &n in ns {
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for seg in a.segments() {
             let words: Vec<&str> = seg.iter().map(|m| m.surface.as_str()).collect();
@@ -363,10 +400,27 @@ mod tests {
     #[test]
     fn 繰り返しだけ下限を持つ() {
         // 生成文は繰り返しが足りない側に出る。ほかは機械の側が高く出る。
-        assert!(!Metric::Repetition.upper_bound());
+        assert!(!Metric::RepetitionShort.upper_bound());
+        assert!(!Metric::RepetitionLong.upper_bound());
         for m in [Metric::Compression, Metric::Richness, Metric::Entropy] {
             assert!(m.upper_bound(), "{m:?}");
         }
+    }
+
+    #[test]
+    fn 短い繰り返しと長い繰り返しは別の次元を持つ() {
+        // <strong>まとめると向きが指標の中で割れ、どちらへ動かせばよいかを言えなくなる。</strong>
+        let short = Metric::RepetitionShort.dims();
+        let long = Metric::RepetitionLong.dims();
+        assert_eq!(short.len(), 4);
+        assert_eq!(long.len(), 4);
+        assert!(short
+            .iter()
+            .all(|n| n.starts_with('2') || n.starts_with('3')));
+        assert!(long
+            .iter()
+            .all(|n| n.starts_with('4') || n.starts_with('5')));
+        assert!(short.iter().all(|n| !long.contains(n)));
     }
 
     #[test]
@@ -407,13 +461,15 @@ mod tests {
         let (_, a) = tokens("これ は 文 で ある 。", 10);
         assert!(!a.enough_tokens());
         assert_eq!(richness(Some(&a)), Measured::BelowFloor);
-        assert!(repetition(Some(&a)).iter().all(|m| !m.is_measured()));
+        assert!(repetition(Some(&a), &REPETITION_N)
+            .iter()
+            .all(|m| !m.is_measured()));
     }
 
     #[test]
     fn 繰り返しの再来率は同じ言い回しで上がる() {
         let (_, same) = tokens("これ は 同じ 言い回し で ある 。", 200);
-        let r = repetition(Some(&same));
+        let r = repetition(Some(&same), &REPETITION_N);
         assert_eq!(r.len(), 8);
         let again = r[0].value().unwrap();
         assert!(again > 0.9, "同じ node の繰り返しなら再来率は高い: {again}");
@@ -424,7 +480,7 @@ mod tests {
         // 跨げば、構造が作った隣接を繰り返しとして数える。
         let prose: Vec<Segment> = (0..600).map(|_| seg("あ い")).collect();
         let a = Analyzed::of(&prose, &Stub::unidic()).unwrap();
-        let r = repetition(Some(&a));
+        let r = repetition(Some(&a), &REPETITION_N);
         // node ごとに「あ い」の bigram が 1 つだけ取れる。「い あ」は出ない。
         let top = r[1].value().unwrap();
         #[allow(clippy::cast_precision_loss)]
@@ -437,8 +493,10 @@ mod tests {
         // 割らなければ、長い文書ほど大きく出る。
         let (_, short) = tokens("あ い う え お か き く け こ", 120);
         let (_, long_one) = tokens("あ い う え お か き く け こ", 240);
-        let a = repetition(Some(&short))[1].value().unwrap();
-        let b = repetition(Some(&long_one))[1].value().unwrap();
+        let a = repetition(Some(&short), &REPETITION_N)[1].value().unwrap();
+        let b = repetition(Some(&long_one), &REPETITION_N)[1]
+            .value()
+            .unwrap();
         assert!((a - b).abs() < 1e-9, "長さに依らない: {a} vs {b}");
     }
 
