@@ -15,6 +15,37 @@ pub const NARROW_RATIO: f64 = 0.5;
 /// **暫定値である。**
 pub const OVERLAP_RATIO: f64 = 0.5;
 
+/// 使った割合で見る指標で、一貫していると判断する割合。<strong>暫定値である。</strong>
+///
+/// <strong>いつも使うか、ほとんど使わないかなら一貫している。</strong> 仕様が
+/// [下端の判定](../../../docs/spec/200-extract.md#下限は使った割合で見る)に置いた
+/// 0.8 と同じ値を、裏返して両側に使う。
+pub const APPEARANCE_CONSISTENT: f64 = 0.8;
+
+/// 使った割合で見る指標で、基準から離れていると判断する差。<strong>暫定値である。</strong>
+pub const APPEARANCE_GAP: f64 = 0.4;
+
+/// 判定の根拠。<strong>どちらの見方で判定したかと、比べた基準の値。</strong>
+///
+/// <strong>結果だけでは検算できない。</strong> 本人の側は幅も出現割合も残っているが、比べた
+/// 相手が残っていなければ、判定が変わったときに「基準が変わったのか、閾値を
+/// 変えたのか」を言えない。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Basis {
+    /// 幅で見た。基準の幅の端。
+    Spread {
+        /// 基準の下端。
+        low: f64,
+        /// 基準の上端。
+        high: f64,
+    },
+    /// 使った割合で見た。基準の出現割合。
+    Appearance {
+        /// 基準の出現割合。
+        rate: f64,
+    },
+}
+
 /// 指標 1 本の、効くかの判定と根拠。
 ///
 /// **判定だけでなく根拠の値も残す。** 素材が増えたときに、判定が変わったのか値が
@@ -35,6 +66,8 @@ pub struct Effective {
     pub narrow: bool,
     /// 条件 2。基準から離れている。
     pub distant: bool,
+    /// 条件 1・2 の根拠。
+    pub basis: Basis,
 }
 
 impl Effective {
@@ -65,7 +98,11 @@ pub type Row = Vec<(String, Option<f64>)>;
 /// 基準の幅が無ければ「狭い」を判定できず、基準の範囲が無ければ「離れている」も
 /// 判定できない。
 #[must_use]
-pub fn judge(person: &[Row], baseline: &[Row]) -> Vec<Effective> {
+pub fn judge(
+    person: &[Row],
+    baseline: &[Row],
+    by_appearance: &dyn Fn(&str) -> bool,
+) -> Vec<Effective> {
     let p = gather(person);
     let b = gather(baseline);
     p.into_iter()
@@ -73,19 +110,58 @@ pub fn judge(person: &[Row], baseline: &[Row]) -> Vec<Effective> {
             let theirs = b.get(&name)?;
             let mine = Extent::of(&values)?;
             let base = Extent::of(theirs)?;
-            #[allow(clippy::cast_precision_loss)]
-            let rate = values.iter().filter(|v| **v > 0.0).count() as f64 / values.len() as f64;
+            let rate = appeared(&values);
+            // <strong>下端を使った割合で見る指標は、効くかも使った割合で見る。</strong>
+            //
+            // 密度や個数では <strong>0 が「使わなかった」を意味する</strong>ので、素の幅は
+            // 0 から最大までに広がる。<strong>90% の記事で使っている指標でも、残りの
+            // 10% の 0 が幅を 0 まで引き下げ、「一貫していない」と判定される</strong>
+            // ——仕様が下端のためにこの規則を置いたのに、効くかの判定がそれを
+            // 見ていなかった。
+            //
+            // 実測では、この 1 か所だけで効く指標が 0 本から 3 本になる。
+            let (narrow, distant, basis) = if by_appearance(&name) {
+                let theirs_rate = appeared(theirs);
+                (
+                    // <strong>いつも使うか、ほとんど使わないかなら、一貫している。</strong>
+                    rate >= APPEARANCE_CONSISTENT || rate <= 1.0 - APPEARANCE_CONSISTENT,
+                    (rate - theirs_rate).abs() >= APPEARANCE_GAP,
+                    Basis::Appearance { rate: theirs_rate },
+                )
+            } else {
+                (
+                    mine.spread() <= base.spread() * NARROW_RATIO,
+                    mine.distant_from(base),
+                    Basis::Spread {
+                        low: base.low,
+                        high: base.high,
+                    },
+                )
+            };
             Some(Effective {
                 name,
                 low: mine.low,
                 high: mine.high,
                 units: values.len(),
                 rate,
-                narrow: mine.spread() <= base.spread() * NARROW_RATIO,
-                distant: mine.distant_from(base),
+                narrow,
+                distant,
+                basis,
             })
         })
         .collect()
+}
+
+/// 値が出た単位の割合。<strong>測れなかった単位は入っていない。</strong>
+fn appeared(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let n = values.len() as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let hit = values.iter().filter(|v| **v > 0.0).count() as f64;
+    hit / n
 }
 
 /// 指標ごとに、測れた値だけを集める。
@@ -169,43 +245,103 @@ mod tests {
     #[test]
     fn 幅が基準の半分以下なら狭い() {
         // 基準 0〜10、その人 0〜4。
-        let e = judge(&side("x", &[0.0, 4.0]), &side("x", &[0.0, 10.0]));
+        let e = judge(&side("x", &[0.0, 4.0]), &side("x", &[0.0, 10.0]), &|_| {
+            false
+        });
         assert!(e[0].narrow, "{e:?}");
     }
 
     #[test]
     fn 幅が基準の半分を超えれば狭くない() {
-        let e = judge(&side("x", &[0.0, 6.0]), &side("x", &[0.0, 10.0]));
+        let e = judge(&side("x", &[0.0, 6.0]), &side("x", &[0.0, 10.0]), &|_| {
+            false
+        });
         assert!(!e[0].narrow, "{e:?}");
     }
 
     #[test]
     fn 交わらなければ離れている() {
-        let e = judge(&side("x", &[10.0, 12.0]), &side("x", &[0.0, 5.0]));
+        let e = judge(&side("x", &[10.0, 12.0]), &side("x", &[0.0, 5.0]), &|_| {
+            false
+        });
         assert!(e[0].distant, "{e:?}");
     }
 
     #[test]
     fn 基準が完全に含んでいれば離れていない() {
         // 含む側は「その値も取りうる」としか言っていない。
-        let e = judge(&side("x", &[3.0, 4.0]), &side("x", &[0.0, 10.0]));
+        let e = judge(&side("x", &[3.0, 4.0]), &side("x", &[0.0, 10.0]), &|_| {
+            false
+        });
         assert!(!e[0].distant, "{e:?}");
     }
 
     #[test]
     fn その人が完全に含んでいても離れていない() {
-        let e = judge(&side("x", &[0.0, 10.0]), &side("x", &[3.0, 4.0]));
+        let e = judge(&side("x", &[0.0, 10.0]), &side("x", &[3.0, 4.0]), &|_| {
+            false
+        });
         assert!(!e[0].distant, "{e:?}");
     }
 
     #[test]
     fn 端が重なるときは重なりの幅で見る() {
         // その人 0〜10、基準 8〜20。重なりは 2 で、その人の幅の 20%。
-        let e = judge(&side("x", &[0.0, 10.0]), &side("x", &[8.0, 20.0]));
+        let e = judge(&side("x", &[0.0, 10.0]), &side("x", &[8.0, 20.0]), &|_| {
+            false
+        });
         assert!(e[0].distant, "20% なら離れている: {e:?}");
         // その人 0〜10、基準 4〜20。重なりは 6 で 60%。
-        let e = judge(&side("x", &[0.0, 10.0]), &side("x", &[4.0, 20.0]));
+        let e = judge(&side("x", &[0.0, 10.0]), &side("x", &[4.0, 20.0]), &|_| {
+            false
+        });
         assert!(!e[0].distant, "60% なら離れていない: {e:?}");
+    }
+
+    #[test]
+    fn 使った割合で見る指標は_0_で幅が広がっても一貫している() {
+        // <strong>ここが 0 本の正体だった。</strong> 密度では 0 が「使わなかった」を意味するので、
+        // 90% の記事で使っていても、残り 10% の 0 が幅を 0 まで引き下げる。
+        // 素の幅で見ると「一貫していない」になり、いちばん指示しやすい指標が落ちる。
+        //
+        // 本人 9/10 で使う、基準 2/10。
+        let mine = side("x", &[0.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]);
+        let theirs = side("x", &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 3.0]);
+
+        let by_width = judge(&mine, &theirs, &|_| false);
+        assert!(!by_width[0].narrow, "素の幅では一貫していないとされる");
+
+        let by_rate = judge(&mine, &theirs, &|_| true);
+        assert!(by_rate[0].narrow, "使った割合なら一貫している");
+        assert!(by_rate[0].distant, "基準は 2 割しか使わない");
+        assert!(by_rate[0].works());
+    }
+
+    #[test]
+    fn 使った割合が中途半端なら一貫していない() {
+        // 半分の記事でだけ使う指標は、指示する先が無い。
+        let mine = side("x", &[0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 5.0, 5.0, 5.0, 5.0]);
+        let theirs = side("x", &[0.0; 10]);
+        let e = judge(&mine, &theirs, &|_| true);
+        assert!(!e[0].narrow, "5 割では一貫していない: {e:?}");
+    }
+
+    #[test]
+    fn 使った割合が同じなら離れていない() {
+        // どちらも毎回使うなら、その指標では分かれない。
+        let both = side("x", &[5.0; 10]);
+        let e = judge(&both, &both, &|_| true);
+        assert!(e[0].narrow, "毎回使うので一貫している");
+        assert!(!e[0].distant, "基準も毎回使う: {e:?}");
+    }
+
+    #[test]
+    fn ほとんど使わないことも一貫である() {
+        // 「あなたは絵文字をまず使わない」も指示になる。
+        let mine = side("x", &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0]);
+        let theirs = side("x", &[2.0; 10]);
+        let e = judge(&mine, &theirs, &|_| true);
+        assert!(e[0].narrow && e[0].distant, "{e:?}");
     }
 
     #[test]
@@ -217,22 +353,46 @@ mod tests {
             row(&[("x", Some(0.0))]),
             row(&[("x", None)]),
         ];
-        let e = judge(&person, &side("x", &[0.0, 10.0]));
+        let e = judge(&person, &side("x", &[0.0, 10.0]), &|_| false);
         assert_eq!(e[0].units, 2, "測れた 2 本が分母");
         assert!((e[0].rate - 0.5).abs() < 1e-9, "{:?}", e[0].rate);
     }
 
     #[test]
+    fn 根拠には比べた基準の値が残る() {
+        // 結果だけでは、判定が変わったときに基準が変わったのかを言えない。
+        let e = judge(&side("x", &[0.0, 4.0]), &side("x", &[1.0, 10.0]), &|_| {
+            false
+        });
+        assert_eq!(
+            e[0].basis,
+            Basis::Spread {
+                low: 1.0,
+                high: 10.0
+            }
+        );
+
+        let mine = side("x", &[5.0; 10]);
+        let theirs = side("x", &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 3.0]);
+        let e = judge(&mine, &theirs, &|_| true);
+        assert_eq!(e[0].basis, Basis::Appearance { rate: 0.2 });
+    }
+
+    #[test]
     fn 片側しか無い指標は判定しない() {
         // 比べる相手がいない。基準の幅が無ければ「狭い」を判定できない。
-        let e = judge(&side("x", &[1.0, 2.0]), &side("y", &[0.0, 10.0]));
+        let e = judge(&side("x", &[1.0, 2.0]), &side("y", &[0.0, 10.0]), &|_| {
+            false
+        });
         assert!(e.is_empty(), "{e:?}");
     }
 
     #[test]
     fn 条件_1_と_2_の両方でなければ前に出さない() {
         // 狭いが基準に含まれている。
-        let e = judge(&side("x", &[3.0, 4.0]), &side("x", &[0.0, 10.0]));
+        let e = judge(&side("x", &[3.0, 4.0]), &side("x", &[0.0, 10.0]), &|_| {
+            false
+        });
         assert!(e[0].narrow && !e[0].distant);
         assert!(!e[0].works(), "{e:?}");
     }

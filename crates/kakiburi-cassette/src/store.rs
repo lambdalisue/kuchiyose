@@ -19,11 +19,13 @@ use crate::{
 ///
 /// <strong>版は、形か意味が非互換に変わったときに上げる。</strong>[1 カセット 1 人](../../../docs/design/100-cassette.md#1-カセット-1-人)
 /// で `decided/` と `derived/` が場面ごとの階層になり、単位が `scene` を持つように
-/// なった——<strong>版 1 のカセットとは形が違う。</strong>
+/// なった——<strong>版 1 のカセットとは形が違う。</strong> 版 3 では `effective.json` が
+/// <strong>判定の根拠</strong>——どちらの見方で判定したかと、比べた基準の値——を必ず持つように
+/// なった。
 ///
 /// <strong>古い版を読む道は持たない。</strong> 原本は正規形なので素材から作り直せる
 /// ——移し替える道を持つと、作り直せないものが増える。
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// 読み書きできない理由。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1020,9 +1022,17 @@ mod tests {
         // 前者は作り直しで、後者は道具の更新である。
         let mut e = zip::read(&write(&cassette())).unwrap();
         let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
+        // **いま書く版から作る。** 版を上げるたびに書き換える定数を残さない。
+        let now = format!("\"version\":{VERSION}");
         for (found, body) in [
-            (VERSION + 1, m.replace("\"version\":2", "\"version\":3")),
-            (1, m.replace("\"version\":2", "\"version\":1")),
+            (
+                VERSION + 1,
+                m.replace(&now, &format!("\"version\":{}", VERSION + 1)),
+            ),
+            (
+                VERSION - 1,
+                m.replace(&now, &format!("\"version\":{}", VERSION - 1)),
+            ),
         ] {
             e.insert("manifest.json".into(), body.into_bytes());
             assert_eq!(
@@ -1042,7 +1052,11 @@ mod tests {
         let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
         e.insert(
             "manifest.json".into(),
-            m.replace("\"version\":2", "\"version\":2.5").into_bytes(),
+            m.replace(
+                &format!("\"version\":{VERSION}"),
+                &format!("\"version\":{VERSION}.5"),
+            )
+            .into_bytes(),
         );
         assert!(matches!(
             read(&zip::write(&e)),

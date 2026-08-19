@@ -89,6 +89,21 @@ impl FromDefinitions {
         }
     }
 
+    /// 下端を使った割合で見る指標か。<strong>効くかの判定も同じ分け方に従う。</strong>
+    ///
+    /// 密度や個数では <strong>0 が「使わなかった」を意味する</strong>ので、素の幅は 0 から
+    /// 最大までに広がる。<strong>下端のためにこの規則を置いておきながら、効くかの判定を
+    /// 素の幅で行えば、いちばん指示しやすい指標が門前払いされる。</strong>
+    ///
+    /// <strong>札が読めなければ幅で見る。</strong>[下端](Self::lower_rule)と同じく、分からない
+    /// ときに強い側へ倒さない。
+    #[must_use]
+    pub fn by_appearance(&self, name: &str) -> bool {
+        self.registry
+            .get(name)
+            .is_some_and(|e| e.tag.lower_by_appearance())
+    }
+
     /// [層 3](kakiburi_metrics::Layer::Three) か。<strong>指摘にも判定にも使わない。</strong>
     ///
     /// どの系統から切り出したのかを言えないものである。<strong>止めた理由を言えないものは

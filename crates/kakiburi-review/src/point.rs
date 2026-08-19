@@ -3,8 +3,46 @@
 //! これは軸の要求そのものである。「ここが、こちらへ、これだけ」の 3 つに、それぞれ
 //! 観測・直し方・普段が対応する。
 
-use crate::range::Outside;
+use crate::range::{Lower, Outside};
 use crate::verdict::Observed;
+
+/// 普段の言い方。<strong>判定に使った見方と揃える。</strong>
+///
+/// 下端を[出現割合](Lower::Appearance)で見た指標を「どこからどこまで」で言えば、
+/// <strong>文面がそれ自体で矛盾する</strong>——出てこなかったことを外れとしたのに、その指標の
+/// 幅の下端は 0 なので「0 になっている。普段は 0 から N の範囲」と読める。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Usual {
+    /// 幅で見た。どこからどこまでで書いてきたか。
+    Spread {
+        /// 下端。
+        low: f64,
+        /// 上端。
+        high: f64,
+    },
+    /// 使った割合で見た。何割の単位で使ってきたか。
+    Appearance {
+        /// 現れた単位の割合。
+        rate: f64,
+        /// 多いときの値。<strong>足す先の見当が付かないと直せない。</strong>
+        high: f64,
+    },
+}
+
+impl Usual {
+    /// 散文にする。
+    fn prose(self) -> String {
+        match self {
+            Usual::Spread { low, high } => {
+                format!("普段は{low:.3}から{high:.3}の範囲で書いている。")
+            }
+            Usual::Appearance { rate, high } => format!(
+                "普段は{:.0}%の単位で使っており、多いときで{high:.3}になる。",
+                rate * 100.0
+            ),
+        }
+    }
+}
 
 /// 1 本の指摘。
 #[derive(Debug, Clone, PartialEq)]
@@ -13,8 +51,10 @@ pub struct Point {
     pub name: String,
     /// <strong>観測。</strong> この文章ではどうだったか。
     pub observed: f64,
-    /// <strong>普段。</strong> その人はどこからどこまでで書いてきたか。
-    pub usual: (f64, f64),
+    /// <strong>普段。</strong> その人はこれまでどう書いてきたか。
+    ///
+    /// <strong>判定に使った見方のまま持つ。</strong>
+    pub usual: Usual,
     /// <strong>直し方。</strong> どちらへ、どうすればよいか。
     ///
     /// <strong>指標の定義から取る。</strong> 指摘を出す側で書くと、指標を足したときに直し方の
@@ -67,6 +107,18 @@ pub fn build(
     remedies: &dyn Remedies,
 ) -> Result<Point, PointError> {
     let value = observed.value.expect("外れている以上、測れている");
+    // <strong>下に外れたときだけ見方が分かれる。</strong> 上に外れたなら、どちらの指標でも
+    // 幅の上端を超えたという同じ事実である。
+    let usual = match (outside, observed.lower) {
+        (Outside::Below { .. }, Lower::Appearance { rate }) => Usual::Appearance {
+            rate,
+            high: observed.range.high,
+        },
+        _ => Usual::Spread {
+            low: observed.range.low,
+            high: observed.range.high,
+        },
+    };
     let (remedy, direction) = match outside {
         Outside::Above { .. } => (remedies.upper(&observed.name), "上"),
         Outside::Below { .. } => (remedies.lower(&observed.name), "下"),
@@ -84,7 +136,7 @@ pub fn build(
     Ok(Point {
         name: observed.name.clone(),
         observed: value,
-        usual: (observed.range.low, observed.range.high),
+        usual,
         remedy,
         size: outside.size(),
     })
@@ -98,8 +150,11 @@ impl Point {
     #[must_use]
     pub fn prose(&self) -> String {
         format!(
-            "{}が{:.3}になっている。普段は{:.3}から{:.3}の範囲で書いている。{}",
-            self.name, self.observed, self.usual.0, self.usual.1, self.remedy
+            "{}が{:.3}になっている。{}{}",
+            self.name,
+            self.observed,
+            self.usual.prose(),
+            self.remedy
         )
     }
 }
@@ -150,7 +205,13 @@ mod tests {
         let o = observed("全角括弧", 5.0, 0.0, 2.0);
         let p = build(&o, o.range.locate(5.0), &table()).unwrap();
         assert_eq!(p.observed, 5.0);
-        assert_eq!(p.usual, (0.0, 2.0));
+        assert_eq!(
+            p.usual,
+            Usual::Spread {
+                low: 0.0,
+                high: 2.0
+            }
+        );
         assert_eq!(p.remedy, "全角括弧を減らす。");
     }
 
@@ -190,6 +251,41 @@ mod tests {
         assert!(s.contains("0.000"), "{s}");
         assert!(s.contains("2.000"), "{s}");
         assert!(s.contains("減らす"), "{s}");
+    }
+
+    #[test]
+    fn 出現割合で見た指標は割合で普段を言う() {
+        // **幅で言えば文面がそれ自体で矛盾する。** 下端が 0 なので「0 で、普段は
+        // 0 から 2 の範囲」となり、受け取った側は範囲の中だと判断する。
+        let mut o = observed("全角括弧", 0.0, 0.0, 2.0);
+        o.lower = Lower::Appearance { rate: 0.9 };
+        let p = build(&o, o.range.locate_by(0.0, o.lower), &table()).unwrap();
+        assert_eq!(
+            p.usual,
+            Usual::Appearance {
+                rate: 0.9,
+                high: 2.0
+            }
+        );
+        let s = p.prose();
+        assert!(s.contains("90%"), "{s}");
+        assert!(!s.contains("0.000から"), "{s}");
+        assert!(s.contains("2.000"), "多いときの値は残す: {s}");
+    }
+
+    #[test]
+    fn 出現割合の指標でも上に外れれば幅で言う() {
+        // 多すぎる側は 0 の問題を持たないので、どちらの指標でも同じ事実である。
+        let mut o = observed("全角括弧", 5.0, 0.0, 2.0);
+        o.lower = Lower::Appearance { rate: 0.9 };
+        let p = build(&o, o.range.locate_by(5.0, o.lower), &table()).unwrap();
+        assert_eq!(
+            p.usual,
+            Usual::Spread {
+                low: 0.0,
+                high: 2.0
+            }
+        );
     }
 
     #[test]

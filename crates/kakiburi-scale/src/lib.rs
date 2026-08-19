@@ -15,7 +15,7 @@ pub mod vocabulary;
 pub use assemble::{assemble, inspect, measure_against, Measured, Report, Sample};
 pub use band::{Band, BandError, Ends, Verdict};
 pub use calibrate::{Calibration, MatchError, Weights};
-pub use effective::Effective;
+pub use effective::{Basis, Effective};
 pub use humanness::{HumannessError, HumannessScale};
 pub use pairing::{Pair, Pairing};
 pub use split::{Split, SplitError, Unit};

@@ -1482,7 +1482,13 @@ fn build_scene(
 
     // <strong>効くかの判定はここで出す。</strong> 検めが作り直せる形にしておくと、検める文書を
     // 見てから幅や集合を作り直す経路が書けてしまう。
-    let effective = kakiburi_scale::effective::judge(&rows(&person, a), &rows(&baseline, a));
+    // **効くかの判定も、下端と同じ分け方に従う。** 密度や個数では 0 が「使わなかった」
+    // を意味するので、素の幅で見ると**いちばん指示しやすい指標が落ちる。**
+    let defs = remedies::FromDefinitions::load();
+    let effective =
+        kakiburi_scale::effective::judge(&rows(&person, a), &rows(&baseline, a), &|n| {
+            defs.by_appearance(n)
+        });
     let works = effective.iter().filter(|e| e.works()).count();
     say(format!("効く指標: {works} / {} 本", effective.len()));
 
@@ -2799,6 +2805,7 @@ mod tests {
         let effective = kakiburi_scale::effective::judge(
             &rows(&fixture::samples(&person), Some(&fixture::Chars)),
             &rows(&fixture::samples(&baseline), Some(&fixture::Chars)),
+            &|n| remedies::FromDefinitions::load().by_appearance(n),
         );
         c.track_mut("試験").derived.spread = Some(effective_json::write_spread(&effective));
         c.track_mut("試験").derived.effective = Some(effective_json::write_effective(&effective));

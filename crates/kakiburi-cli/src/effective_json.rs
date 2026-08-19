@@ -8,7 +8,7 @@
 //! 同じ値を両方に置かない——置けば、食い違ったときにどちらが正しいかを言えない。
 
 use kakiburi_cassette::json::Value;
-use kakiburi_scale::Effective;
+use kakiburi_scale::{Basis, Effective};
 
 /// 幅と出現割合を書き出す。
 #[must_use]
@@ -40,11 +40,26 @@ pub fn write_effective(rows: &[Effective]) -> String {
         Value::Array(
             rows.iter()
                 .map(|e| {
-                    Value::obj([
+                    // <strong>比べた相手も残す。</strong> 本人の側は幅も出現割合も残っているが、
+                    // 基準が残らなければ、判定が変わったときに「基準が変わったのか、
+                    // 閾値を変えたのか」を言えない。
+                    let mut fields = vec![
                         ("名前".to_owned(), Value::s(&e.name)),
                         ("幅が狭い".to_owned(), Value::Bool(e.narrow)),
                         ("基準から離れている".to_owned(), Value::Bool(e.distant)),
-                    ])
+                    ];
+                    match e.basis {
+                        Basis::Spread { low, high } => fields.extend([
+                            ("見方".to_owned(), Value::s("幅")),
+                            ("基準の下端".to_owned(), Value::Number(low)),
+                            ("基準の上端".to_owned(), Value::Number(high)),
+                        ]),
+                        Basis::Appearance { rate } => fields.extend([
+                            ("見方".to_owned(), Value::s("出現割合")),
+                            ("基準の出現割合".to_owned(), Value::Number(rate)),
+                        ]),
+                    }
+                    Value::obj(fields)
                 })
                 .collect(),
         ),
@@ -83,6 +98,18 @@ pub fn read(spread: &str, effective: &str) -> Option<Vec<Effective>> {
                 rate: x.get("出現割合")?.as_f64()?,
                 narrow: j.get("幅が狭い")?.as_bool()?,
                 distant: j.get("基準から離れている")?.as_bool()?,
+                basis: match j.get("見方")?.as_str()? {
+                    "幅" => Basis::Spread {
+                        low: j.get("基準の下端")?.as_f64()?,
+                        high: j.get("基準の上端")?.as_f64()?,
+                    },
+                    "出現割合" => Basis::Appearance {
+                        rate: j.get("基準の出現割合")?.as_f64()?,
+                    },
+                    // <strong>知らない見方は読まない。</strong> 判定の根拠を読めないまま前に出せば、
+                    // どの規則で選ばれたのかを誰も言えなくなる。
+                    _ => return None,
+                },
                 name,
             })
         })
@@ -106,6 +133,10 @@ mod tests {
                 rate: 1.0,
                 narrow: true,
                 distant: true,
+                basis: Basis::Spread {
+                    low: 0.0,
+                    high: 5.0,
+                },
             },
             Effective {
                 name: "絵文字".into(),
@@ -115,6 +146,7 @@ mod tests {
                 rate: 0.0,
                 narrow: true,
                 distant: false,
+                basis: Basis::Appearance { rate: 0.75 },
             },
         ]
     }
@@ -133,8 +165,9 @@ mod tests {
         let rows = sample();
         let spread = write_spread(&rows);
         let effective = write_effective(&rows);
-        assert!(spread.contains("下端") && !spread.contains("幅が狭い"));
-        assert!(effective.contains("幅が狭い") && !effective.contains("下端"));
+        // **基準の側は別の値である。** 本人の下端と基準の下端を取り違えない。
+        assert!(spread.contains("\"下端\"") && !spread.contains("幅が狭い"));
+        assert!(effective.contains("幅が狭い") && !effective.contains("\"下端\""));
     }
 
     #[test]
@@ -142,6 +175,14 @@ mod tests {
         let rows = sample();
         let only_one = write_effective(&rows[..1]);
         assert_eq!(read(&write_spread(&rows), &only_one), None);
+    }
+
+    #[test]
+    fn 知らない見方は読まない() {
+        // どの規則で選ばれたのかを言えないものを、前に出さない。
+        let rows = sample();
+        let broken = write_effective(&rows).replace("\"幅\"", "\"未知の見方\"");
+        assert_eq!(read(&write_spread(&rows), &broken), None);
     }
 
     #[test]
