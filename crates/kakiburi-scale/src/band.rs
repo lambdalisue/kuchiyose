@@ -30,11 +30,61 @@ impl Ends {
         Some(Self { low, high })
     }
 
+    /// 床の端。<strong>上の裾を切る。</strong>
+    ///
+    /// <strong>2 つの端は役目が違う。</strong> 対称に見えるが、外したときの代償が違う。
+    ///
+    /// | 端 | 意味 | 外すとどうなる |
+    /// | --- | --- | --- |
+    /// | 天井の下端 | ここ以上なら通る | 高すぎても<strong>判定できないに落ちるだけ</strong> |
+    /// | <strong>床の上端</strong> | ここ以下なら通らない | 高すぎると<strong>書き手に「あなたの文章は機械だ」と言う</strong> |
+    ///
+    /// <strong>床の上端だけが、間違えたときに書き手を否定する。</strong> だから上の裾を切って
+    /// 保守側に倒す——切った分は判定できないになり、それは
+    /// [正しい停止](../../../docs/spec/010-strategy.md#届かないときは判定できないと言う)である。
+    ///
+    /// <strong>実測では、これで「人が書いた文章を通らないと言う」誤りが 10 本から 1 本に
+    /// なった。</strong> 通るの数は変わらず、機械の検出だけが 9/9 から 7/9 に落ちる。
+    #[must_use]
+    pub fn trimmed(points: &[f64]) -> Option<Self> {
+        let mut s: Vec<f64> = points.to_vec();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let low = *s.first()?;
+        let high = quantile(&s, FLOOR_TRIM);
+        if (high - low).abs() < f64::EPSILON {
+            return None;
+        }
+        Some(Self { low, high })
+    }
+
     /// 広がり。
     #[must_use]
     pub fn spread(self) -> f64 {
         self.high - self.low
     }
+}
+
+/// 床の上端に取る分位。<strong>暫定値である。</strong>
+///
+/// 向きは[代償が対称でない](Ends::trimmed)ことから決まるが、<strong>どこで切るかは
+/// 1 人分の実測で選んだ</strong>——[骨格が通るまで閾値を手で決めない](../../../docs/spec/010-strategy.md#それでも骨格を先に通す)
+/// の但し書きが付いたままである。カセットの `provisional` が「帯の端」を挙げている
+/// のはこのことである。
+pub const FLOOR_TRIM: f64 = 0.75;
+
+/// 並べ替えずみの列から分位を取る。
+fn quantile(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let i = p * (sorted.len() - 1) as f64;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let lo = i as usize;
+    let hi = (lo + 1).min(sorted.len() - 1);
+    #[allow(clippy::cast_precision_loss)]
+    let frac = i - lo as f64;
+    sorted[lo] + (sorted[hi] - sorted[lo]) * frac
 }
 
 /// 判定。
@@ -137,7 +187,7 @@ impl Band {
     fn of_ends(ceiling: &[f64], floor: &[f64]) -> Result<Self, BandError> {
         Ok(Self {
             ceiling: Ends::of(ceiling).ok_or(BandError::NoSpread { side: "天井" })?,
-            floor: Ends::of(floor).ok_or(BandError::NoSpread { side: "床" })?,
+            floor: Ends::trimmed(floor).ok_or(BandError::NoSpread { side: "床" })?,
         })
     }
 
@@ -207,10 +257,29 @@ mod tests {
     }
 
     #[test]
+    fn 床は上の裾を切る() {
+        // <strong>2 つの端は役目が違う。</strong> 床の上端だけが、間違えたときに書き手へ
+        // 「あなたの文章は機械だ」と言う——だから保守側に倒す。
+        let e = Ends::trimmed(&[0.0, 1.0, 2.0, 3.0, 4.0]).expect("端が決まる");
+        assert_eq!(e.low, 0.0, "下端は最小のまま");
+        assert_eq!(e.high, 3.0, "上端は 75% 分位");
+        // 天井は切らない。<strong>高すぎても判定できないに落ちるだけである。</strong>
+        let c = Ends::of(&[0.0, 1.0, 2.0, 3.0, 4.0]).expect("端が決まる");
+        assert_eq!(c.high, 4.0);
+    }
+
+    #[test]
+    fn 裾を切って広がりが_0_になれば端が決まらない() {
+        // 上位 4 分の 1 を除くと 1 点に潰れる並び。
+        assert_eq!(Ends::trimmed(&[1.0, 1.0, 1.0, 1.0, 9.0]), None);
+    }
+
+    #[test]
     fn 分離していれば隙間が出る() {
+        // 床は上の裾を切るので 0.0〜0.75。隙間は 0.75〜2.0 の 1.25。
         let b = Band::build(&[2.0, 3.0], &[0.0, 1.0]).unwrap();
         assert!(b.separated());
-        assert_eq!(b.gap(), Some(1.0));
+        assert_eq!(b.gap(), Some(1.25));
         assert_eq!(b.overlap(), None);
     }
 
@@ -223,11 +292,10 @@ mod tests {
 
     #[test]
     fn 重なっていれば区間が出る() {
-        // 天井 1.0〜3.0、床 0.0〜2.0。重なりは 1.0〜2.0 の 1.0。
-        // 天井の広がり 2.0、床の広がり 2.0。どちらも 50% でちょうど限度。
+        // 天井 1.0〜3.0、床は裾を切って 0.0〜1.5。重なりは 1.0〜1.5 の 0.5。
         let b = Band::build(&[1.0, 3.0], &[0.0, 2.0]).unwrap();
         assert!(!b.separated());
-        assert_eq!(b.overlap(), Some(1.0));
+        assert_eq!(b.overlap(), Some(0.5));
         assert_eq!(b.gap(), None);
     }
 
@@ -243,14 +311,14 @@ mod tests {
         // 天井 0.0〜10.0、床 4.0〜6.0。重なりは 4.0〜6.0 の 2.0。
         // 床に対しては 100% だが、天井に対しては 20%。片方だけでは止めない。
         let b = Band::build(&[0.0, 10.0], &[4.0, 6.0]).expect("片側だけなら作る");
-        assert_eq!(b.overlap(), Some(2.0));
+        assert_eq!(b.overlap(), Some(1.5));
     }
 
     #[test]
     fn 人らしさは重なっても帯を作る() {
         // 覆っていることが判定不能として出る仕組みなので、止めれば自己診断が消える。
         let b = Band::build_humanness(&[0.0, 2.0], &[0.0, 2.0]).expect("覆っていても作る");
-        assert_eq!(b.overlap(), Some(2.0));
+        assert_eq!(b.overlap(), Some(1.5));
     }
 
     #[test]
@@ -275,7 +343,12 @@ mod tests {
         assert_eq!(b.judge(2.5), Verdict::Pass);
         assert_eq!(b.judge(2.0), Verdict::Pass, "天井の下端は通る");
         assert_eq!(b.judge(0.5), Verdict::Fail);
-        assert_eq!(b.judge(1.0), Verdict::Fail, "床の上端は通らない");
+        assert_eq!(b.judge(0.75), Verdict::Fail, "床の上端は通らない");
+        assert_eq!(
+            b.judge(1.0),
+            Verdict::Unknown,
+            "切った裾は判定できないになる"
+        );
         assert_eq!(b.judge(1.5), Verdict::Unknown, "帯の中");
     }
 

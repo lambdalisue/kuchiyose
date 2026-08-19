@@ -292,9 +292,26 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     // 書いたものは人の側に落ちる」ので、素材が足りなければ混ぜてよい——
     // <strong>場面は人と機械の別を跨がない。</strong>
     //
+    // <strong>較正には、帯に使う分を除いた全部を渡す。</strong>
+    //
+    // 帯の端を各側 5 点に固定したのは、<strong>最小・最大が n とともに外へ広がる</strong>から
+    // である。<strong>回帰は漂わない</strong>ので、同じ縛りを較正に掛ける理由が無い——
+    // 10 単位で 4 つの重みを当てはめると、標本外で当たらない。
+    //
+    // <strong>帯の点は除く。</strong> 較正に使った単位で帯を作れば、分離するように合わせた
+    // ものの分離具合を見ることになる。
+    let for_calibration = |all: &[Unit], points: &[Unit]| -> Vec<Unit> {
+        all.iter()
+            .filter(|u| u.usable() && !points.iter().any(|p| p.name == u.name))
+            .cloned()
+            .collect()
+    };
+    let human_units = for_calibration(&person_units, &person_split.points);
+    let machine_units = for_calibration(&baseline_units, &baseline_split.points);
+
     // <strong>測れなかったものは落とす。</strong> 12 次元が揃わない行を混ぜれば、列の数が
     // 行ごとに変わる。
-    let mut human_rows = rows_of(&person_split.partners);
+    let mut human_rows = rows_of(&human_units);
     for s in m.others {
         let h = &measured[s.name].humanness;
         if !h.all_measured() {
@@ -307,7 +324,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
                 .collect(),
         );
     }
-    let humanness = HumannessScale::fit(&human_rows, &rows_of(&baseline_split.partners));
+    let humanness = HumannessScale::fit(&human_rows, &rows_of(&machine_units));
     let side = |us: &[Unit]| -> Vec<f64> {
         us.iter()
             .filter_map(|u| humanness.value(&measured[&u.name].humanness.flat()).ok())
