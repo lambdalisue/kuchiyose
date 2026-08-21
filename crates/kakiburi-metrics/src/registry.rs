@@ -6,7 +6,7 @@
 use crate::tag::{Tag, TagError};
 
 /// 登録簿の 1 行。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
     /// 指標の名前。定義ファイルの 1 行目と同じ。
     pub name: String,

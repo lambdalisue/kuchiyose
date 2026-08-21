@@ -369,6 +369,52 @@ pub fn missing_space(prose: &[Segment]) -> Measured {
     Measured::Value(missing as f64 / chance as f64)
 }
 
+/// 和文間スペース。
+///
+/// 日本語の文字どうしが隣り合う箇所を数え、そのうち空白を挟んでいるものの割合。
+///
+/// <strong>ふつうは 0 である。</strong> 日本語は分かち書きをしないので、`複数の リポジトリ を`
+/// とは書かない。
+///
+/// <strong>[和欧間スペース欠落](missing_space)の裏返しではない。</strong> あちらは入れるかどうかの
+/// 習慣で、入れる人も入れない人もいる。こちらは<strong>入れてはいけないところに入っているか</strong>
+/// を見る。
+///
+/// <strong>書き手を分けるために置いたのではない。</strong> 実測で本人の記事 8 本すべてが 0 箇所
+/// だったのに対し、和欧間の空白を機械的に入れて作った草稿が 103 箇所になり、
+/// <strong>それでも判定が通った。</strong> 通してはいけないものが通る穴を塞ぐために置いている。
+#[must_use]
+pub fn wabun_space(prose: &[Segment]) -> Measured {
+    let (mut chance, mut spaced) = (0usize, 0usize);
+    for chars in chars_per_node(prose) {
+        let mut i = 0;
+        while i < chars.len() {
+            let a = chars[i];
+            if !text::is_wabun(a) {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 1;
+            while chars.get(j).is_some_and(|&c| is_gap(c)) {
+                j += 1;
+            }
+            let Some(&b) = chars.get(j) else { break };
+            if text::is_wabun(b) {
+                chance += 1;
+                if j > i + 1 {
+                    spaced += 1;
+                }
+            }
+            i = j;
+        }
+    }
+    if chance < 20 {
+        return Measured::BelowFloor;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(spaced as f64 / chance as f64)
+}
+
 /// 和欧の境目になりうる文字か。
 fn is_side(c: char) -> bool {
     text::is_japanese(c) || is_alnum(c)
@@ -589,6 +635,33 @@ mod tests {
         let p = prose_with("１２３ と 1234567");
         // 10 個のうち全角 3 個。
         assert!((value(digit_width(&p)) - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn 和文間スペースはふつう_0_である() {
+        // 日本語は分かち書きをしないので、字の間に空白は入らない。
+        let p = prose_with("");
+        assert_eq!(wabun_space(&p), Measured::Value(0.0));
+    }
+
+    #[test]
+    fn 和文間スペースは入った箇所を数える() {
+        // <strong>通してはいけないものが通る穴を塞ぐ。</strong>
+        let p = prose_with(&"複数の リポジトリ を扱う。".repeat(6));
+        let Measured::Value(v) = wabun_space(&p) else {
+            panic!("測れる");
+        };
+        assert!(v > 0.0, "{v}");
+    }
+
+    #[test]
+    fn 和文間スペースは機会が少なければ測らない() {
+        // 割合が跳ねるので、機会が下限に届かない文書では測らない。
+        let p = vec![Segment {
+            kind: Kind::Paragraph,
+            text: "短い文である。".to_owned(),
+        }];
+        assert_eq!(wabun_space(&p), Measured::BelowFloor);
     }
 
     #[test]

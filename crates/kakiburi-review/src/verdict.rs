@@ -10,6 +10,8 @@ use crate::range::{Lower, Outside, Range};
 /// どの段で決まったか。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
+    /// 書き方。日本語として成立しているか。
+    Writing,
     /// 人らしさ値。
     Humanness,
     /// 照合値。
@@ -23,6 +25,7 @@ impl Stage {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
+            Stage::Writing => "書き方",
             Stage::Humanness => "人らしさ値",
             Stage::Matching => "照合値",
             Stage::Directive => "指示できる指標",
@@ -93,13 +96,62 @@ pub struct Observed {
     pub lower: Lower,
 }
 
+/// 検査 1 本の観測。
+///
+/// 比べる先は書き手ではなく日本語なので、幅ではなく線を持つ。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Inspected {
+    /// 指標の名前。
+    pub name: String,
+    /// 値。測れていなければ `None`。
+    pub value: Option<f64>,
+    /// 線。
+    pub limit: f64,
+    /// 線を超えたと言えるのは上側か。
+    pub upper: bool,
+    /// 超えたときに何が起きているか。返す文に載る。
+    pub broken: String,
+}
+
+impl Inspected {
+    /// 線を超えているか。測れていなければ超えていない。
+    #[must_use]
+    pub fn over(&self) -> bool {
+        self.value.is_some_and(|v| {
+            if self.upper {
+                v > self.limit
+            } else {
+                v < self.limit
+            }
+        })
+    }
+}
+
 /// 判定する。
 ///
 /// <strong>1 を先に当てるのは、条件が独立だからである。</strong> 文体がどれだけ寄っても、機械が
 /// 書いたと分かる文章は別の条件で落ちる。照合値が天井側にあることは、そこを何も
 /// 保証しない。
 #[must_use]
-pub fn judge(humanness: Option<Side>, matching: Option<Side>, directives: &[Observed]) -> Outcome {
+pub fn judge(
+    inspections: &[Inspected],
+    humanness: Option<Side>,
+    matching: Option<Side>,
+    directives: &[Observed],
+) -> Outcome {
+    // 0 段目。書き方。
+    //
+    // 日本語として成立していないものを、文体の似ている似ていないで測らない。
+    // **道具が出した指示には、それを満たす壊し方がある**——文字種の空白を
+    // 和文のあいだに入れれば、その指標は上がったうえで日本語が壊れる。
+    if let Some(i) = inspections.iter().find(|i| i.over()) {
+        return Outcome {
+            verdict: Verdict::Fail,
+            stage: Stage::Writing,
+            reason: i.broken.clone(),
+        };
+    }
+
     // 1 段目。人らしさ値。
     match humanness {
         None => {
@@ -241,7 +293,7 @@ mod tests {
 
     #[test]
     fn 人らしさが機械なら_1_段目で通らない() {
-        let o = judge(Some(Side::Machine), Some(Side::Human), &[]);
+        let o = judge(&[], Some(Side::Machine), Some(Side::Human), &[]);
         assert_eq!(o.verdict, Verdict::Fail);
         assert_eq!(o.stage, Stage::Humanness);
     }
@@ -249,7 +301,7 @@ mod tests {
     #[test]
     fn 人らしさが測れなければ判定できない() {
         // 通過の必要条件を確かめずに先へ進めない。
-        let o = judge(None, Some(Side::Human), &[]);
+        let o = judge(&[], None, Some(Side::Human), &[]);
         assert_eq!(o.verdict, Verdict::Unknown);
         assert_eq!(o.stage, Stage::Humanness);
     }
@@ -258,14 +310,14 @@ mod tests {
     fn 照合値が天井側でも人らしさが落ちれば通らない() {
         // 条件が独立である。文体がどれだけ寄っても、機械が書いたと分かる文章は
         // 別の条件で落ちる。
-        let o = judge(Some(Side::Machine), Some(Side::Human), &[]);
+        let o = judge(&[], Some(Side::Machine), Some(Side::Human), &[]);
         assert_eq!(o.verdict, Verdict::Fail);
         assert_eq!(o.stage, Stage::Humanness, "照合値の段まで進まない");
     }
 
     #[test]
     fn 系統が欠けたら_2_段目で判定できない() {
-        let o = judge(Some(Side::Human), None, &[]);
+        let o = judge(&[], Some(Side::Human), None, &[]);
         assert_eq!(o.verdict, Verdict::Unknown);
         assert_eq!(o.stage, Stage::Matching);
         assert!(o.reason.contains("系統が欠けている"), "{}", o.reason);
@@ -273,7 +325,7 @@ mod tests {
 
     #[test]
     fn 照合値が帯の中なら判定できない() {
-        let o = judge(Some(Side::Human), Some(Side::InBand), &[]);
+        let o = judge(&[], Some(Side::Human), Some(Side::InBand), &[]);
         assert_eq!(o.verdict, Verdict::Unknown);
         assert_eq!(o.stage, Stage::Matching);
     }
@@ -281,7 +333,7 @@ mod tests {
     #[test]
     fn 全部が幅の中なら通る() {
         let d = [observed("全角括弧", Some(1.0), 0.0, 2.0)];
-        let o = judge(Some(Side::Human), Some(Side::Human), &d);
+        let o = judge(&[], Some(Side::Human), Some(Side::Human), &d);
         assert_eq!(o.verdict, Verdict::Pass);
         assert_eq!(o.stage, Stage::Directive);
     }
@@ -290,7 +342,7 @@ mod tests {
     fn 指標が幅の外なら判定できないを返す() {
         // 「通らない」ではない。照合値は既に天井側にある。
         let d = [observed("全角括弧", Some(5.0), 0.0, 2.0)];
-        let o = judge(Some(Side::Human), Some(Side::Human), &d);
+        let o = judge(&[], Some(Side::Human), Some(Side::Human), &d);
         assert_eq!(o.verdict, Verdict::Unknown, "通らないではない");
         assert_eq!(o.stage, Stage::Directive);
         assert!(o.reason.contains("全角括弧"), "{}", o.reason);
@@ -303,7 +355,7 @@ mod tests {
             observed("測れない", None, 0.0, 2.0),
             observed("幅の中", Some(1.0), 0.0, 2.0),
         ];
-        let o = judge(Some(Side::Human), Some(Side::Human), &d);
+        let o = judge(&[], Some(Side::Human), Some(Side::Human), &d);
         assert_eq!(o.verdict, Verdict::Pass, "測れないものが外れ扱いにならない");
         assert_eq!(o.stage, Stage::Directive, "段は飛ばさない");
     }
@@ -316,7 +368,7 @@ mod tests {
             (Some(Side::Human), None),
             (None, None),
         ] {
-            let o = judge(h, m, &[]);
+            let o = judge(&[], h, m, &[]);
             assert!(!o.reason.is_empty(), "{o:?}");
         }
     }

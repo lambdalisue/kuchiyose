@@ -10,6 +10,7 @@ pub mod markdown;
 pub mod markup;
 pub mod refuse;
 pub mod source;
+pub mod space;
 
 use kakiburi_doc::Document;
 

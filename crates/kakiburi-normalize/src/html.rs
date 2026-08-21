@@ -10,6 +10,7 @@ use kakiburi_doc::Document;
 
 use crate::markup;
 use crate::refuse::Refusal;
+use crate::space::{self, WRAP, WRAP_STR};
 
 /// 中身を持たない要素。閉じ札を待たない。
 const VOID: [&str; 8] = ["br", "hr", "img", "meta", "link", "input", "area", "col"];
@@ -23,7 +24,7 @@ const SKIP: [&str; 5] = ["script", "style", "head", "title", "template"];
 pub fn parse(input: impl AsRef<str>) -> Result<Document, Refusal> {
     let tokens = tokenize(input.as_ref())?;
     let mut p = Builder { tokens, at: 0 };
-    let built = p.children(None)?;
+    let built = p.children(None, false)?;
     let nodes = built.nodes;
     Ok(Document::new(nodes))
 }
@@ -220,7 +221,9 @@ struct Built {
 
 impl Builder {
     /// `until` の閉じ札まで、子を組む。
-    fn children(&mut self, until: Option<&str>) -> Result<Built, Refusal> {
+    ///
+    /// `raw` は `<pre>` の中。<strong>そこの空白は表示されるので潰さない。</strong>
+    fn children(&mut self, until: Option<&str>, raw: bool) -> Result<Built, Refusal> {
         let mut nodes: Vec<Node> = Vec::new();
         let mut text = String::new();
         while self.at < self.tokens.len() {
@@ -228,7 +231,10 @@ impl Builder {
                 Token::Close { name } => {
                     if until == Some(name.as_str()) {
                         self.at += 1;
-                        return Ok(Built { nodes, text });
+                        return Ok(Built {
+                            nodes,
+                            text: if raw { text } else { space::collapse(&text) },
+                        });
                     }
                     // 対応しない閉じ札。<strong>推測して直さない。</strong>
                     return Err(Refusal::Broken {
@@ -237,7 +243,14 @@ impl Builder {
                 }
                 Token::Text(t) => {
                     self.at += 1;
-                    text.push_str(&decode_entities(&t));
+                    let t = decode_entities(&t);
+                    // <strong>地の文の改行は、書き手の改行ではなく書き出し側の折り返しである。</strong>
+                    // 印を付けて持ち回り、区分の端まで見える[始末](space::collapse)に任せる。
+                    text.push_str(&if raw {
+                        t
+                    } else {
+                        t.replace(WRAP, "").replace(['\r', '\n'], WRAP_STR)
+                    });
                 }
                 Token::Open { name, void } => {
                     self.at += 1;
@@ -257,7 +270,7 @@ impl Builder {
                     // `<pre>` の直下の `<code>` も同じ——そこはコードブロックの一部で
                     // あって、インラインコードではない。
                     if markup::is_transparent(&name) || (name == "code" && until == Some("pre")) {
-                        let inner = self.children(Some(&name))?;
+                        let inner = self.children(Some(&name), raw)?;
                         text.push_str(&inner.text);
                         nodes.extend(inner.nodes);
                         continue;
@@ -272,10 +285,14 @@ impl Builder {
                         nodes.push(Node::leaf(kind, ""));
                         continue;
                     }
-                    let inner = self.children(Some(&name))?;
+                    let inner = self.children(Some(&name), raw || name == "pre")?;
                     if is_inline(kind) {
                         // <strong>行に溶けこむ。</strong> 文字を親に畳み、数えるための子を残す。
-                        if kind != Kind::InlineCode && kind != Kind::Image {
+                        if kind == Kind::InlineCode || kind == Kind::Image {
+                            // 中身は地の文に入らない。**跡に空白を残さない**——
+                            // 残すと行内コードの多い記事ほど空白が増える。
+                            text.push(WRAP);
+                        } else {
                             text.push_str(&inner.text);
                         }
                         let mut c = Node::leaf(kind, inner.text.clone());
@@ -292,7 +309,10 @@ impl Builder {
                 detail: format!("<{name}> が閉じていない"),
             });
         }
-        Ok(Built { nodes, text })
+        Ok(Built {
+            nodes,
+            text: if raw { text } else { space::collapse(&text) },
+        })
     }
 
     /// この要素の閉じ札まで飛ばす。
@@ -325,8 +345,17 @@ fn is_inline(kind: Kind) -> bool {
 }
 
 /// node を組む。
+///
+/// <strong>区分の端の空白は表示されない。</strong> `<p>` の直後と `</p>` の直前の折り返しが
+/// そのまま地の文に入ると、書き出し側の字下げが空白として数えられる。
+/// コードブロックだけは端も表示されるので、そのまま置く。
 fn build(kind: Kind, name: &str, inner: Built) -> Node {
-    let mut n = Node::leaf(kind, inner.text);
+    let text = if kind == Kind::CodeBlock {
+        inner.text
+    } else {
+        inner.text.trim_matches(' ').to_string()
+    };
+    let mut n = Node::leaf(kind, text);
     if kind == Kind::Heading {
         n.raw_depth = heading_depth(name);
     }
@@ -466,7 +495,11 @@ mod tests {
     #[test]
     fn コードの中身は地の文に入らない() {
         let d = parse("<p>設定は <code>--force</code> である。</p>").unwrap();
-        assert_eq!(d.nodes[0].text, "設定は  である。");
+        // 跡に空白を残さない。**両側の空白ごと落ちる。**
+        assert_eq!(d.nodes[0].text, "設定はである。");
+        // 和欧のあいだなら、表示されるぶんの空白 1 個が残る。
+        let d = parse("<p>run the <code>--force</code> flag</p>").unwrap();
+        assert_eq!(d.nodes[0].text, "run the flag");
     }
 
     #[test]
@@ -588,6 +621,47 @@ mod tests {
     fn 表記は潰さない() {
         let d = parse("<p>全角（かっこ）と半角(paren)、〜 と ～。</p>").unwrap();
         assert_eq!(d.nodes[0].text, "全角（かっこ）と半角(paren)、〜 と ～。");
+    }
+
+    #[test]
+    fn 和文を割る折り返しは空白にならない() {
+        // 書き出し側が折り返しただけで、書き手は空白を打っていない。
+        let d = parse("<p>これは日本語の\n文章である。</p>").unwrap();
+        assert_eq!(d.nodes[0].text, "これは日本語の文章である。");
+    }
+
+    #[test]
+    fn 約物を割る折り返しも空白にならない() {
+        // 実測では、折り返しの 8 割が約物に隣り合っていた。
+        let d = parse("<p>そう書いた。\nだから直した。</p>").unwrap();
+        assert_eq!(d.nodes[0].text, "そう書いた。だから直した。");
+    }
+
+    #[test]
+    fn 和欧を割る折り返しは空白になる() {
+        // **こちらは表示される。** 消すと語が繋がってしまう。
+        let d = parse("<p>これは Vim\nplugin である。</p>").unwrap();
+        assert_eq!(d.nodes[0].text, "これは Vim plugin である。");
+    }
+
+    #[test]
+    fn 手で打った空白は残る() {
+        // **折り返しだけを潰す。** 打たれた空白は表記である。
+        let d = parse("<p>これは 日本語 である。</p>").unwrap();
+        assert_eq!(d.nodes[0].text, "これは 日本語 である。");
+    }
+
+    #[test]
+    fn 札をまたぐ折り返しも潰す() {
+        // 印は区分の端まで持ち回るので、行内の札で切れても始末できる。
+        let d = parse("<p>詳細は<a href=\"http://x\">こちら</a>\nを見よ。</p>").unwrap();
+        assert_eq!(d.nodes[0].text, "詳細はこちらを見よ。");
+    }
+
+    #[test]
+    fn コードブロックの中の改行は潰さない() {
+        let d = parse("<pre><code>let a = 1;\nlet b = 2;\n</code></pre>").unwrap();
+        assert_eq!(d.nodes[0].text, "let a = 1;\nlet b = 2;\n");
     }
 
     #[test]

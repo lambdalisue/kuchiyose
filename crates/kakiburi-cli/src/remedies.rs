@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use kakiburi_metrics::definitions::{self, Definition};
-use kakiburi_metrics::tag::Direction;
+use kakiburi_metrics::tag::{Direction, Tag};
 use kakiburi_metrics::Registry;
 use kakiburi_review::Remedies;
 
@@ -115,6 +115,43 @@ impl FromDefinitions {
         self.registry
             .get(name)
             .is_none_or(|e| e.tag.layer() == Some(kakiburi_metrics::Layer::Three))
+    }
+
+    /// 検査の指標か。<strong>幅ではなく線で見る。</strong>
+    ///
+    /// 効くかの判定にも指摘にも入れない。比べる先が本人ではないので、
+    /// [効くかの 3 条件](kakiburi_scale::effective)が意味を持たない。
+    #[must_use]
+    pub fn is_inspection(&self, name: &str) -> bool {
+        self.registry
+            .get(name)
+            .is_some_and(|e| matches!(e.tag, Tag::Inspection { .. }))
+    }
+
+    /// 検査の一覧。名前・向き・線・超えたときに言うこと。
+    ///
+    /// <strong>直し方は定義ファイルが持つ。</strong> 超えたと言うだけでは直せない。
+    #[must_use]
+    pub fn inspections(&self) -> Vec<(String, bool, f64, String)> {
+        self.registry
+            .entries()
+            .iter()
+            .filter_map(|e| {
+                let Tag::Inspection {
+                    direction, limit, ..
+                } = &e.tag
+                else {
+                    return None;
+                };
+                let upper = *direction != Direction::Lower;
+                let want = if upper {
+                    Direction::Upper
+                } else {
+                    Direction::Lower
+                };
+                Some((e.name.clone(), upper, *limit, self.pick(&e.name, want)?))
+            })
+            .collect()
     }
 
     /// その向きの直し方。<strong>札が持たない向きは返さない。</strong>

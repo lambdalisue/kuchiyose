@@ -4,7 +4,7 @@
 <strong>だが軸が在るのは照合値ではない。</strong>
 
 『どこがその人と違うかを、<strong>言えるようにする</strong>』——言えるものを作るのは
-[指示できる指標](../spec/100-metrics.md#指標には-3-種類ある)であり、照合値は
+[指示できる指標](../spec/100-metrics.md#指標には-4-種類ある)であり、照合値は
 [3 段](../spec/300-revise.md#3-種類を合わせて通るを出す)の 2 段目の門にすぎない。
 
 道具は [tools/spike-directive.pl](../../tools/spike-directive.pl)。9 本の指標を仕様どおりに

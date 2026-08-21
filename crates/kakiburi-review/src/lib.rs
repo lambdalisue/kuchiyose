@@ -12,7 +12,9 @@ pub mod verdict;
 
 pub use point::{Point, PointError, Remedies};
 pub use range::{appearance_size, Lower, Outside, Range, APPEARANCE_FLOOR};
-pub use verdict::{judge, pick_points, Observed, Outcome, Side, Stage, Verdict, MAX_POINTS};
+pub use verdict::{
+    judge, pick_points, Inspected, Observed, Outcome, Side, Stage, Verdict, MAX_POINTS,
+};
 
 /// 検めた結果。<strong>3 値と指摘を返す。</strong>
 #[derive(Debug, Clone, PartialEq)]
@@ -29,7 +31,7 @@ pub struct Review {
     /// 人らしさの直し方。<strong>書きぶりの枠を奪わない。</strong>
     ///
     /// 3〜4 本という上限は書きぶりの側の話であり、人らしさはそこに数えない
-    /// （[指標](../../../docs/spec/100-metrics.md#指標には-3-種類ある)）。
+    /// （[指標](../../../docs/spec/100-metrics.md#指標には-4-種類ある)）。
     /// <strong>枠を奪い合わせると、機械臭さを消す指示と、その人へ寄せる指示が、席を
     /// 取り合う。</strong>
     pub humanness: Vec<String>,
@@ -107,6 +109,7 @@ pub struct HumannessObserved {
 /// という食い違いが起きる。
 #[must_use]
 pub fn review(
+    inspections: &[Inspected],
     humanness: Option<Side>,
     matching: Option<Side>,
     directives: &[Observed],
@@ -114,7 +117,7 @@ pub fn review(
     humanness_by_metric: &[HumannessObserved],
     diverging: &[MatchingObserved],
 ) -> Review {
-    let outcome = judge(humanness, matching, directives);
+    let outcome = judge(inspections, humanness, matching, directives);
     // <strong>3 段目まで進んだときだけ書きぶりの指摘を組む。</strong> 前の段で止まったなら、
     // 出しても受け取った側は逆向きの直しをする。
     let points = if outcome.stage == Stage::Directive {
@@ -166,8 +169,11 @@ fn matching_remedies(observed: &[MatchingObserved]) -> Vec<String> {
             } else {
                 "多い"
             };
+            // <strong>「本人と同じ書き方で」を付ける。</strong> 数だけ言うと、数を満たす壊し方が
+            // 選ばれる——文字種の空白を上げよと言われた側が、和文のあいだに空白を
+            // 入れたことが実際に起きた（[0 段目](verdict::Stage::Writing)）。
             let fix = if o.theirs > o.mine {
-                "増やす"
+                "本人と同じ書き方で増やす"
             } else {
                 "減らす"
             };
@@ -292,7 +298,15 @@ mod tests {
     #[test]
     fn 通るときは指摘が無い() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
-        let r = review(Some(Side::Human), Some(Side::Human), &d, &All, &[], &[]);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::Human),
+            &d,
+            &All,
+            &[],
+            &[],
+        );
         assert_eq!(r.outcome.verdict, Verdict::Pass);
         assert!(r.points.is_empty());
     }
@@ -327,7 +341,15 @@ mod tests {
         // 道具が黙る。</strong>
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let v = [diverge("機能語", "一方", 18.6, -0.2)];
-        let r = review(Some(Side::Human), Some(Side::InBand), &d, &All, &[], &v);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::InBand),
+            &d,
+            &All,
+            &[],
+            &v,
+        );
         assert_eq!(r.outcome.stage, Stage::Matching);
         assert!(r.points.is_empty(), "書きぶりの枠は奪わない");
         assert_eq!(r.matching.len(), 1, "{:?}", r.matching);
@@ -340,7 +362,15 @@ mod tests {
     fn 本人のほうが多ければ増やすと言う() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let v = [diverge("機能語", "のだ", -1.2, 2.4)];
-        let r = review(Some(Side::Human), Some(Side::InBand), &d, &All, &[], &v);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::InBand),
+            &d,
+            &All,
+            &[],
+            &v,
+        );
         assert!(r.matching[0].contains("少ない"), "{:?}", r.matching);
         assert!(r.matching[0].contains("増やす"), "{:?}", r.matching);
     }
@@ -352,7 +382,15 @@ mod tests {
         let v: Vec<MatchingObserved> = (0..10)
             .map(|i| diverge("機能語", &format!("語{i}"), f64::from(i), 0.0))
             .collect();
-        let r = review(Some(Side::Human), Some(Side::InBand), &d, &All, &[], &v);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::InBand),
+            &d,
+            &All,
+            &[],
+            &v,
+        );
         assert_eq!(r.matching.len(), MAX_POINTS, "{:?}", r.matching);
     }
 
@@ -360,7 +398,7 @@ mod tests {
     fn 照合を通ったら照合の直し方は出さない() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let v = [diverge("機能語", "一方", 18.6, -0.2)];
-        let r = review(Some(Side::Human), Some(Side::Human), &d, &All, &[], &v);
+        let r = review(&[], Some(Side::Human), Some(Side::Human), &d, &All, &[], &v);
         assert!(r.matching.is_empty(), "{:?}", r.matching);
     }
 
@@ -373,6 +411,7 @@ mod tests {
         let mut done = human("圧縮率", 0.4);
         done.effect = 0.0;
         let r = review(
+            &[],
             Some(Side::Machine),
             Some(Side::Human),
             &d,
@@ -394,7 +433,15 @@ mod tests {
         let mut h = human("短い繰り返し", -0.2);
         h.raise = false;
         h.overused = vec!["ます。".into(), "ています".into()];
-        let r = review(Some(Side::Machine), Some(Side::Human), &d, &All, &[h], &[]);
+        let r = review(
+            &[],
+            Some(Side::Machine),
+            Some(Side::Human),
+            &d,
+            &All,
+            &[h],
+            &[],
+        );
         assert!(r.humanness[0].contains("ます。"), "{:?}", r.humanness);
     }
 
@@ -405,7 +452,15 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let mut h = human("長い繰り返し", -0.4);
         h.phrases = vec!["と思っています".into(), "しています。".into()];
-        let r = review(Some(Side::Machine), Some(Side::Human), &d, &All, &[h], &[]);
+        let r = review(
+            &[],
+            Some(Side::Machine),
+            Some(Side::Human),
+            &d,
+            &All,
+            &[h],
+            &[],
+        );
         assert!(
             r.humanness[0].contains("と思っています"),
             "{:?}",
@@ -424,6 +479,7 @@ mod tests {
         let mut good = human("圧縮率", -0.78);
         good.effect = 0.99;
         let r = review(
+            &[],
             Some(Side::Machine),
             Some(Side::Human),
             &d,
@@ -445,6 +501,7 @@ mod tests {
         let mut shallow = human("圧縮率", -0.3);
         shallow.effect = 0.90;
         let r = review(
+            &[],
             Some(Side::Machine),
             Some(Side::Human),
             &d,
@@ -469,6 +526,7 @@ mod tests {
         let mut b = human("圧縮率", 0.4);
         b.effect = -0.2;
         let r = review(
+            &[],
             Some(Side::Machine),
             Some(Side::Human),
             &d,
@@ -484,7 +542,15 @@ mod tests {
         // <strong>帯の中から人の側へ出る道を示さなければ、受け取った側は動けない。</strong>
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("繰り返し", -1.2)];
-        let r = review(Some(Side::InBand), Some(Side::Human), &d, &All, &h, &[]);
+        let r = review(
+            &[],
+            Some(Side::InBand),
+            Some(Side::Human),
+            &d,
+            &All,
+            &h,
+            &[],
+        );
         assert_eq!(r.outcome.stage, Stage::Humanness);
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
         assert_eq!(r.humanness.len(), 1, "{:?}", r.humanness);
@@ -495,7 +561,7 @@ mod tests {
         // **測れていないことと、機械の側にあることは違う。** 混ぜれば、短いだけの
         // 文章に「繰り返しを足せ」と言うことになる。
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
-        let r = review(None, Some(Side::Human), &d, &All, &[], &[]);
+        let r = review(&[], None, Some(Side::Human), &d, &All, &[], &[]);
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
         assert!(r.humanness.is_empty());
     }
@@ -504,7 +570,7 @@ mod tests {
     fn 通るときは人らしさの直し方も無い() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("繰り返し", -1.2)];
-        let r = review(Some(Side::Human), Some(Side::Human), &d, &All, &h, &[]);
+        let r = review(&[], Some(Side::Human), Some(Side::Human), &d, &All, &h, &[]);
         assert!(r.humanness.is_empty(), "{:?}", r.humanness);
     }
 
@@ -518,6 +584,7 @@ mod tests {
         let mut down = human("圧縮率", -0.9);
         down.raise = false;
         let r = review(
+            &[],
             Some(Side::Machine),
             Some(Side::Human),
             &d,
@@ -529,6 +596,7 @@ mod tests {
         assert!(r.humanness[0].contains("減らす"), "{:?}", r.humanness);
 
         let r = review(
+            &[],
             Some(Side::Machine),
             Some(Side::Human),
             &d,
@@ -555,6 +623,7 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("圧縮率", -0.9)];
         let r = review(
+            &[],
             Some(Side::Machine),
             Some(Side::Human),
             &d,
@@ -570,7 +639,15 @@ mod tests {
     fn 直し方が定義に無ければ出さない() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("繰り返し", -1.2)];
-        let r = review(Some(Side::Machine), Some(Side::Human), &d, &None_, &h, &[]);
+        let r = review(
+            &[],
+            Some(Side::Machine),
+            Some(Side::Human),
+            &d,
+            &None_,
+            &h,
+            &[],
+        );
         assert!(r.humanness.is_empty(), "{:?}", r.humanness);
     }
 
@@ -578,7 +655,15 @@ mod tests {
     fn 前の段で止まったら指摘を出さない() {
         // 出せば、受け取った側は照合値を上げようとして人らしさを下げる。
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
-        let r = review(Some(Side::Machine), Some(Side::Human), &d, &All, &[], &[]);
+        let r = review(
+            &[],
+            Some(Side::Machine),
+            Some(Side::Human),
+            &d,
+            &All,
+            &[],
+            &[],
+        );
         assert_eq!(r.outcome.stage, Stage::Humanness);
         assert!(r.points.is_empty(), "指摘を出してはいけない");
     }
@@ -586,7 +671,15 @@ mod tests {
     #[test]
     fn 照合値で止まっても指摘を出さない() {
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
-        let r = review(Some(Side::Human), Some(Side::InBand), &d, &All, &[], &[]);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::InBand),
+            &d,
+            &All,
+            &[],
+            &[],
+        );
         assert_eq!(r.outcome.stage, Stage::Matching);
         assert!(r.points.is_empty());
     }
@@ -597,7 +690,15 @@ mod tests {
             observed("全角括弧", 5.0, 0.0, 2.0),
             observed("感嘆符", 10.0, 0.0, 1.0),
         ];
-        let r = review(Some(Side::Human), Some(Side::Human), &d, &All, &[], &[]);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::Human),
+            &d,
+            &All,
+            &[],
+            &[],
+        );
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
         assert_eq!(r.points.len(), 2);
         // 外れの大きさの降順。感嘆符は 9.0、全角括弧は 1.5。
@@ -608,7 +709,15 @@ mod tests {
     fn 指摘は判定と同じ集合から取る() {
         // 止めた理由が指摘に出てこないという食い違いを防ぐ。
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
-        let r = review(Some(Side::Human), Some(Side::Human), &d, &All, &[], &[]);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::Human),
+            &d,
+            &All,
+            &[],
+            &[],
+        );
         assert!(
             r.outcome.reason.contains("全角括弧"),
             "{}",
@@ -622,7 +731,15 @@ mod tests {
         // だが判定は止まったままである——言えないもので止めない、の逆側は
         // 「言えるものがある以上、言って次の周へ回す」である。
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
-        let r = review(Some(Side::Human), Some(Side::Human), &d, &None_, &[], &[]);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::Human),
+            &d,
+            &None_,
+            &[],
+            &[],
+        );
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
         assert!(r.points.is_empty());
     }
@@ -632,7 +749,15 @@ mod tests {
         let d: Vec<Observed> = (0..10)
             .map(|i| observed(&format!("m{i:02}"), 5.0, 0.0, 2.0))
             .collect();
-        let r = review(Some(Side::Human), Some(Side::Human), &d, &All, &[], &[]);
+        let r = review(
+            &[],
+            Some(Side::Human),
+            Some(Side::Human),
+            &d,
+            &All,
+            &[],
+            &[],
+        );
         assert_eq!(r.points.len(), MAX_POINTS);
     }
 }

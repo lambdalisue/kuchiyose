@@ -1877,7 +1877,7 @@ fn analyzed_of(
 /// 道具の側は<strong>「出力が無い」を自分で場合分けする</strong>ことになる——そこは
 /// 判定できないと同じ側であって、壊れたわけではない。
 fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) -> Exit {
-    let outcome = judge(None, None, &[]);
+    let outcome = judge(&[], None, None, &[]);
     if json {
         use kakiburi_cassette::json::Value;
         println!(
@@ -2155,10 +2155,36 @@ fn review(args: &[String]) -> Exit {
         )
         .as_ref(),
     );
+    // 0 段目。書き方。
+    //
+    // カセットを見ない。日本語として成立しているかは書き手の性質ではないので、
+    // 線は定義ファイルが持つ。
+    let inspections: Vec<kakiburi_review::Inspected> = defs
+        .inspections()
+        .into_iter()
+        .map(|(name, upper, limit, remedy)| {
+            let value = measured_now
+                .iter()
+                .find(|(n, _)| *n == name)
+                .and_then(|(_, m)| m.value());
+            kakiburi_review::Inspected {
+                broken: match value {
+                    Some(v) => format!("{name}が {v:.4} で、線の {limit} を超えている。{remedy}"),
+                    None => format!("{name}が線の {limit} を超えている。{remedy}"),
+                },
+                name,
+                value,
+                limit,
+                upper,
+            }
+        })
+        .collect();
     let directives: Vec<Observed> = effective
         .iter()
         // 条件 1 と 2。
         .filter(|e| e.works())
+        // 検査は幅で見ない。**比べる先が本人ではない。**
+        .filter(|e| !defs.is_inspection(&e.name))
         // 条件 3。<strong>動かないと分かった指標は前に出さない。</strong>
         .filter(|e| !c.is_stuck(&scene, &e.name))
         // <strong>層 3 は指摘にも判定にも使わない。</strong> 止めた理由を言えないものは止めない。
@@ -2210,8 +2236,15 @@ fn review(args: &[String]) -> Exit {
             examples: d.examples.clone(),
         })
         .collect();
-    let result =
-        kakiburi_review::review(humanness, matching, &directives, &defs, &by_metric, &apart);
+    let result = kakiburi_review::review(
+        &inspections,
+        humanness,
+        matching,
+        &directives,
+        &defs,
+        &by_metric,
+        &apart,
+    );
 
     if json {
         // <strong>人向けの表示は変えない。</strong> 出すのは同じ値の生の形である。
@@ -2762,6 +2795,7 @@ fn fixed(
         ("感嘆符の字幅", symbol::exclamation_width(p)),
         ("疑問符の字幅", symbol::question_width(p)),
         ("和欧間スペース欠落", symbol::missing_space(p)),
+        ("和文間スペース", symbol::wabun_space(p)),
         ("笑い", symbol::laughter(p)),
         ("絵文字", symbol::emoji(p)),
         ("em dash", symbol::em_dash(p)),
@@ -2942,9 +2976,9 @@ mod tests {
     #[test]
     fn 指標の一覧が出る() {
         assert_eq!(run(&["metrics".to_owned()]), Exit::Pass);
-        // <strong>定義と軸は 1 対 1 ではない。</strong> 定義 39 本のうち 38 本が軸 1 本を作り、
+        // <strong>定義と軸は 1 対 1 ではない。</strong> 定義 40 本のうち 39 本が軸 1 本を作り、
         // 接続詞直後の読点だけが語彙素 12 × 位置 2 の 24 本に展開される。
-        assert_eq!(measured_names().len(), 38 + 24);
+        assert_eq!(measured_names().len(), 39 + 24);
         assert_eq!(
             kakiburi_metrics::word::conjunction_comma_names().len(),
             24,

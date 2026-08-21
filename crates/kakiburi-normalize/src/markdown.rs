@@ -414,6 +414,9 @@ fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refus
                     }
                     body.push(c);
                 }
+                // 中身は地の文に入らない。**跡に空白を残さない**——
+                // 残すと行内コードの多い記事ほど空白が増える。
+                out.push(crate::space::WRAP);
                 kids.push(Node::leaf(Kind::InlineCode, body));
             }
             // 画像は代替文字ごと落とす。リンクは中身だけ残す。
@@ -438,6 +441,7 @@ fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refus
                     }
                 }
                 skip_link_target(&mut chars);
+                out.push(crate::space::WRAP);
                 kids.push(Node::leaf(Kind::Image, alt));
             }
             '[' => {
@@ -481,7 +485,7 @@ fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refus
             _ => out.push(c),
         }
     }
-    Ok((out, kids))
+    Ok((crate::space::collapse(&out), kids))
 }
 
 /// 強調で始まる行か。`**` `__` と、対応表にある強調の HTML 札を見る。
@@ -853,7 +857,11 @@ mod tests {
     #[test]
     fn インラインコードの中身は落ちる() {
         let d = parse("設定は `--force` である。\n", Source::GithubMarkdown).unwrap();
-        assert_eq!(d.nodes[0].text, "設定は  である。");
+        // 跡に空白を残さない。**両側の空白ごと落ちる。**
+        assert_eq!(d.nodes[0].text, "設定はである。");
+        // 和欧のあいだなら、表示されるぶんの空白 1 個が残る。
+        let d = parse("run the `--force` flag\n", Source::GithubMarkdown).unwrap();
+        assert_eq!(d.nodes[0].text, "run the flag");
     }
 
     #[test]

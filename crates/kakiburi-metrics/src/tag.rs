@@ -36,7 +36,9 @@ pub enum Direction {
 }
 
 /// 札。<strong>種別ごとに形が違う。</strong>
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Eq` は持たない——検査が線を実数で持つためである。
+#[derive(Debug, Clone, PartialEq)]
 pub enum Tag {
     /// 指示できる指標。5 欄。
     Directive {
@@ -58,6 +60,18 @@ pub enum Tag {
     Humanness {
         /// 向き。
         direction: Direction,
+    },
+    /// 検査。4 欄。層を持たない。
+    ///
+    /// 比べる先は書き手ではなく日本語なので、線を定義ファイルが持つ。
+    /// カセットの有無で判定が変わらない。
+    Inspection {
+        /// 向き。
+        direction: Direction,
+        /// 線。この向きに超えたら、日本語として成立していない。
+        limit: f64,
+        /// 単位。
+        unit: String,
     },
 }
 
@@ -81,6 +95,8 @@ pub enum TagError {
     UnknownClass(String),
     /// 表に無い向き。
     UnknownDirection(String),
+    /// 線が数として読めない。
+    UnreadableLimit(String),
 }
 
 impl std::fmt::Display for TagError {
@@ -93,6 +109,7 @@ impl std::fmt::Display for TagError {
             TagError::UnknownSystem(s) => write!(f, "表に無い系統: {s}"),
             TagError::UnknownClass(s) => write!(f, "表に無い分類: {s}"),
             TagError::UnknownDirection(s) => write!(f, "表に無い向き: {s}"),
+            TagError::UnreadableLimit(s) => write!(f, "線が数として読めない: {s}"),
         }
     }
 }
@@ -192,6 +209,22 @@ impl Tag {
                     direction: Direction::from_name(fields[1])?,
                 })
             }
+            "検査" => {
+                if fields.len() != 4 {
+                    return Err(TagError::WrongArity {
+                        kind: kind.to_owned(),
+                        want: 4,
+                        got: fields.len(),
+                    });
+                }
+                Ok(Tag::Inspection {
+                    direction: Direction::from_name(fields[1])?,
+                    limit: fields[2]
+                        .parse()
+                        .map_err(|_| TagError::UnreadableLimit(fields[2].to_owned()))?,
+                    unit: fields[3].to_owned(),
+                })
+            }
             other => Err(TagError::UnknownKind(other.to_owned())),
         }
     }
@@ -204,8 +237,7 @@ impl Tag {
         match self {
             // 系統を名指しできなければ層 3。系統の裏付けを継ぐ足場が無い。
             Tag::Directive { system, .. } => Some(system.map_or(Layer::Three, System::layer)),
-            Tag::Matching { .. } => None,
-            Tag::Humanness { .. } => None,
+            Tag::Matching { .. } | Tag::Humanness { .. } | Tag::Inspection { .. } => None,
         }
     }
 
@@ -213,7 +245,9 @@ impl Tag {
     #[must_use]
     pub fn direction(&self) -> Option<Direction> {
         match self {
-            Tag::Directive { direction, .. } | Tag::Humanness { direction } => Some(*direction),
+            Tag::Directive { direction, .. }
+            | Tag::Humanness { direction }
+            | Tag::Inspection { direction, .. } => Some(*direction),
             Tag::Matching { .. } => None,
         }
     }

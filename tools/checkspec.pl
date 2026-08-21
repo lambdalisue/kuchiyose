@@ -76,6 +76,10 @@ if (-d $mdir) {
     printf "DEF  %s  数え方が無い\n", $f          and $bad++ unless $body =~ /^## 数え方/m;
     printf "DEF  %s  照合なのに次元が無い\n", $f   and $bad++ if $kind eq '照合' && $body !~ /^## 次元/m;
     printf "DEF  %s  指示なのに直し方が無い\n", $f and $bad++ if $kind eq '指示' && $body !~ /^## 直し方/m;
+    # 検査は線と直し方の両方が要る。線が無ければ判定できず、直し方が無ければ
+    # 止めるだけで直せない。
+    printf "DEF  %s  検査なのに直し方が無い\n", $f and $bad++ if $kind eq '検査' && $body !~ /^## 直し方/m;
+    printf "DEF  %s  検査なのに線の説明が無い\n", $f and $bad++ if $kind eq '検査' && $body !~ /^## 線/m;
 
     if ($kind eq '指示') {
       if (@p != 5) { printf "TAG  %s  指示 は 5 欄: 「%s」\n", $f, $tag; $bad++; next }
@@ -87,6 +91,11 @@ if (-d $mdir) {
       printf "TAG  %s  照合 は 2 欄: 「%s」\n", $f, $tag and $bad++ if @p != 2;
     } elsif ($kind eq '人らしさ') {
       printf "TAG  %s  人らしさ は 2 欄: 「%s」\n", $f, $tag and $bad++ if @p != 2;
+    } elsif ($kind eq '検査') {
+      if (@p != 4) { printf "TAG  %s  検査 は 4 欄: 「%s」\n", $f, $tag; $bad++; next }
+      my ($dir, $limit) = @p[1,2];
+      printf "TAG  %s  未知の向き「%s」\n", $f, $dir  and $bad++ unless $dirs{$dir};
+      printf "TAG  %s  線が数でない「%s」\n", $f, $limit and $bad++ unless $limit =~ /^-?\d+(?:\.\d+)?$/;
     } else {
       printf "TAG  %s  種別が読めない: 「%s」\n", $f, $tag; $bad++;
     }
