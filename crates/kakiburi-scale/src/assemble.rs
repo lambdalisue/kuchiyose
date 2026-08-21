@@ -47,7 +47,13 @@ struct Measurements {
 
 impl Measurements {
     fn of(sample: Sample<'_>, analyzer: Option<&dyn Analyzer>) -> Self {
-        let prose = sample.document.prose();
+        // <strong>識別子を伏せてから測る。</strong> `denops.vim` のような半角英字の連なりは
+        // <strong>書き手が選んだ書きぶりではなく題材が決めるもの</strong>で、そのまま入れると
+        // <strong>同じ人が別の題材で書いた文章を「その人らしくない」と言う</strong>。
+        //
+        // <strong>掛けるのはここだけである。</strong> 指示できる指標は和欧間スペースや半角英字
+        // そのものを測るので、生の文から測り続ける。
+        let prose = kakiburi_doc::prose::mask_identifiers(&sample.document.prose());
         // <strong>解析は 1 度だけ。</strong> 指標ごとに呼べば、外の実行ファイルを指標の数だけ起こす。
         let analyzed = analyzer.and_then(|a| Analyzed::of(&prose, a).ok());
         let mut parts = BTreeMap::new();
