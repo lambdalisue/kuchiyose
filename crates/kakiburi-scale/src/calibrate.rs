@@ -188,6 +188,20 @@ impl Weights {
         &self.slopes
     }
 
+    /// 負の傾きを 0 にする。
+    ///
+    /// <strong>向きが論理で決まっている当てはめに使う。</strong> 入力がすでに「大きいほど
+    /// そちら側」に揃っているなら、負の重みは成り立ちようのないことを言っている。
+    ///
+    /// <strong>反転させない。</strong> 反転は素材が言っていないことを言うことになる。
+    pub fn clamp_non_negative(&mut self) {
+        for w in &mut self.slopes {
+            if *w < 0.0 {
+                *w = 0.0;
+            }
+        }
+    }
+
     /// 切片。
     #[must_use]
     pub fn intercept(&self) -> f64 {
@@ -299,10 +313,21 @@ impl Calibration {
                     .collect()
             })
             .collect();
+        // <strong>合算の重みは負にならない。</strong> 系統ごとの対数尤度比は、すでに「本人に
+        // 近いほど大きい」向きに揃っている——負の重みは<strong>「本人に近いほど本人らしく
+        // ない」</strong>という、成り立ちようのないことを言う。
+        //
+        // <strong>これは素材の発見ではなく、当てはめの揺れである。</strong> 人らしさの向きは
+        // 先行研究の主張なので素材が覆しうるが、こちらは<strong>距離の定義から決まる</strong>。
+        // 実測では 5 系統のうち機能語だけが負に出た。
+        //
+        // <strong>反転させず 0 にする。</strong> 反転は素材が言っていないことを言うことになる。
+        let mut fusion = Weights::fit(&fused_rows, labels);
+        fusion.clamp_non_negative();
         Self {
             systems: systems.to_vec(),
             per_system,
-            fusion: Weights::fit(&fused_rows, labels),
+            fusion,
         }
     }
 
