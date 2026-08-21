@@ -109,6 +109,48 @@ impl Frozen {
     }
 }
 
+impl Frozen {
+    /// その次元の相対頻度が `want` になるよう、数え上げを動かす。
+    ///
+    /// <strong>1 次元だけを動かす直しは、実際には書けない。</strong> 系統の次元はどれも
+    /// 相対頻度なので、<strong>1 つを減らせば残りの割合が上がる</strong>——読点を 1 つ外せば、
+    /// 外さなかった読点の取り分が増える。
+    ///
+    /// <strong>だから数え上げの側で動かす。</strong> 投影し直せば、正規化が自然に起きて
+    /// ほかの次元も動く。<strong>それが実際に起きることである。</strong>
+    #[must_use]
+    pub fn shifted(&self, counts: &Counts, dim: usize, want: f64) -> Counts {
+        let Some(name) = self.dims.get(dim) else {
+            return counts.clone();
+        };
+        #[allow(clippy::cast_precision_loss)]
+        let total: f64 = counts.values().sum::<usize>() as f64;
+        #[allow(clippy::cast_precision_loss)]
+        let here: f64 = counts.get(name).copied().unwrap_or(0) as f64;
+        let rest = total - here;
+        // <strong>割合を戻して数え上げを解く。</strong> c' = want * rest / (1 - want)
+        let want = want.clamp(0.0, 0.99);
+        if rest <= 0.0 {
+            return counts.clone();
+        }
+        let target = want * rest / (1.0 - want);
+        let mut out = counts.clone();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        out.insert(name.clone(), target.round().max(0.0) as usize);
+        out
+    }
+
+    /// 標準化した値を、相対頻度に戻す。
+    #[must_use]
+    pub fn unstandardize(&self, dim: usize, z: f64) -> f64 {
+        match (self.mean.get(dim), self.sd.get(dim)) {
+            (Some(m), Some(sd)) if *sd > 0.0 => z * sd + m,
+            (Some(m), _) => *m,
+            _ => 0.0,
+        }
+    }
+}
+
 /// 部分ベクトルの束。<strong>1 系統ぶんである。</strong>
 ///
 /// [読点の打ち方](kakiburi_metrics::matching::comma_position)のように、系統が 3 つの

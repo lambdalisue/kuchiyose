@@ -167,6 +167,22 @@ pub fn write(s: &Scale) -> String {
         ),
         ("人らしさ".to_owned(), humanness),
         ("人らしさの帯".to_owned(), band(s.humanness_band)),
+        (
+            // <strong>効く量を数える相手。</strong> 正反対を指す直し方が同時に出たとき、
+            // どちらが勝つかは動く量でしか言えない。
+            "人らしさの代表値".to_owned(),
+            Value::obj(
+                s.humanness_target
+                    .iter()
+                    .map(|(n, v)| (n.clone(), Value::Number(*v))),
+            ),
+        ),
+        (
+            // <strong>直し方に載せる言い回し。</strong> 数値と向きだけでは、受け取った側は
+            // 自分ででっち上げた定型句を挿し込むことになる。
+            "言い回し".to_owned(),
+            Value::Array(s.phrases.iter().map(Value::s).collect()),
+        ),
     ])
     .write()
 }
@@ -219,6 +235,30 @@ pub fn read(text: &str) -> Option<Scale> {
         },
         humanness,
         humanness_band: read_band(v.get("人らしさの帯")?)?,
+        // <strong>無くてもよい。</strong> 持たない版のカセットは、直し方の並びが粗くなる
+        // だけで判定は変わらない。
+        humanness_target: {
+            // <strong>指標の並びから引く。</strong> 欄の並びに頼らない。
+            let o = v.get("人らしさの代表値");
+            kakiburi_metrics::humanness::Metric::ALL
+                .into_iter()
+                .filter_map(|m| {
+                    let n = m.name();
+                    Some((n.to_owned(), o.and_then(|x| x.get(n))?.as_f64()?))
+                })
+                .collect()
+        },
+        // <strong>無くてもよい。</strong> 言い回しを持たない版のカセットは、直し方が短くなる
+        // だけで判定は変わらない。
+        phrases: v
+            .get("言い回し")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 

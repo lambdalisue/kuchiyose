@@ -1901,6 +1901,8 @@ fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) 
                 // 「出なかった」と「そもそも無い」を区別できない。
                 ("humanness_points".to_owned(), Value::Array(vec![])),
                 ("humanness_by_metric".to_owned(), Value::obj([])),
+                ("matching_points".to_owned(), Value::Array(vec![])),
+                ("matching_by_dim".to_owned(), Value::Array(vec![])),
                 ("provisional".to_owned(), machine::strings(&c.provisional)),
             ])
             .write()
@@ -2074,6 +2076,29 @@ fn review(args: &[String]) -> Exit {
             .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
     );
 
+    // <strong>照合値のどこが違うのかを言えるようにする。</strong> 1 つの数のままでは、帯の中で
+    // 止まったときに受け取った側が動きようがない。
+    //
+    // <strong>次元が語として読める系統だけを見る。</strong> 品詞 bigram の「名詞-助詞」を
+    // 増やせとは言えない。
+    let readable = [
+        kakiburi_metrics::System::FunctionWord,
+        kakiburi_metrics::System::Comma,
+        kakiburi_metrics::System::CharType,
+    ];
+    let diverging = kakiburi_scale::diverging(
+        &scale,
+        Sample {
+            name: path,
+            document: &doc,
+        },
+        &partners,
+        mecab
+            .as_ref()
+            .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+        &readable,
+        12,
+    );
     // 帯に照らして 3 値のどちら側かにする。
     let side = |band: kakiburi_scale::Band, value: Option<f64>| -> Option<Side> {
         value.map(|v| match band.judge(v) {
@@ -2161,9 +2186,32 @@ fn review(args: &[String]) -> Exit {
             name: m.name.clone(),
             value: m.value,
             raise: m.raise,
+            // <strong>長い繰り返しにだけ添える。</strong> ほかの指標に言い回しを付けても、
+            // どう使えばよいかを言えない。
+            phrases: if m.name == "長い繰り返し" {
+                scale.phrases.clone()
+            } else {
+                Vec::new()
+            },
+            overused: m.overused.clone(),
+            once_only: m.once_only.clone(),
+            effect: m.effect,
+            target: m.target,
         })
         .collect();
-    let result = kakiburi_review::review(humanness, matching, &directives, &defs, &by_metric);
+    let apart: Vec<kakiburi_review::MatchingObserved> = diverging
+        .iter()
+        .map(|d| kakiburi_review::MatchingObserved {
+            system: d.system.clone(),
+            dim: d.dim.clone(),
+            mine: d.mine,
+            theirs: d.theirs,
+            effect: d.effect(),
+            examples: d.examples.clone(),
+        })
+        .collect();
+    let result =
+        kakiburi_review::review(humanness, matching, &directives, &defs, &by_metric, &apart);
 
     if json {
         // <strong>人向けの表示は変えない。</strong> 出すのは同じ値の生の形である。
@@ -2221,6 +2269,29 @@ fn review(args: &[String]) -> Exit {
                     "humanness_points".to_owned(),
                     machine::strings(&result.humanness),
                 ),
+                (
+                    "matching_points".to_owned(),
+                    machine::strings(&result.matching),
+                ),
+                (
+                    // <strong>散文だけでは検証できない。</strong> 予測した効きが当たったかを
+                    // 確かめるには、次元と値がそのまま要る。
+                    "matching_by_dim".to_owned(),
+                    Value::Array(
+                        diverging
+                            .iter()
+                            .map(|d| {
+                                Value::obj([
+                                    ("system".to_owned(), Value::s(&d.system)),
+                                    ("dim".to_owned(), Value::s(&d.dim)),
+                                    ("mine".to_owned(), Value::Number(d.mine)),
+                                    ("theirs".to_owned(), Value::Number(d.theirs)),
+                                    ("effect".to_owned(), Value::Number(d.effect())),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
                 ("provisional".to_owned(), machine::strings(&c.provisional)),
             ])
             .write()
@@ -2230,6 +2301,30 @@ fn review(args: &[String]) -> Exit {
 
     println!("前に出す指標: {} 本", directives.len());
     println!();
+    // <strong>長さで黙るなら、長さで黙ると言う。</strong> 直すと短くなり、下限を割って測れなく
+    // なる——<strong>直した側には、道具が壊れたのか自分が削りすぎたのかが分からない。</strong>
+    let tokens = mecab
+        .as_ref()
+        .and_then(|m| {
+            analyzed_of(
+                &doc.prose(),
+                Some(m as &dyn kakiburi_metrics::morph::Analyzer),
+            )
+        })
+        .map(|a| a.tokens());
+    if let Some(n) = tokens {
+        let floor = kakiburi_metrics::floor::TOKENS;
+        if n < floor {
+            println!(
+                "延べ {n} 語。<strong>下限 {floor} 語に届かないので測れない</strong>——{} 語ぶん足りない",
+                floor - n
+            );
+        } else if n < floor + floor / 5 {
+            println!(
+                "延べ {n} 語。<strong>下限 {floor} 語に近い</strong>——これ以上削ると測れなくなる"
+            );
+        }
+    }
     println!("人らしさ値: {}", shown(got.humanness));
     if !got.missing_humanness.is_empty() {
         println!("  測れていない次元: {}", got.missing_humanness.join("、"));
@@ -2247,6 +2342,13 @@ fn review(args: &[String]) -> Exit {
         println!("指摘 {} 本", result.points.len());
         for p in &result.points {
             println!("  - {}", p.prose());
+        }
+    }
+    if !result.matching.is_empty() {
+        println!();
+        println!("照合の直し方 {} 本", result.matching.len());
+        for m in &result.matching {
+            println!("  - {m}");
         }
     }
     if !result.humanness.is_empty() {

@@ -165,6 +165,23 @@ impl HumannessScale {
             .collect())
     }
 
+    /// 指標ごとの値から合算する。<strong>1 指標だけ置き換えられる。</strong>
+    ///
+    /// <strong>効く量を数えるための道具である。</strong> 人らしさの直し方は 2 本以上出ることが
+    /// あり、<strong>互いに正反対を指すことがある</strong>——語彙を散らせと言う指標と、
+    /// 言い換えるなと言う指標が同時に出る。<strong>どちらが勝つかを言わなければ、
+    /// 受け取った側は逆を選びうる。</strong> 実測でそれが起きた。
+    #[must_use]
+    pub fn fuse(&self, values: &[f64], swap: Option<(usize, f64)>) -> f64 {
+        let mut v = values.to_vec();
+        if let Some((j, x)) = swap {
+            if let Some(slot) = v.get_mut(j) {
+                *slot = x;
+            }
+        }
+        self.fusion.log_lr(&v)
+    }
+
     /// 次元の名前と並び。
     #[must_use]
     pub fn dims(&self) -> &[String] {

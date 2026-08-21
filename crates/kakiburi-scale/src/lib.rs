@@ -13,7 +13,8 @@ pub mod split;
 pub mod vocabulary;
 
 pub use assemble::{
-    assemble, inspect, measure_against, HumannessByMetric, Measured, Report, Sample,
+    assemble, diverging, inspect, measure_against, Divergence, HumannessByMetric, Measured, Report,
+    Sample,
 };
 pub use band::{Band, BandError, Ends, Verdict};
 pub use calibrate::{Calibration, MatchError, Weights};
@@ -180,6 +181,17 @@ pub struct Scale {
     pub humanness: HumannessScale,
     /// 人らしさ値の帯。<strong>天井にあたるのが人の側、床にあたるのが機械の側。</strong>
     pub humanness_band: Band,
+    /// 人らしさの指標ごとの、本人の代表値。<strong>効く量を数える相手である。</strong>
+    ///
+    /// <strong>直し方が 2 本以上出て正反対を指すことがある。</strong> どちらが勝つかを
+    /// 言わなければ、受け取った側は逆を選びうる。
+    pub humanness_target: Vec<(String, f64)>,
+    /// その人が現に繰り返している言い回し。<strong>多くの単位で再来した順。</strong>
+    ///
+    /// <strong>直し方が「その人が現に繰り返している言い回しを繰り返す」と言うなら、その
+    /// 言い回しを渡さなければ直せない。</strong> 数値と向きだけでは、受け取った側は自分で
+    /// でっち上げた定型句を挿し込むことになる。
+    pub phrases: Vec<String>,
 }
 
 impl Scale {

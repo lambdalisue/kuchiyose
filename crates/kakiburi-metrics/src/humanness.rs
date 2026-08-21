@@ -239,7 +239,112 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
 ///
 /// <strong>n-gram は node を跨がない。</strong> 跨げば、構造が作った隣接を繰り返しとして数える。
 ///
-/// <strong>回数は延べ語数で割る。</strong> 割らなければ、長い文書ほど大きく出る。
+/// その単位で<strong>一度しか出てこない語</strong>を挙げる。
+///
+/// <strong>「語を散らすな」と言うなら、どれが散らしているのかを言わなければ直せない。</strong>
+/// 実測では、この指示を受けた側が<strong>散らす方向へ直してしまった</strong>——どの語を
+/// 潰せばよいかが分からず、言い換えを別の言い換えに置き換えたためである。
+///
+/// <strong>自立語だけを挙げる。</strong> 助詞や助動詞が一度きりでも、それは言い換えでは
+/// なく文の形である。
+#[must_use]
+pub fn once_only(analyzed: Option<&Analyzed>, top: usize) -> Vec<String> {
+    let Some(a) = analyzed else {
+        return Vec::new();
+    };
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut content: BTreeMap<&str, bool> = BTreeMap::new();
+    for m in a.all() {
+        *counts.entry(m.surface.as_str()).or_default() += 1;
+        content.insert(m.surface.as_str(), !m.is_function_word());
+    }
+    let mut out: Vec<&str> = counts
+        .iter()
+        .filter(|(w, k)| **k == 1 && content.get(*w).copied().unwrap_or(false))
+        // <strong>1 文字の語は挙げない。</strong> 潰しようがない。
+        .filter(|(w, _)| w.chars().count() >= 2)
+        .map(|(w, _)| *w)
+        .collect();
+    // <strong>長い順。</strong> 長い語ほど言い換えである見込みが高い。
+    out.sort_by(|a, b| {
+        b.chars()
+            .count()
+            .cmp(&a.chars().count())
+            .then_with(|| a.cmp(b))
+    });
+    out.truncate(top);
+    out.into_iter().map(str::to_owned).collect()
+}
+
+/// その単位が<strong>繰り返しすぎている言い回し</strong>を、多い順に挙げる。
+///
+/// <strong>「減らせ」と言うなら、どれを減らすのかを言わなければ直せない。</strong> 実測では、
+/// 生成文の最多は「ます。」が延べ語の 3.4% を占めていた——本人の 1.3% の 2.7 倍で、
+/// <strong>文末がほぼ 1 種類に潰れている</strong>ことを意味する。
+#[must_use]
+pub fn overused(analyzed: Option<&Analyzed>, ns: &[usize], top: usize) -> Vec<String> {
+    let Some(a) = analyzed else {
+        return Vec::new();
+    };
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for &n in ns {
+        for seg in a.segments() {
+            let words: Vec<&str> = seg.iter().map(|m| m.surface.as_str()).collect();
+            for w in words.windows(n) {
+                *counts.entry(w.concat()).or_default() += 1;
+            }
+        }
+    }
+    let mut out: Vec<(usize, String)> = counts
+        .into_iter()
+        // <strong>伏せ字を含む並びは渡さない。</strong> 識別子を畳んだ跡である。
+        .filter(|(g, _)| !g.contains(kakiburi_doc::prose::SENTINEL))
+        .map(|(g, k)| (k, g))
+        .collect();
+    // <strong>多い順。同じなら文字の順。</strong> 決めておかないと並びが実装で変わる。
+    out.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    out.truncate(top);
+    out.into_iter().map(|(_, g)| g).collect()
+}
+
+/// その単位の中で<strong>実際に再来した言い回し</strong>を挙げる。
+///
+/// <strong>直し方が「その人が現に繰り返している言い回しを繰り返す」と言うなら、その
+/// 言い回しを渡さなければ直せない。</strong> 数値と向きだけでは、受け取った側は自分で
+/// でっち上げた定型句を挿し込むことになる。
+///
+/// <strong>1 本の中で 2 回以上出たものだけを取る。</strong> 1 回きりの並びは、その文書の題材が
+/// 作ったものであって癖ではない。
+#[must_use]
+pub fn recurring(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<String> {
+    let Some(a) = analyzed else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = Vec::new();
+    for &n in ns {
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for seg in a.segments() {
+            let words: Vec<&str> = seg.iter().map(|m| m.surface.as_str()).collect();
+            for w in words.windows(n) {
+                *counts.entry(w.concat()).or_default() += 1;
+            }
+        }
+        // <strong>1 本の中で 2 回以上出たものだけを、その人の癖として数える。</strong>
+        // 1 回きりの並びは、その文書の題材が作ったものである。
+        //
+        // <strong>伏せ字を含む並びは渡さない。</strong> 識別子を畳んだ跡であって、
+        // 書き手が選んだ言い回しではない。
+        out.extend(
+            counts
+                .into_iter()
+                .filter(|(g, k)| *k >= 2 && !g.contains(kakiburi_doc::prose::SENTINEL))
+                .map(|(g, _)| g),
+        );
+    }
+    out
+}
+
+/// 繰り返しの数え上げ。
 #[must_use]
 pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
     let n_dims = ns.len() * 2;
@@ -395,6 +500,45 @@ mod tests {
             total, 12,
             "圧縮率 1 ＋ 繰り返し 8 ＋ 豊富さ 1 ＋ エントロピー 2"
         );
+    }
+
+    #[test]
+    fn 再来した言い回しだけを挙げる() {
+        // <strong>1 回きりの並びは癖ではない。</strong> その文書の題材が作ったものである。
+        // Stub は空白で切る。
+        let a = Analyzed::of(
+            &[seg("あとで 書く よ あとで 書く よ いま は 書か ない")],
+            &Stub::unidic(),
+        )
+        .ok();
+        let got = recurring(a.as_ref(), &[3]);
+        assert!(
+            got.iter().any(|g| g.contains("あとで")),
+            "2 回出た並びは挙げる: {got:?}"
+        );
+        assert!(
+            !got.iter().any(|g| g.contains("いま")),
+            "1 回きりは挙げない: {got:?}"
+        );
+    }
+
+    #[test]
+    fn 伏せ字を含む並びは渡さない() {
+        // <strong>識別子を畳んだ跡であって、書き手が選んだ言い回しではない。</strong>
+        // 渡せば「ゐゑゐゑと書け」と言うことになる。
+        let t = format!("{0} を使う {0} を使う", kakiburi_doc::prose::SENTINEL);
+        let a = Analyzed::of(&[seg(t.replace("", " ").trim())], &Stub::unidic()).ok();
+        let got = recurring(a.as_ref(), &[2, 3]);
+        assert!(
+            !got.iter()
+                .any(|g| g.contains(kakiburi_doc::prose::SENTINEL)),
+            "{got:?}"
+        );
+    }
+
+    #[test]
+    fn 解析器が無ければ挙げない() {
+        assert!(recurring(None, &[4]).is_empty());
     }
 
     #[test]
