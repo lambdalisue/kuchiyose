@@ -978,6 +978,18 @@ fn doctor(args: &[String]) -> Exit {
     }
 }
 
+/// 本人が基準より高く出た対の、通ると言える割合の下限。<strong>暫定値である。</strong>
+///
+/// <strong>1.0 を求めない。</strong> それは「1 対でも逆に出たら落とす」ということで、
+/// [端で見るのと同じく n で漂う](higher_rate)——素材を足すほど落ちやすくなる。
+///
+/// <strong>導き直していない。</strong> 目盛りが壊れていれば 0.5 付近に落ちるので、そこから
+/// 十分に離れた値を置いてある。どこまで緩めてよいかは、複数の書き手で測るまで決まらない。
+const HIGHER_RATE_FLOOR: f64 = 0.95;
+
+/// 逆に出た対を、いくつまで名指しするか。
+const INVERTED_SHOWN: usize = 5;
+
 /// 1 つの場面を検める。<strong>おかしかった数を返す。</strong>
 fn doctor_scene(c: &Cassette, scene: &str) -> usize {
     let mut bad = 0usize;
@@ -1012,11 +1024,15 @@ fn doctor_scene(c: &Cassette, scene: &str) -> usize {
     let a = mecab
         .as_ref()
         .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
-    let side = |samples: &[Sample<'_>]| -> Vec<f64> {
+    let side = |samples: &[Sample<'_>]| -> Vec<(String, f64)> {
         samples
             .iter()
             .filter(|s| !partners.iter().any(|p| p.name == s.name))
-            .filter_map(|s| measure_against(&scale, *s, &partners, a).matching)
+            .filter_map(|s| {
+                measure_against(&scale, *s, &partners, a)
+                    .matching
+                    .map(|v| (s.name.to_owned(), v))
+            })
             .collect()
     };
     let baseline_units = stripped(c, scene, Role::BaselineOutput);
@@ -1026,17 +1042,68 @@ fn doctor_scene(c: &Cassette, scene: &str) -> usize {
         println!("照合値を出せる単位が足りない");
         return bad;
     }
-    let lowest = mine.iter().copied().fold(f64::INFINITY, f64::min);
-    let highest = theirs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let (rate, inverted) = higher_rate(&mine, &theirs);
+    let lowest = mine.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min);
+    let highest = theirs
+        .iter()
+        .map(|(_, v)| *v)
+        .fold(f64::NEG_INFINITY, f64::max);
     println!("本人の最小: {lowest:.3} / 基準の最大: {highest:.3}");
-    if lowest > highest {
-        println!("<strong>本人がいちばん高く出ている。</strong> 目盛りは壊れていない");
+    println!(
+        "本人が高く出た対: {rate:.3}（{} 対中 {} 対が逆、下限 {HIGHER_RATE_FLOOR:.2} は暫定値）",
+        mine.len() * theirs.len(),
+        inverted.len()
+    );
+    // <strong>逆に出た対を名指しする。</strong> 割合だけでは、目盛り全体が緩んでいるのか
+    // 1 本の単位が外れているのかが分からない。
+    for (p, pv, b, bv) in inverted.iter().take(INVERTED_SHOWN) {
+        println!("  {p} ({pv:.3}) ≦ {b} ({bv:.3})");
+    }
+    if inverted.len() > INVERTED_SHOWN {
+        println!("  ほか {} 対", inverted.len() - INVERTED_SHOWN);
+    }
+    if rate >= HIGHER_RATE_FLOOR {
+        println!("<strong>本人が高く出ている。</strong> 目盛りは壊れていない");
     } else {
-        println!("<strong>本人より高く出る基準がある。</strong> 目盛りを疑う");
+        println!("<strong>基準のほうが高く出る対が多すぎる。</strong> 目盛りを疑う");
         println!("  測っているのは著者性ではなく指示追従かもしれない");
         bad += 1;
     }
     bad
+}
+
+/// 本人が基準より高く出た対の割合。<strong>逆に出た対も返す。</strong>
+///
+/// <strong>最小と最大では見ない。</strong> 端は n とともに外へ広がるので、素材を足すほど
+/// 本人の最小は下がり基準の最大は上がる——<strong>目盛りが良くなっても検査が落ちやすくなる</strong>。
+/// [帯の端を各側で数を決めて取る](kakiburi_scale::assemble)のと同じ理由である。
+///
+/// <strong>対ごとの比較は漂わない。</strong> 全部の対で本人が高ければ 1.0 で、これが
+/// 「本人がいちばん高く出る」の言い換えになる。
+fn higher_rate(
+    mine: &[(String, f64)],
+    theirs: &[(String, f64)],
+) -> (f64, Vec<(String, f64, String, f64)>) {
+    let mut win = 0.0f64;
+    let mut inverted = Vec::new();
+    for (pn, pv) in mine {
+        for (bn, bv) in theirs {
+            if pv > bv {
+                win += 1.0;
+            } else {
+                // <strong>並んだ対も逆として数える。</strong> 高く出ていないことに変わりはない。
+                if pv == bv {
+                    win += 0.5;
+                }
+                inverted.push((pn.clone(), *pv, bn.clone(), *bv));
+            }
+        }
+    }
+    // <strong>差の小さい順に並べる。</strong> いちばん惜しい対から見せる。
+    inverted.sort_by(|a, b| (b.1 - b.3).total_cmp(&(a.1 - a.3)));
+    #[allow(clippy::cast_precision_loss)]
+    let n = (mine.len() * theirs.len()) as f64;
+    (win / n, inverted)
 }
 
 /// 人が決めたことを書く。
@@ -4101,5 +4168,52 @@ mod tests {
         ];
         assert_eq!(run(&args), Exit::FingerprintMismatch);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn pairs(v: &[f64]) -> Vec<(String, f64)> {
+        v.iter()
+            .enumerate()
+            .map(|(i, x)| (format!("u{i}"), *x))
+            .collect()
+    }
+
+    #[test]
+    fn 全部の対で本人が高ければ_1_である() {
+        let (rate, inverted) = higher_rate(&pairs(&[2.0, 3.0]), &pairs(&[0.0, 1.0]));
+        assert!((rate - 1.0).abs() < f64::EPSILON, "{rate}");
+        assert!(inverted.is_empty());
+    }
+
+    #[test]
+    fn 逆に出た対を名指しできる() {
+        let (rate, inverted) = higher_rate(&pairs(&[1.0, 3.0]), &pairs(&[0.0, 2.0]));
+        assert!((rate - 0.75).abs() < f64::EPSILON, "{rate}");
+        assert_eq!(inverted.len(), 1);
+        assert_eq!(inverted[0].0, "u0");
+        assert_eq!(inverted[0].2, "u1");
+    }
+
+    #[test]
+    fn 並んだ対は高く出たことにしない() {
+        // 半分だけ数えるが、逆に出た対としては残す——高く出ていないことに変わりはない。
+        let (rate, inverted) = higher_rate(&pairs(&[1.0]), &pairs(&[1.0]));
+        assert!((rate - 0.5).abs() < f64::EPSILON, "{rate}");
+        assert_eq!(inverted.len(), 1);
+    }
+
+    #[test]
+    fn 外れた_1_本を足しても割合はほとんど動かない() {
+        // <strong>これが最小・最大との違いである。</strong> 端で見れば、この 1 本だけで
+        // 通っていたものが落ちる。
+        let mine: Vec<f64> = (0..20).map(|i| 2.0 + f64::from(i)).collect();
+        let theirs: Vec<f64> = (0..20).map(|i| -20.0 + f64::from(i)).collect();
+        let (before, _) = higher_rate(&pairs(&mine), &pairs(&theirs));
+        assert!((before - 1.0).abs() < f64::EPSILON, "{before}");
+
+        let mut theirs = theirs;
+        theirs.push(100.0);
+        let (after, inverted) = higher_rate(&pairs(&mine), &pairs(&theirs));
+        assert_eq!(inverted.len(), 20, "外れた 1 本は全部の対で逆に出る");
+        assert!(after > HIGHER_RATE_FLOOR, "{after}");
     }
 }
