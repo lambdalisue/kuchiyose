@@ -48,7 +48,7 @@ struct Measurements {
     once_only: Vec<String>,
     /// その単位に現れる語の並びと、位置と node の番号。<strong>型を取り出す材料。</strong>
     grams: Vec<(String, f64, usize)>,
-    /// 人らしさの 12 次元。
+    /// 人らしさの次元。
     humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
     chars: usize,
@@ -111,7 +111,7 @@ impl Measurements {
         }
     }
 
-    /// 判定に使う 5 系統が全部測れたか。
+    /// 判定に使う系統が全部測れたか。
     fn systems_measured(&self) -> bool {
         FOR_VERDICT.iter().all(|s| self.parts.contains_key(s))
     }
@@ -392,7 +392,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     let human_units = for_calibration(&person_units, &person_split.points);
     let machine_units = for_calibration(&baseline_units, &baseline_split.points);
 
-    // <strong>測れなかったものは落とす。</strong> 12 次元が揃わない行を混ぜれば、列の数が
+    // <strong>測れなかったものは落とす。</strong> 次元が揃わない行を混ぜれば、列の数が
     // 行ごとに変わる。
     let mut human_rows = rows_of(&human_units);
     for s in m.others {
@@ -964,7 +964,7 @@ pub struct HumannessByMetric {
 
 /// 系統の 1 次元ぶんの隔たり。
 ///
-/// <strong>系統そのものは指示にならない</strong>——「342 次元目を増やせ」は言葉にならない。
+/// <strong>系統そのものは指示にならない</strong>——「何番目かの次元を増やせ」は言葉にならない。
 /// <strong>だが次元が語として読める系統なら、その 1 次元は指示になる</strong>——「あなたは
 /// 『〜のだ』をよく使うが、この草稿には出てこない」は直せる。
 #[derive(Debug, Clone, PartialEq)]
@@ -1542,7 +1542,7 @@ mod tests {
                     (wordy(seed % 2), wordy(0), wordy(1), wordy(seed % 3))
                 };
                 // 機能語を 5 つ含める。<strong>対象の形態素の下限を越えるためである</strong>——
-                // 越えなければ機能語が測れず、判定に使う 5 系統が揃わない。
+                // 越えなければ機能語が測れず、判定に使う系統が揃わない。
                 Node::leaf(Kind::Paragraph, format!("{a}は、{b}の{c}を{d}に{a}が。"))
             })
             .collect();
@@ -1603,7 +1603,7 @@ mod tests {
 
     #[test]
     fn 解析器が無ければ系統が揃わない() {
-        // 5 系統のうち 2 つが形態素を要る。<strong>抜いて合算しない。</strong>
+        // 一部の系統が形態素を要る。<strong>抜いて合算しない。</strong>
         let m = Fixture::new(10);
         let e = assemble(
             Material {
@@ -1629,7 +1629,7 @@ mod tests {
             Some(&Chars),
         )
         .expect("目盛りができる");
-        assert_eq!(scale.frozen.len(), 5, "判定に使う 5 系統");
+        assert_eq!(scale.frozen.len(), 5, "判定に使う系統が揃う");
         assert_eq!(scale.partners().len(), 5);
         assert_eq!(scale.calibration.systems().len(), 5);
     }

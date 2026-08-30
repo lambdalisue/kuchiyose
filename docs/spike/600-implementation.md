@@ -211,7 +211,7 @@ cargo run --example measure_dir -- <ディレクトリ> directive-markdown
 | [語彙と z 得点](../spec/200-extract.md#語彙は先に決めて固定する) | <strong>`Frozen::fit` は全体を要求する。</strong> 検める 1 本から呼べない |
 | [系統が欠けたら](../spec/200-extract.md#系統が-1-つでも欠けたら照合値を出さない) | <strong>`Result` で返し、欠けた名前を添える</strong> |
 | [帯](../spec/200-extract.md#帯は2-つの分布の重なりである) | <strong>隙間と重なりを別の関数にした。</strong> 分離した隙間を重なり扱いしない |
-| [3 段](../spec/300-revise.md#3-種類を合わせて通るを出す) | <strong>止まった段を必ず返す。</strong> 前の段で止まったら指摘を出さない |
+| [3 段](../spec/300-revise.md#種別を合わせて通るを出す) | <strong>止まった段を必ず返す。</strong> 前の段で止まったら指摘を出さない |
 
 <strong>「判定できない」が「通らない」と混ざらない。</strong> 終了コードが 2 と 1 で分かれ、
 3 段目の外れは<strong>通らないではなく判定できない</strong>を返す。

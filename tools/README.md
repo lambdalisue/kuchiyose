@@ -16,7 +16,7 @@
 perl tools/checkspec.pl docs
 ```
 
-<strong>4 つを見る。</strong>
+<strong>見るものを並べる。</strong>
 
 | | |
 | --- | --- |
@@ -25,8 +25,8 @@ perl tools/checkspec.pl docs
 | 札の系統・分類・向きが実在するか | 綴りが違えば層が引けない |
 | <strong>実装に足りる形か</strong> | 数え方が無ければ書けない。照合は次元、指示は直し方が必須 |
 
-<strong>4 つ目は種別で分ける。</strong> 指示できる指標はスカラーなので次元を持たず、
-照合の系統は[直し方が書けない](../docs/spec/100-metrics.md#指標には-3-種類ある)。
+<strong>実装に足りる形かは、種別で分ける。</strong> 指示できる指標はスカラーなので次元を持たず、
+照合の系統は[直し方が書けない](../docs/spec/100-metrics.md#指標の種類)。
 <strong>一律に要求すると、正しい定義が落ちる。</strong>
 
 <strong>記述を撤回したら、一覧に足す。</strong> それが「二度と戻ってこない」ことの担保になる。
@@ -105,7 +105,7 @@ KAKIBURI_UNIDIC=/path/to/unidic-mecab-2.1.2_bin kakiburi build <カセット>
 <strong>辞書の設定が出力の形を決め、知らない語で解析器が死に、長い行が黙って分割された。</strong>
 <strong>7 回のレビューと 10 周の監査が見つけられなかったものである。</strong>
 
-### 仕様を機械で守る 4 つ
+### 仕様を機械で守る試験
 
 | 試験 | 何を止めるか |
 | --- | --- |

@@ -140,7 +140,7 @@ impl Metric {
     }
 }
 
-/// 12 次元の全体。<strong>指標ごとにまとめたまま持つ</strong>——3 段目で指標ごとに平均するからである。
+/// 人らしさの次元の全体。<strong>指標ごとにまとめたまま持つ</strong>——3 段目で指標ごとに平均するからである。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Humanness {
     values: Vec<(Metric, Vec<(String, Measured)>)>,
@@ -174,7 +174,7 @@ impl Humanness {
         &self.values
     }
 
-    /// 12 次元を並びで返す。
+    /// 人らしさの次元を並びで返す。
     #[must_use]
     pub fn flat(&self) -> Vec<(String, Measured)> {
         self.values
@@ -261,7 +261,7 @@ fn deflated(window: &str) -> Option<f64> {
     Some(out.len() as f64 / raw.len() as f64)
 }
 
-/// 繰り返し。<strong>n ごとに 2 つ、合わせて 8 次元。</strong>
+/// 繰り返し。<strong>n ごとに 2 つ。</strong>
 ///
 /// | | 何を出すか |
 /// | --- | --- |

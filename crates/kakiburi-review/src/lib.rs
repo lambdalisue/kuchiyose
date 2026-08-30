@@ -25,13 +25,13 @@ pub struct Review {
     pub points: Vec<Point>,
     /// 照合の直し方。<strong>書きぶりの枠を奪わない。</strong>
     ///
-    /// <strong>系統そのものは指示にならない</strong>——「342 次元目を増やせ」は言葉にならない。
+    /// <strong>系統そのものは指示にならない</strong>——「何番目かの次元を増やせ」は言葉にならない。
     /// <strong>だが次元が語として読める系統なら、その 1 次元は指示になる。</strong>
     pub matching: Vec<String>,
     /// 人らしさの直し方。<strong>書きぶりの枠を奪わない。</strong>
     ///
     /// 3〜4 本という上限は書きぶりの側の話であり、人らしさはそこに数えない
-    /// （[指標](../../../docs/spec/100-metrics.md#指標には-4-種類ある)）。
+    /// （[指標](../../../docs/spec/100-metrics.md#指標の種類)）。
     /// <strong>枠を奪い合わせると、機械臭さを消す指示と、その人へ寄せる指示が、席を
     /// 取り合う。</strong>
     pub humanness: Vec<String>,

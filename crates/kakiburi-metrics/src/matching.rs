@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn 上限の並びは部分ベクトルの並びと同じ() {
         // 食い違えば、絞る先を 1 つずれて当てる。
-        // <strong>5 系統すべての除外を越える素材</strong>——字数・読点の数・延べ語数。
+        // <strong>全系統の除外を越える素材</strong>——字数・読点の数・延べ語数。
         let prose: Vec<Segment> = (0..200).map(|_| seg("これ は 、 そう だ 。")).collect();
         let analyzed =
             crate::morph::Analyzed::of(&prose, &crate::morph::stub::Stub::unidic()).unwrap();

@@ -1,4 +1,4 @@
-//! 人らしさ値。<strong>12 次元を 1 つの数にする。</strong>
+//! 人らしさ値。<strong>各次元を 1 つの数にする。</strong>
 //!
 //! 照合値と違って<strong>距離を取る相手がいない</strong>——比べるのは 2 本の文書ではなく、
 //! 人が書いたものの集団と機械が書いたものの集団である。<strong>だから次元がそのまま尤度比の
@@ -6,14 +6,14 @@
 //!
 //! | | すること |
 //! | --- | --- |
-//! | 1 | 12 次元を測る |
+//! | 1 | 人らしさの指標を測る |
 //! | 2 | <strong>次元ごとに</strong>、人の側と機械の側に照らして尤度比に変える |
 //! | 3 | <strong>指標ごとに</strong>、その指標の次元の対数尤度比を平均する |
 //! | 4 | 5 つを合算して 1 つの人らしさ値にする |
 //!
 //! <strong>3 段目で平均するのは、当てはめる重みを 4 つに抑えるためである。</strong> 較正に使える単位は
 //! 10 本しかない。12 の重みを 10 点から当てはめれば、どうとでも決まってしまう——
-//! <strong>繰り返しだけで 8 次元あり、そこが重みを持ち去る。</strong>
+//! <strong>繰り返しだけで次元がいくつもあり、そこが重みを持ち去る。</strong>
 
 use kakiburi_metrics::humanness::Metric;
 use kakiburi_metrics::Measured;
@@ -61,7 +61,7 @@ pub struct HumannessScale {
 /// 7% しかなく、それだけでエントロピーが指示できない指標になっていた。
 pub const FAINT: f64 = 0.2;
 
-/// 12 次元の並び。<strong>指標の並びから引く。</strong>
+/// 人らしさの次元の並び。<strong>指標の並びから引く。</strong>
 #[must_use]
 pub fn dims() -> Vec<String> {
     Metric::ALL.into_iter().flat_map(Metric::dims).collect()
@@ -80,7 +80,7 @@ fn owners() -> Vec<usize> {
 impl HumannessScale {
     /// 較正する。
     ///
-    /// `human` と `machine` は 1 行が 1 単位ぶんの 12 次元。<strong>単位で割る</strong>——
+    /// `human` と `machine` は 1 行が 1 単位ぶんの全次元。<strong>単位で割る</strong>——
     /// 人らしさは 1 本ごとに出る値で、対を作らないからである。
     #[must_use]
     pub fn fit(human: &[Vec<f64>], machine: &[Vec<f64>]) -> Self {
@@ -322,7 +322,7 @@ fn agrees(owners: &[usize], j: usize, w: &Weights) -> bool {
 /// 指標ごとに、その指標の次元の<strong>対数尤度比を平均する</strong>。
 ///
 /// <strong>対数で平均する。</strong> 尤度比そのままで平均すると、いちばん大きい 1 次元が全体を
-/// 決めてしまい、繰り返しの 8 次元を抑えるという目的が消える。
+/// 決めてしまい、繰り返しの次元を抑えるという目的が消える。
 fn per_metric(per_dim: &[Weights], row: &[f64]) -> Vec<f64> {
     let owners = owners();
     let mut sums = vec![0.0; Metric::ALL.len()];
@@ -411,7 +411,7 @@ mod tests {
         let machine: Vec<Vec<f64>> = (0..5).map(|i| flip(false, i)).collect();
         let s = HumannessScale::fit(&human, &machine);
         let bad = s.contradicting_dims();
-        assert_eq!(bad.len(), 8, "繰り返しの 8 次元が定義と食い違う: {bad:?}");
+        assert_eq!(bad.len(), 8, "繰り返しの次元が定義と食い違う: {bad:?}");
         assert!(bad.iter().all(|n| n.contains("gram")), "{bad:?}");
         // <strong>定義と食い違っても、向きが揃っていれば渡せる。</strong> 素材が言う向きへ
         // 寄せればよい——繰り返しは<strong>減らす</strong>側が人になる。
@@ -464,7 +464,7 @@ mod tests {
 
     /// 実測に近い値。<strong>次元の尺度が 3 桁ちがう。</strong>
     ///
-    /// 繰り返しの 8 次元と異なり語率は 0.003〜0.4、語のエントロピーは 7 前後、
+    /// 繰り返しの次元と異なり語率は 0.003〜0.4、語のエントロピーは 7 前後、
     /// 圧縮率は 6 前後である。
     fn wide_row(human: bool, i: usize) -> Vec<f64> {
         // 並びは 圧縮率 1 / 繰り返し 8 / 異なり語率 1 / エントロピー 2。
@@ -548,12 +548,12 @@ mod tests {
         let s = scale();
         let e = s.value(&[]).unwrap_err();
         let HumannessError::MissingDims { names } = e;
-        assert_eq!(names.len(), 12, "12 次元とも欠けている");
+        assert_eq!(names.len(), 12, "人らしさの次元が欠けている");
     }
 
     #[test]
     fn 重みは指標の数だけである() {
-        // 12 の重みを 10 点から当てはめない。繰り返しの 8 次元が重みを持ち去る。
+        // 次元ごとの重みを少ない点から当てはめない。繰り返しの次元が重みを持ち去る。
         let s = scale();
         assert_eq!(s.fusion().slopes().len(), Metric::ALL.len());
         assert_eq!(s.per_dim().len(), 12);
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn 繰り返しの_8_次元は_2_つぶんに畳まれる() {
         // 平均する前と後で、合算の入力の数が変わる。
-        // <strong>短いと長いは別の指標</strong>なので、8 次元は 2 つになる。
+        // <strong>短いと長いは別の指標</strong>なので、繰り返しの次元は 2 つの指標に分かれる。
         let s = scale();
         let row = human_row(0.0);
         assert_eq!(per_metric(s.per_dim(), &row).len(), Metric::ALL.len());

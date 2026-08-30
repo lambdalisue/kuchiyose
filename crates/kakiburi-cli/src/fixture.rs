@@ -59,7 +59,7 @@ pub fn document(index: usize, machine: bool) -> Document {
                 (word(seed % 2), word(0), word(1), word(seed % 3))
             };
             // 機能語を 5 つ含める。<strong>[対象の形態素の下限](kakiburi_metrics::floor::FUNCTION_WORDS)を
-            // 越えるためである</strong>——越えなければ機能語が測れず、判定に使う 5 系統が
+            // 越えるためである</strong>——越えなければ機能語が測れず、判定に使う系統が
             // 揃わない。
             Node::leaf(Kind::Paragraph, format!("{a}は、{b}の{c}を{d}に{a}が。"))
         })

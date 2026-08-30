@@ -178,7 +178,7 @@ kakiburi metrics
 const ENVIRONMENT: &str = "\
 環境
 
-  KAKIBURI_UNIDIC          UniDic の展開先。指すと 5 系統すべて測れる
+  KAKIBURI_UNIDIC          UniDic の展開先。指すと全系統を測れる
   KAKIBURI_UNIDIC_VERSION  指紋に入る版の申告（既定: 版の申告なし）
   KAKIBURI_MECAB           MeCab の実行ファイル（既定: mecab）
 
@@ -242,7 +242,7 @@ fn new_cassette(args: &[String]) -> Exit {
         // <strong>置き換えるたびに増える。</strong> 作った時点では 0 で、書けば 1 になる。
         generation: 0,
         fingerprint: current_fingerprint(),
-        // <strong>いまは常に暫定値が立つ。</strong> 12 か所の閾値がまだ導き直されていない。
+        // <strong>いまは常に暫定値が立つ。</strong> 閾値がまだ導き直されていない。
         provisional: vec!["除外の既定".into(), "帯の端".into(), "語彙の大きさ".into()],
         corpus: Corpus::new(vec![]),
         tracks: BTreeMap::new(),
@@ -1306,7 +1306,7 @@ fn build(args: &[String]) -> Exit {
         )),
         None => {
             say(format!(
-                "形態素解析: 無し（{} が未設定）。<strong>5 系統のうち 2 つが測れない</strong>",
+                "形態素解析: 無し（{} が未設定）。<strong>形態素を要る系統が測れない</strong>",
                 analyzer::DICDIR
             ));
             // <strong>入手先を言う。</strong> 未設定だと言うだけでは、辞書をどこから引くかも
@@ -2155,7 +2155,7 @@ fn review(args: &[String]) -> Exit {
         println!("直し方の出どころ: 定義ファイル {} 本", defs.len());
     }
     // <strong>前に出す指標。</strong> 効くと判定されたものから、層 3 と動かないものを除く
-    // （[3 段](../../../docs/spec/300-revise.md#3-種類を合わせて通るを出す)）。
+    // （[3 段](../../../docs/spec/300-revise.md#種別を合わせて通るを出す)）。
     // <strong>判定も指摘も、この同じ集合から取る。</strong>
     // <strong>検める側も同じ解析器で測る。</strong> 片方だけ違えば、比べたものに意味が無い。
     // <strong>カセットが持つ辞書で割る。</strong> 作ったときと違う割り方をすれば、
