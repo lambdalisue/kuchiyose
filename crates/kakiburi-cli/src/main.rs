@@ -3747,8 +3747,13 @@ mod tests {
     fn 落とす定型と動かない指標も指紋に入る() {
         // どちらも派生物を変える。指紋が動かなければ、変える前の値と変えたあとの
         // 値が同じ顔で並ぶ。
+        // <strong>解析器は環境から取る。</strong> カセットに入る指紋は解析器を含むので、
+        // ここで `None` を渡すと、辞書を持っている環境でだけ「形態素解析器」が
+        // 差として出て落ちる——見たいのは決めたことが指紋に入るかである。
         let dir = temp_dir("decided-fingerprint");
         let c = empty_cassette(&dir);
+        let mecab = analyzer::resolve();
+        let mecab = mecab.as_ref();
         let before = open(&c).expect("読める").0.fingerprint;
 
         assert_eq!(
@@ -3762,7 +3767,7 @@ mod tests {
             ]),
             Exit::Pass
         );
-        let after = fingerprint_with(&open(&c).expect("読める").0, None);
+        let after = fingerprint_with(&open(&c).expect("読める").0, mecab);
         assert_eq!(before.differences(&after), vec!["試験 の人が決めたこと"]);
 
         let metric = measured_names().first().expect("指標が要る").clone();
@@ -3778,7 +3783,7 @@ mod tests {
             ]),
             Exit::Pass
         );
-        let stuck = fingerprint_with(&open(&c).expect("読める").0, None);
+        let stuck = fingerprint_with(&open(&c).expect("読める").0, mecab);
         assert_eq!(after.differences(&stuck), vec!["試験 の人が決めたこと"]);
         std::fs::remove_dir_all(&dir).ok();
     }
