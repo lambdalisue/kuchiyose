@@ -128,6 +128,83 @@ pub fn single_sentence_paragraphs(doc: &Document) -> Measured {
     Measured::Value(one as f64 / paras.len() as f64)
 }
 
+/// 敬体で終わる文の割合。<strong>node の種類ごとに数える。</strong>
+///
+/// <strong>同じ書き手が、場所によって文体を変える。</strong> 実測で、ある書き手は段落の 93% を
+/// 敬体で書き、箇条書きの 85%・見出しの 99% を常体で書いていた。
+///
+/// <strong>地の文を 1 つの袋にすると、この使い分けが混ざって消える</strong>
+/// （[文体は node の種類ごとに違う](../../../docs/spec/100-metrics.md#文体は-node-の種類ごとに違う)）。
+/// 「敬体 7 割の人」としか言えず、<strong>箇条書きを敬体で書いた草稿を見分けられない。</strong>
+///
+/// <strong>分母は敬体か常体で終わった文だけである。</strong> 体言止めと疑問符で終わる文はどちらでも
+/// ないので数えない——入れると、体言止めの多い書き手ほど敬体率が下がる。
+fn polite_rate(texts: &[String], floor: usize) -> Measured {
+    let (mut polite, mut plain) = (0usize, 0usize);
+    for t in texts {
+        for s in kakiburi_doc::sentence::sentences(t) {
+            match register_of(&s) {
+                Some(true) => polite += 1,
+                Some(false) => plain += 1,
+                None => {}
+            }
+        }
+    }
+    if polite + plain < floor {
+        return Measured::BelowFloor;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(polite as f64 / (polite + plain) as f64)
+}
+
+/// その文が敬体か。<strong>どちらでもなければ `None`。</strong>
+fn register_of(sentence: &str) -> Option<bool> {
+    let t = sentence.trim_end_matches(['。', '！', '？', '.', '!', '?', ' ', '　']);
+    const POLITE: [&str; 8] = [
+        "です",
+        "ます",
+        "ました",
+        "ません",
+        "でしょう",
+        "ましょう",
+        "でした",
+        "ください",
+    ];
+    const PLAIN: [&str; 10] = [
+        "である",
+        "だ",
+        "した",
+        "する",
+        "ない",
+        "いる",
+        "なる",
+        "った",
+        "れる",
+        "たい",
+    ];
+    if POLITE.iter().any(|w| t.ends_with(w)) {
+        return Some(true);
+    }
+    if PLAIN.iter().any(|w| t.ends_with(w)) {
+        return Some(false);
+    }
+    None
+}
+
+/// 段落の敬体率。
+#[must_use]
+pub fn polite_paragraphs(doc: &Document) -> Measured {
+    let texts: Vec<String> = doc.paragraphs().iter().map(|p| p.text.clone()).collect();
+    polite_rate(&texts, 10)
+}
+
+/// 箇条書きの項目の敬体率。
+#[must_use]
+pub fn polite_items(doc: &Document) -> Measured {
+    let texts: Vec<String> = doc.items().iter().map(|p| p.text.clone()).collect();
+    polite_rate(&texts, 5)
+}
+
 /// 段落あたりの文数。<strong>段落に含まれる</strong>文を、段落の数で割る。
 ///
 /// 見出しや項目やセルの文を分子に入れない。

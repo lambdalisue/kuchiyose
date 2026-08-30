@@ -183,6 +183,41 @@ pub fn write(s: &Scale) -> String {
             "言い回し".to_owned(),
             Value::Array(s.phrases.iter().map(Value::s).collect()),
         ),
+        (
+            // <strong>その人の型。</strong> コーパスから見つけたものなので、カセットに残さないと
+            // 検めのたびに素材を読み直すことになる。
+            // <strong>コーパスから見つけた語。</strong> 検めるときも同じ辞書で割らなければ、
+            // 比べたものに意味が無い。
+            "語".to_owned(),
+            Value::Array(
+                s.lexicon
+                    .pairs()
+                    .iter()
+                    .map(|(a, b)| Value::Array(vec![Value::s(a), Value::s(b)]))
+                    .collect(),
+            ),
+        ),
+        (
+            "型".to_owned(),
+            Value::Array(
+                s.katas
+                    .iter()
+                    .map(|k| {
+                        Value::obj([
+                            ("並び".to_owned(), Value::s(&k.text)),
+                            ("出現割合".to_owned(), Value::Number(k.rate)),
+                            ("位置".to_owned(), Value::Number(k.at)),
+                            ("ばらつき".to_owned(), Value::Number(k.spread)),
+                            (
+                                // <strong>穴あきなら、後ろの固定部を持つ。</strong> 間は書き手が埋める。
+                                "後ろ".to_owned(),
+                                k.tail.as_ref().map_or(Value::Null, Value::s),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
     ])
     .write()
 }
@@ -250,6 +285,41 @@ pub fn read(text: &str) -> Option<Scale> {
         },
         // <strong>無くてもよい。</strong> 言い回しを持たない版のカセットは、直し方が短くなる
         // だけで判定は変わらない。
+        // <strong>無くてもよい。</strong> 語を持たない版のカセットは、辞書どおりに割る。
+        lexicon: kakiburi_metrics::lexicon::Lexicon::from_pairs(
+            v.get("語")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| {
+                            let p = x.as_array()?;
+                            Some((
+                                p.first()?.as_str()?.to_owned(),
+                                p.get(1)?.as_str()?.to_owned(),
+                            ))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+        ),
+        // <strong>無くてもよい。</strong> 型を持たない版のカセットは、指摘が 1 本減るだけである。
+        katas: v
+            .get("型")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| {
+                        Some(kakiburi_scale::assemble::Kata {
+                            text: x.get("並び")?.as_str()?.to_owned(),
+                            rate: x.get("出現割合")?.as_f64()?,
+                            at: x.get("位置")?.as_f64()?,
+                            spread: x.get("ばらつき").and_then(Value::as_f64).unwrap_or(1.0),
+                            tail: x.get("後ろ").and_then(Value::as_str).map(str::to_owned),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         phrases: v
             .get("言い回し")
             .and_then(Value::as_array)

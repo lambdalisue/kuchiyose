@@ -257,18 +257,19 @@ mod tests {
     fn 出現割合で見た指標は割合で普段を言う() {
         // **幅で言えば文面がそれ自体で矛盾する。** 下端が 0 なので「0 で、普段は
         // 0 から 2 の範囲」となり、受け取った側は範囲の中だと判断する。
+        // **毎回使っているときだけ外れとする**（[線](crate::APPEARANCE_FLOOR)）。
         let mut o = observed("全角括弧", 0.0, 0.0, 2.0);
-        o.lower = Lower::Appearance { rate: 0.9 };
+        o.lower = Lower::Appearance { rate: 1.0 };
         let p = build(&o, o.range.locate_by(0.0, o.lower), &table()).unwrap();
         assert_eq!(
             p.usual,
             Usual::Appearance {
-                rate: 0.9,
+                rate: 1.0,
                 high: 2.0
             }
         );
         let s = p.prose();
-        assert!(s.contains("90%"), "{s}");
+        assert!(s.contains("100%"), "{s}");
         assert!(!s.contains("0.000から"), "{s}");
         assert!(s.contains("2.000"), "多いときの値は残す: {s}");
     }

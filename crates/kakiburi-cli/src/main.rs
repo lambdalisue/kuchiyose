@@ -2086,6 +2086,19 @@ fn review(args: &[String]) -> Exit {
         kakiburi_metrics::System::Comma,
         kakiburi_metrics::System::CharType,
     ];
+    // <strong>畳む前の距離を出す。</strong> 照合値は 5 つの距離を重みで畳んだものなので、
+    // 畳んだあとだけではどこが動いたか分からない。
+    let distances = kakiburi_scale::assemble::distances_against(
+        &scale,
+        Sample {
+            name: path,
+            document: &doc,
+        },
+        &partners,
+        mecab
+            .as_ref()
+            .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+    );
     let diverging = kakiburi_scale::diverging(
         &scale,
         Sample {
@@ -2145,16 +2158,17 @@ fn review(args: &[String]) -> Exit {
     // （[3 段](../../../docs/spec/300-revise.md#3-種類を合わせて通るを出す)）。
     // <strong>判定も指摘も、この同じ集合から取る。</strong>
     // <strong>検める側も同じ解析器で測る。</strong> 片方だけ違えば、比べたものに意味が無い。
-    let measured_now = measured_with(
-        &doc,
-        analyzed_of(
+    // <strong>カセットが持つ辞書で割る。</strong> 作ったときと違う割り方をすれば、
+    // 比べたものに意味が無い。
+    let analyzed_now = mecab.as_ref().and_then(|m| {
+        kakiburi_metrics::morph::Analyzed::with_lexicon(
             &doc.prose(),
-            mecab
-                .as_ref()
-                .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+            m as &dyn kakiburi_metrics::morph::Analyzer,
+            &scale.lexicon,
         )
-        .as_ref(),
-    );
+        .ok()
+    });
+    let measured_now = measured_with(&doc, analyzed_now.as_ref());
     // 0 段目。書き方。
     //
     // カセットを見ない。日本語として成立しているかは書き手の性質ではないので、
@@ -2167,9 +2181,23 @@ fn review(args: &[String]) -> Exit {
                 .iter()
                 .find(|(n, _)| *n == name)
                 .and_then(|(_, m)| m.value());
+            // <strong>どこが壊れているかを渡す。</strong> 「読点を外せ」と言うだけでは、
+            // 受け取った側は文書ぜんぶを読み直すことになる。
+            let where_ = match name.as_str() {
+                "語を割る読点" => analyzed_now
+                    .as_ref()
+                    .map(|a| a.split_commas().join("」「"))
+                    .filter(|s| !s.is_empty())
+                    .map(|s| format!("「{s}」。")),
+                _ => None,
+            };
             kakiburi_review::Inspected {
                 broken: match value {
-                    Some(v) => format!("{name}が {v:.4} で、線の {limit} を超えている。{remedy}"),
+                    Some(v) => format!(
+                        "{name}が {} で、線の {limit} を超えている。{}{remedy}",
+                        number(v),
+                        where_.unwrap_or_default()
+                    ),
                     None => format!("{name}が線の {limit} を超えている。{remedy}"),
                 },
                 name,
@@ -2189,6 +2217,30 @@ fn review(args: &[String]) -> Exit {
         .filter(|e| !c.is_stuck(&scene, &e.name))
         // <strong>層 3 は指摘にも判定にも使わない。</strong> 止めた理由を言えないものは止めない。
         .filter(|e| !defs.is_layer_three(&e.name))
+        .filter_map(|e| {
+            let (_, m) = measured_now.iter().find(|(n, _)| *n == e.name)?;
+            Some(Observed {
+                name: e.name.clone(),
+                value: m.value(),
+                range: Range {
+                    low: e.low,
+                    high: e.high,
+                    units: e.units,
+                },
+                lower: defs.lower_rule(&e.name, e.rate),
+            })
+        })
+        .collect();
+    // <strong>一貫しているだけの軸も見る。判定はしない、指摘にだけ出す。</strong>
+    //
+    // 条件 2 は「基準と本人が違うか」で軸を選ぶので、<strong>基準と本人が一致している軸は
+    // 捨てられる</strong>——そこから草稿が外れても何も言われない。
+    let habits: Vec<Observed> = effective
+        .iter()
+        .filter(|e| e.narrow_only())
+        .filter(|e| !c.is_stuck(&scene, &e.name))
+        .filter(|e| !defs.is_layer_three(&e.name))
+        .filter(|e| !defs.is_inspection(&e.name))
         .filter_map(|e| {
             let (_, m) = measured_now.iter().find(|(n, _)| *n == e.name)?;
             Some(Observed {
@@ -2234,16 +2286,42 @@ fn review(args: &[String]) -> Exit {
             theirs: d.theirs,
             effect: d.effect(),
             examples: d.examples.clone(),
+            spots: d.spots.clone(),
+        })
+        .collect();
+    // <strong>型が使われているか。</strong> 地の文から探す——記法の外にある並びは型ではない。
+    let joined = kakiburi_metrics::humanness::joined(&doc.prose());
+    let katas: Vec<kakiburi_review::Kata> = scale
+        .katas
+        .iter()
+        .map(|k| kakiburi_review::Kata {
+            // <strong>穴あきは、固定部が 2 つともこの順で同じ段落にあれば使われている。</strong>
+            // 間は書き手が埋めるので、そこは見ない。
+            used: match &k.tail {
+                Some(t) => joined.split('\n').any(|line| {
+                    line.find(&k.text)
+                        .and_then(|i| line[i + k.text.len()..].find(t.as_str()))
+                        .is_some()
+                }),
+                None => joined.contains(&k.text),
+            },
+            text: k.shown(),
+            rate: k.rate,
+            at: k.at,
         })
         .collect();
     let result = kakiburi_review::review(
-        &inspections,
-        humanness,
-        matching,
-        &directives,
+        &kakiburi_review::Observations {
+            inspections: &inspections,
+            humanness,
+            matching,
+            directives: &directives,
+            habits: &habits,
+            humanness_by_metric: &by_metric,
+            diverging: &apart,
+            katas: &katas,
+        },
         &defs,
-        &by_metric,
-        &apart,
     );
 
     if json {
@@ -2292,6 +2370,19 @@ fn review(args: &[String]) -> Exit {
                 ),
                 ("directives".to_owned(), n(directives.len())),
                 (
+                    "distances".to_owned(),
+                    Value::obj(
+                        distances
+                            .iter()
+                            .map(|(k, v)| (k.clone(), Value::Number(*v)))
+                            .collect::<Vec<_>>(),
+                    ),
+                ),
+                (
+                    "katas".to_owned(),
+                    Value::Array(result.katas.iter().map(Value::s).collect()),
+                ),
+                (
                     // <strong>指摘は結果であって断り書きではない。</strong> ここに入れる。
                     "points".to_owned(),
                     Value::Array(result.points.iter().map(|p| Value::s(p.prose())).collect()),
@@ -2319,6 +2410,7 @@ fn review(args: &[String]) -> Exit {
                                     ("dim".to_owned(), Value::s(&d.dim)),
                                     ("mine".to_owned(), Value::Number(d.mine)),
                                     ("theirs".to_owned(), Value::Number(d.theirs)),
+                                    ("outside".to_owned(), Value::Number(d.outside())),
                                     ("effect".to_owned(), Value::Number(d.effect())),
                                 ])
                             })
@@ -2389,6 +2481,20 @@ fn review(args: &[String]) -> Exit {
         println!("人らしさの直し方 {} 本", result.humanness.len());
         for h in &result.humanness {
             println!("  - {h}");
+        }
+    }
+    if !result.habits.is_empty() {
+        println!();
+        println!("本人の癖から外れているところ {} 本", result.habits.len());
+        for h in &result.habits {
+            println!("  - {}", h.prose());
+        }
+    }
+    if !result.katas.is_empty() {
+        println!();
+        println!("使われていない型 {} 本", result.katas.len());
+        for k in &result.katas {
+            println!("  - {k}");
         }
     }
     Exit::from_verdict(result.outcome.verdict)
@@ -2744,6 +2850,15 @@ fn measure(args: &[String]) -> Exit {
     Exit::Pass
 }
 
+/// 数を散文に載せる。<strong>個数を `1.0000` と書かない。</strong>
+fn number(v: f64) -> String {
+    if (v - v.round()).abs() < f64::EPSILON {
+        format!("{v:.0}")
+    } else {
+        format!("{v:.4}")
+    }
+}
+
 /// 測れる指標。<strong>使う側は一覧を持たない</strong>ので、ここに置くのは呼び出しの束である。
 fn measured(doc: &kakiburi_doc::Document) -> Vec<(String, Measured)> {
     measured_with(doc, None)
@@ -2765,6 +2880,11 @@ fn measured_with(
 
     // <strong>1 つの定義が 24 本の軸に展開される。</strong> 名前は定義が作る——実装が作れば、
     // 名前が 2 か所に現れる。
+    out.push((
+        "語を割る読点".to_owned(),
+        kakiburi_metrics::word::splitting_commas(analyzed),
+    ));
+
     match analyzed.map(kakiburi_metrics::word::conjunction_comma) {
         Some(got) => out.extend(got),
         None => out.extend(
@@ -2815,6 +2935,8 @@ fn fixed(
             structure::single_sentence_paragraphs(doc),
         ),
         ("段落あたりの文数", structure::sentences_per_paragraph(doc)),
+        ("段落の敬体率", structure::polite_paragraphs(doc)),
+        ("箇条書きの敬体率", structure::polite_items(doc)),
         ("太字始まりの項目", structure::bold_leading_items(doc)),
         ("段落長の変動係数", structure::paragraph_length_cv(doc)),
         ("箇条書き項目長の変動係数", structure::item_length_cv(doc)),
@@ -2976,9 +3098,9 @@ mod tests {
     #[test]
     fn 指標の一覧が出る() {
         assert_eq!(run(&["metrics".to_owned()]), Exit::Pass);
-        // <strong>定義と軸は 1 対 1 ではない。</strong> 定義 40 本のうち 39 本が軸 1 本を作り、
+        // <strong>定義と軸は 1 対 1 ではない。</strong> 定義 43 本のうち 42 本が軸 1 本を作り、
         // 接続詞直後の読点だけが語彙素 12 × 位置 2 の 24 本に展開される。
-        assert_eq!(measured_names().len(), 39 + 24);
+        assert_eq!(measured_names().len(), 42 + 24);
         assert_eq!(
             kakiburi_metrics::word::conjunction_comma_names().len(),
             24,

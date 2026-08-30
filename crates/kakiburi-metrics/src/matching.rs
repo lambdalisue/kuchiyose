@@ -23,6 +23,12 @@ pub const CHAR_BIGRAM_DIMS: usize = 500;
 /// 読点の直前・直後の次元。<strong>暫定値であり、指紋に含める。</strong>
 pub const COMMA_NEIGHBOR_DIMS: usize = 50;
 
+/// 機能語の次元。<strong>暫定値であり、指紋に含める。</strong>
+///
+/// <strong>語彙が開いているので上限が要る。</strong> 多く取れば取るほど良いわけではない——
+/// まれな語は標準偏差が小さく、z 得点にすると雑音が暴れる。
+pub const FUNCTION_WORD_DIMS: usize = 300;
+
 /// 読点の間隔の上限。これ以上は 1 つにまとめる。
 pub const COMMA_GAP_MAX: usize = 21;
 
@@ -253,6 +259,49 @@ fn gap_name(n: usize) -> String {
     }
 }
 
+/// 読点の間隔と、その読点のまわり。
+///
+/// <strong>「21 字以上を増やせ」だけでは直せない。</strong> どの読点がどの間隔を作っているかを
+/// 言わなければ、受け取った側は自分で数えることになる——実際にそうなった。
+///
+/// 数え方は[読点の打ち方](comma_position)と同じである。<strong>日本語の文字だけを数える</strong>
+/// ので、英数字を挟む文は見た目より短く出る。
+#[must_use]
+pub fn comma_gaps(prose: &[Segment]) -> Vec<(String, String)> {
+    const AROUND: usize = 8;
+    let mut out = Vec::new();
+    for seg in prose {
+        let cs: Vec<char> = seg.text.chars().collect();
+        let mut open: Option<usize> = None;
+        let mut since = 0usize;
+        let close = |open: &mut Option<usize>, n: usize, out: &mut Vec<(String, String)>| {
+            if let Some(at) = open.take() {
+                let lo = at.saturating_sub(AROUND);
+                let hi = (at + AROUND + 1).min(cs.len());
+                out.push((gap_name(n.max(1)), cs[lo..hi].iter().collect()));
+            }
+        };
+        for (i, &c) in cs.iter().enumerate() {
+            if c == '、' {
+                close(&mut open, since, &mut out);
+                open = Some(i);
+                since = 0;
+                continue;
+            }
+            if is_sentence_end(c) {
+                close(&mut open, since, &mut out);
+                since = 0;
+                continue;
+            }
+            if text::is_japanese(c) {
+                since += 1;
+            }
+        }
+        close(&mut open, since, &mut out);
+    }
+    out
+}
+
 /// 文の終わりの記号か。<strong>間隔はここで切る。</strong>
 fn is_sentence_end(c: char) -> bool {
     matches!(c, '。' | '！' | '？' | '!' | '?')
@@ -321,7 +370,7 @@ pub fn limits(system: System) -> Vec<Option<usize>> {
             None, // 間隔は 1〜20 と 21 以上で固定である
         ],
         // 機能語は語彙が開いている。<strong>暫定値であり、指紋に含める。</strong>
-        System::FunctionWord => vec![Some(300)],
+        System::FunctionWord => vec![Some(FUNCTION_WORD_DIMS)],
         System::PosBigram => vec![None],
         _ => vec![],
     }

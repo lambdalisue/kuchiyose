@@ -192,6 +192,16 @@ pub struct Scale {
     /// 言い回しを渡さなければ直せない。</strong> 数値と向きだけでは、受け取った側は自分で
     /// でっち上げた定型句を挿し込むことになる。
     pub phrases: Vec<String>,
+    /// コーパスから見つけた語。<strong>辞書に無い語が割れるのを直す。</strong>
+    ///
+    /// 素材から作るものなので、素材が変われば変わる——
+    /// <strong>検めるときも同じ辞書で割らなければ、比べたものに意味が無い。</strong>
+    pub lexicon: kakiburi_metrics::lexicon::Lexicon,
+    /// その人の型。**コーパスから見つけた語の並び。**
+    ///
+    /// 手で並べた定型ではない——道具は書き手を選ばないので、特定の言い回しを実装に
+    /// 持たない（[取り出し](assemble::Kata)）。
+    pub katas: Vec<assemble::Kata>,
 }
 
 impl Scale {

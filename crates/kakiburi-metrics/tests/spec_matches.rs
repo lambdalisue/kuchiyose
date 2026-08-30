@@ -91,7 +91,8 @@ fn 種別の内訳が仕様と合う() {
     eprintln!("指示 {directive} / 照合 {matching} / 人らしさ {humanness} / 検査 {inspection}");
     assert_eq!(directive + matching + humanness + inspection, r.len());
     // 検査は書きぶりの軸ではない。**足す条件が厳しいので、数は増えにくい。**
-    assert_eq!(inspection, 1, "検査は 1 本");
+    // どちらも「道具の指示を機械的に満たすと壊れる」穴を塞ぐために置いている。
+    assert_eq!(inspection, 2, "検査は 2 本");
     // 照合の系統は 8 本。判定に使える層 1 はそのうちの一部である。
     assert_eq!(matching, 8, "照合の系統は 8 本");
     // 繰り返しは短いと長いに割れている。**まとめると向きが指標の中で割れる。**

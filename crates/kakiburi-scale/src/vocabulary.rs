@@ -32,8 +32,24 @@ impl Frozen {
     /// 次元が固定の系統）。
     #[must_use]
     pub fn fit(all: &[Counts], limit: Option<usize>) -> Self {
+        Self::fit_against(all, all, limit)
+    }
+
+    /// 次元は `all` から選び、<strong>平均と標準偏差は `reference` から取る。</strong>
+    ///
+    /// <strong>本人を含む素材で標準化してはいけない。</strong> 本人の単位が過半を占めるなら、
+    /// 平均は本人のところに来る——<strong>本人の記事は原点に置かれ、z 得点に残るのは
+    /// 1 本ごとの雑音だけ</strong>になる。雑音どうしの向きは揃わないので、
+    /// <strong>同じ人が書いた 2 本がほぼ直交する。</strong>
+    ///
+    /// 実測で、本人どうしの機能語の距離は 0.997 だった——コサインにして 0.003 である。
+    /// 次元を 300 から 20 まで削っても 0.90 までしか下がらなかった。
+    ///
+    /// <strong>基準を物差しにする。</strong> そうすれば本人の単位はどれも「ふつうの書きぶりから
+    /// どちらへ外れているか」を表し、その向きが揃う。
+    pub fn fit_against(all: &[Counts], reference: &[Counts], limit: Option<usize>) -> Self {
         let dims = pick_dims(all, limit);
-        let rows: Vec<Vec<f64>> = all.iter().map(|c| relative(c, &dims)).collect();
+        let rows: Vec<Vec<f64>> = reference.iter().map(|c| relative(c, &dims)).collect();
         let d = dims.len();
         let mut mean = vec![0.0; d];
         let mut sd = vec![0.0; d];
@@ -46,6 +62,7 @@ impl Frozen {
                 sd[j] = (rows.iter().map(|r| (r[j] - m).powi(2)).sum::<f64>() / n).sqrt();
             }
         }
+        floor_sd(&mut sd);
         Self { dims, mean, sd }
     }
 
@@ -168,16 +185,28 @@ impl FrozenSet {
     /// 単位は落とす</strong>——数が揃わなければ、絞る先を 1 つずれて当てる。
     #[must_use]
     pub fn fit(all: &[Vec<Counts>], limits: &[Option<usize>]) -> Self {
+        Self::fit_against(all, all, limits)
+    }
+
+    /// 次元は `all` から、平均と標準偏差は `reference` から
+    /// （[部分ベクトル](Frozen::fit_against)）。
+    #[must_use]
+    pub fn fit_against(
+        all: &[Vec<Counts>],
+        reference: &[Vec<Counts>],
+        limits: &[Option<usize>],
+    ) -> Self {
         let parts = limits
             .iter()
             .enumerate()
             .map(|(i, limit)| {
-                let column: Vec<Counts> = all
-                    .iter()
-                    .filter(|u| u.len() == limits.len())
-                    .map(|u| u[i].clone())
-                    .collect();
-                Frozen::fit(&column, *limit)
+                let column = |src: &[Vec<Counts>]| -> Vec<Counts> {
+                    src.iter()
+                        .filter(|u| u.len() == limits.len())
+                        .map(|u| u[i].clone())
+                        .collect()
+                };
+                Frozen::fit_against(&column(all), &column(reference), *limit)
             })
             .collect();
         Self { parts }
@@ -239,6 +268,31 @@ fn pick_dims(all: &[Counts], limit: Option<usize>) -> Vec<String> {
     keys.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
     let take = limit.unwrap_or(keys.len()).min(keys.len());
     keys[..take].iter().map(|(k, _)| (*k).to_owned()).collect()
+}
+
+/// 歩幅の下限。<strong>その系統の平均の歩幅に対する割合。</strong> 暫定値である。
+///
+/// <strong>まれな次元は歩幅が 0 に近い。</strong> そのまま割れば z 得点が爆発し、
+/// <strong>1 つの次元がベクトル全体を支配する</strong>——実測で、文字種の「半角数字」が
+/// 246 まで飛び、いちばん外れている次元がどの文書でもそれになった。
+pub const MIN_SD_RATIO: f64 = 0.1;
+
+/// 歩幅に下限を敷く。
+///
+/// <strong>0 の次元は 0 のまま残す。</strong> 全部の文書で同じ値なら、そこに情報は無い
+/// ——投影の側が 0 を返す。
+fn floor_sd(sd: &mut [f64]) {
+    let live: Vec<f64> = sd.iter().copied().filter(|x| *x > 0.0).collect();
+    if live.is_empty() {
+        return;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let floor = live.iter().sum::<f64>() / live.len() as f64 * MIN_SD_RATIO;
+    for x in sd.iter_mut() {
+        if *x > 0.0 && *x < floor {
+            *x = floor;
+        }
+    }
 }
 
 /// 相対頻度。<strong>分母は選ぶ前の全体である。</strong>

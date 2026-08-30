@@ -10,9 +10,10 @@
 //! | 4 | 対を割り当てる | 較正と目盛りが対を共有し、いちばん危ない検査が無効になる |
 //! | 5 | 較正して帯を作る | |
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kakiburi_doc::Document;
+use kakiburi_metrics::lexicon::Lexicon;
 use kakiburi_metrics::matching::{self, FOR_VERDICT};
 use kakiburi_metrics::morph::{Analyzed, Analyzer};
 use kakiburi_metrics::system::System;
@@ -45,14 +46,34 @@ struct Measurements {
     overused: Vec<String>,
     /// その単位で一度しか出てこない語。<strong>語を散らしている当のものである。</strong>
     once_only: Vec<String>,
+    /// その単位に現れる語の並びと、位置と node の番号。<strong>型を取り出す材料。</strong>
+    grams: Vec<(String, f64, usize)>,
     /// 人らしさの 12 次元。
     humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
     chars: usize,
 }
 
+/// 本人の素材からコーパスの語を見つける。
+///
+/// <strong>解析するだけで、測らない。</strong> ここで測ってしまうと、割れたままの値が
+/// 派生物に残る。
+fn lexicon_of(person: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Lexicon {
+    let Some(a) = analyzer else {
+        return Lexicon::default();
+    };
+    let units: Vec<Vec<Vec<kakiburi_metrics::morph::Morpheme>>> = person
+        .iter()
+        .filter_map(|s| {
+            let prose = kakiburi_doc::prose::mask_identifiers(&s.document.prose());
+            Analyzed::of(&prose, a).ok().map(|x| x.segments().to_vec())
+        })
+        .collect();
+    Lexicon::find(&units)
+}
+
 impl Measurements {
-    fn of(sample: Sample<'_>, analyzer: Option<&dyn Analyzer>) -> Self {
+    fn of(sample: Sample<'_>, analyzer: Option<&dyn Analyzer>, lexicon: &Lexicon) -> Self {
         // <strong>識別子を伏せてから測る。</strong> `denops.vim` のような半角英字の連なりは
         // <strong>書き手が選んだ書きぶりではなく題材が決めるもの</strong>で、そのまま入れると
         // <strong>同じ人が別の題材で書いた文章を「その人らしくない」と言う</strong>。
@@ -61,7 +82,7 @@ impl Measurements {
         // そのものを測るので、生の文から測り続ける。
         let prose = kakiburi_doc::prose::mask_identifiers(&sample.document.prose());
         // <strong>解析は 1 度だけ。</strong> 指標ごとに呼べば、外の実行ファイルを指標の数だけ起こす。
-        let analyzed = analyzer.and_then(|a| Analyzed::of(&prose, a).ok());
+        let analyzed = analyzer.and_then(|a| Analyzed::with_lexicon(&prose, a, lexicon).ok());
         let mut parts = BTreeMap::new();
         for s in FOR_VERDICT {
             if let Some(p) = matching::parts(s, &prose, analyzed.as_ref()) {
@@ -84,6 +105,7 @@ impl Measurements {
             ),
             // <strong>「散らすな」と言うなら、どれが散らしているのかを言う。</strong>
             once_only: kakiburi_metrics::humanness::once_only(analyzed.as_ref(), ONCE_ONLY),
+            grams: kakiburi_metrics::word::grams_with_position(analyzed.as_ref(), &KATA_N),
             humanness: Humanness::measure(&prose, analyzed.as_ref()),
             chars: sample.document.japanese_chars(),
         }
@@ -125,7 +147,7 @@ pub fn inspect(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Vec<R
     samples
         .iter()
         .map(|s| {
-            let m = Measurements::of(*s, analyzer);
+            let m = Measurements::of(*s, analyzer, &Lexicon::default());
             Report {
                 name: s.name.to_owned(),
                 chars: m.chars,
@@ -168,11 +190,25 @@ pub struct Material<'a> {
 /// 判定できないを返す——それが正しい振る舞いである。
 pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scale, ScaleError> {
     let (person, baseline) = (m.person, m.baseline);
+    // <strong>2 度測る。</strong> 1 度目でコーパスから語を見つけ、2 度目でその語を畳んで測る。
+    //
+    // <strong>辞書に無い語は割れる。</strong> 書き手の名前も、その分野の言い回しも、解析器の
+    // 辞書は知らない——割れたままだと、その語のところで機能語も品詞 bigram も型も
+    // 狂う（[語](kakiburi_metrics::lexicon)）。
+    //
+    // <strong>見つけるのは本人の素材からである。</strong> 基準から見つければ、基準の書きぶりが
+    // 本人の測り方を決めることになる。
+    let lexicon = lexicon_of(person, analyzer);
     let measured: BTreeMap<String, Measurements> = person
         .iter()
         .chain(baseline.iter())
         .chain(m.others.iter())
-        .map(|s| ((*s.name).to_owned(), Measurements::of(*s, analyzer)))
+        .map(|s| {
+            (
+                (*s.name).to_owned(),
+                Measurements::of(*s, analyzer, &lexicon),
+            )
+        })
         .collect();
 
     let unit = |s: &Sample<'_>| -> Unit {
@@ -218,15 +254,36 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
             .iter()
             .filter_map(|u| measured[&u.name].parts.get(&s).cloned())
             .collect();
+        // <strong>平均と標準偏差は基準から取る。</strong> 本人を含む素材で標準化すると、
+        // 本人の単位が過半を占めるぶん平均が本人のところに来て、
+        // <strong>本人の記事は原点に置かれる</strong>——z 得点に残るのは 1 本ごとの雑音だけになる。
+        let reference: Vec<Vec<Counts>> = baseline_split
+            .partners
+            .iter()
+            .chain(&baseline_split.points)
+            .filter_map(|u| measured[&u.name].parts.get(&s).cloned())
+            .collect();
         frozen.push((
             s.name().to_owned(),
-            FrozenSet::fit(&all, &matching::limits(s)),
+            FrozenSet::fit_against(&all, &reference, &matching::limits(s)),
         ));
     }
 
+    // <strong>他人は系統が測れたものだけを使う。</strong> 投影できない単位を対にしても捨てられる。
+    //
+    // <strong>語彙には入れない。</strong> 固定するのは本人と基準からで、他人はその語彙へ投影する
+    // ——検めるときの草稿と同じ扱いである。他人の語で次元を決めれば、
+    // <strong>他人が何人来たかで本人の測り方が変わる。</strong>
+    let other_units: Vec<Unit> = m
+        .others
+        .iter()
+        .map(unit)
+        .filter(|u| u.systems_measured)
+        .collect();
+
     // 系統ごとの、単位 → z 得点のベクトル。
     let mut projected: BTreeMap<(String, String), Vec<f64>> = BTreeMap::new();
-    for u in &used {
+    for u in used.iter().copied().chain(other_units.iter()) {
         let m = &measured[&u.name];
         for (name, set) in &frozen {
             let Some(system) = System::from_name(name) else {
@@ -242,7 +299,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     }
 
     // 4. 対を割り当てる。<strong>作り手を 1 つにしたうえで、それでも確かめる。</strong>
-    let pairing = pair(&person_split, &baseline_split);
+    let pairing = pair(&person_split, &baseline_split, &other_units);
     if pairing.shares_pairs() {
         return Err(ScaleError::SharedPairs);
     }
@@ -418,6 +475,8 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         // 見てから言い回しを選び直す経路が書ける。
         humanness_target,
         phrases: phrases_of(&person_units, &measured),
+        lexicon,
+        katas: katas_of(&person_units, &machine_units, &measured),
     })
 }
 
@@ -453,6 +512,322 @@ fn phrases_of(units: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<
 /// 残す言い回しの数。<strong>暫定値である。</strong>
 pub const PHRASES: usize = 20;
 
+/// 型として見る語の並びの長さ。<strong>暫定値である。</strong>
+///
+/// 短すぎれば誰でも書く並びになり、長すぎれば 1 本にしか出てこない。
+pub const KATA_N: [usize; 7] = [2, 3, 4, 5, 6, 7, 8];
+
+/// 型と認める、本人の単位に現れる割合。<strong>暫定値である。</strong>
+pub const KATA_PERSON_MIN: f64 = 0.10;
+
+/// 型と認める、基準の単位に現れる割合の上限。<strong>暫定値である。</strong>
+///
+/// <strong>みんなが書く並びは、その人のものではない。</strong>
+pub const KATA_BASE_MAX: f64 = 0.05;
+
+/// 残す型の数。<strong>種類ごとに数える。</strong> 暫定値である。
+///
+/// <strong>まとめて数えると、場所の型が押し出される</strong>——場所の型は珍しいので割合が低い。
+pub const KATAS: usize = 6;
+
+/// 場所の型と認める、位置のばらつきの上限。<strong>暫定値である。</strong>
+///
+/// <strong>短い並びは、決まった場所で使うときだけ型である。</strong> どこにでも出てくる短い
+/// 並びは、その人の癖ではなく日本語である。
+pub const KATA_TIGHT: f64 = 0.12;
+
+/// 場所を選ばない型と認める、並びの長さの下限（文字）。<strong>暫定値である。</strong>
+///
+/// <strong>長い並びはそれ自体が珍しいので、位置を問わない。</strong>
+pub const KATA_LONG: usize = 6;
+
+/// その人の型。
+///
+/// <strong>コーパスから見つける。</strong> 手で並べた定型ではない——道具は書き手を選ばないので、
+/// 特定の言い回しを実装に持たない。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kata {
+    /// 語の並び。
+    pub text: String,
+    /// 本人の単位のうち、これが現れた割合。
+    pub rate: f64,
+    /// 文書の中での位置の中央。<strong>0 に近ければ書き出しの型である。</strong>
+    pub at: f64,
+    /// 位置のばらつき。<strong>小さければ決まった場所で使う型である。</strong>
+    pub spread: f64,
+    /// 穴あきの型なら、後ろの固定部。<strong>間は書き手が埋める。</strong>
+    ///
+    /// `どうも、` … `ありすえです。` のように、<strong>固定部が 2 つあって間が変わる</strong>
+    /// 書き出しは、連続した並びとしては拾えない。
+    pub tail: Option<String>,
+}
+
+impl Kata {
+    /// 散文にする。<strong>穴あきなら、間があることを見せる。</strong>
+    #[must_use]
+    pub fn shown(&self) -> String {
+        match &self.tail {
+            Some(t) => format!("{}〜{t}", self.text),
+            None => self.text.clone(),
+        }
+    }
+}
+
+/// 穴あきの型に繋ぐ。
+///
+/// <strong>固定部が 2 つあって間が変わる書き出しは、連続した並びとしては拾えない。</strong>
+/// 実測で、ある書き手の挨拶は 11 本の記事で `どうも、`〜`です。` の形をしていたが、
+/// 間に入る一言が毎回違うので、<strong>1 つの並びとしては一度も繰り返されていなかった。</strong>
+///
+/// > 2 つの型が、本人の単位の[一定割合以上](KATA_PERSON_MIN)で<strong>同じ node に
+/// > この順で</strong>現れるなら、繋げて 1 つの穴あきの型とする。
+///
+/// <strong>繋いだら、部品は落とす。</strong> 3 本に分けて渡せば、受け取った側は 3 か所に
+/// 挿しこむことになる。
+fn frames_of(
+    katas: &mut Vec<Kata>,
+    person: &[Unit],
+    baseline: &[Unit],
+    measured: &BTreeMap<String, Measurements>,
+) {
+    // node ごとに、その node に現れた型を順番に持つ。
+    let seen = |units: &[Unit]| -> Vec<BTreeSet<(usize, usize)>> {
+        units
+            .iter()
+            .map(|u| {
+                let mut out: BTreeSet<(usize, usize)> = BTreeSet::new();
+                let Some(m) = measured.get(&u.name) else {
+                    return out;
+                };
+                let mut at: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+                for (g, _, node) in &m.grams {
+                    if let Some(i) = katas.iter().position(|k| k.text == *g) {
+                        at.entry(*node).or_default().insert(i);
+                    }
+                }
+                for here in at.values() {
+                    for &a in here {
+                        for &b in here {
+                            if a != b {
+                                out.insert((a, b));
+                            }
+                        }
+                    }
+                }
+                out
+            })
+            .collect()
+    };
+    let mine = seen(person);
+    let theirs = seen(baseline);
+    #[allow(clippy::cast_precision_loss)]
+    let (np, nb) = (person.len().max(1) as f64, baseline.len().max(1) as f64);
+
+    let mut frames: Vec<(usize, usize, f64)> = Vec::new();
+    for a in 0..katas.len() {
+        for b in 0..katas.len() {
+            // <strong>重なっている 2 つを繋がない。</strong> 同じ型の切り出し方が違うだけのものを
+            // 繋ぐと、`ご無沙汰して`〜`しております` のような穴あきができる。
+            if a == b
+                || overlaps(&katas[a].text, &katas[b].text)
+                || chains(&katas[a].text, &katas[b].text)
+            {
+                continue;
+            }
+            #[allow(clippy::cast_precision_loss)]
+            let rate = mine.iter().filter(|s| s.contains(&(a, b))).count() as f64 / np;
+            #[allow(clippy::cast_precision_loss)]
+            let base = theirs.iter().filter(|s| s.contains(&(a, b))).count() as f64 / nb;
+            if rate >= KATA_PERSON_MIN && base <= KATA_BASE_MAX {
+                frames.push((a, b, rate));
+            }
+        }
+    }
+    frames.sort_by(|x, y| y.2.partial_cmp(&x.2).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut used: BTreeSet<usize> = BTreeSet::new();
+    let mut made: Vec<Kata> = Vec::new();
+    for (a, b, rate) in frames {
+        if used.contains(&a) || used.contains(&b) {
+            continue;
+        }
+        used.insert(a);
+        used.insert(b);
+        made.push(Kata {
+            text: katas[a].text.clone(),
+            tail: Some(katas[b].text.clone()),
+            rate,
+            at: katas[a].at,
+            spread: katas[a].spread.min(katas[b].spread),
+        });
+    }
+    if made.is_empty() {
+        return;
+    }
+    let mut kept: Vec<Kata> = katas
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !used.contains(i))
+        .map(|(_, k)| k.clone())
+        .collect();
+    kept.extend(made);
+    kept.sort_by(|a, b| {
+        b.rate
+            .partial_cmp(&a.rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    *katas = kept;
+}
+
+/// 前の終わりと後ろの始まりが重なっているか。
+///
+/// <strong>繋がっている 1 つの言い回しを、穴あきの型にしない。</strong>
+/// `ご無沙汰して` と `しております` は `して` で繋がっていて、間に何も入らない。
+fn chains(a: &str, b: &str) -> bool {
+    let touching = |a: &str, b: &str| {
+        let x: Vec<char> = a.chars().collect();
+        let y: Vec<char> = b.chars().collect();
+        (2..=x.len().min(y.len())).any(|n| x[x.len() - n..] == y[..n])
+    };
+    // <strong>どちら向きでも見る。</strong> 同じ地の文から切り出した 2 つは、順番を入れ替えても
+    // 同じ node に現れる。
+    touching(a, b) || touching(b, a)
+}
+
+/// 位置のばらつき。<strong>母標準偏差である。</strong>
+fn spread_of(ats: &[f64]) -> f64 {
+    if ats.len() < 2 {
+        return 0.0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let n = ats.len() as f64;
+    let mean = ats.iter().sum::<f64>() / n;
+    (ats.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n).sqrt()
+}
+
+/// 2 つの並びが同じ型の切り出しか。
+///
+/// 片方がもう片方を含むか、<strong>端どうしが半分以上重なっている</strong>なら同じものとみなす。
+fn overlaps(a: &str, b: &str) -> bool {
+    if a.contains(b) || b.contains(a) {
+        return true;
+    }
+    // <strong>共通する並びが短いほうの半分を超えるなら、同じ型である。</strong>
+    // 端どうしだけを見ると、真ん中で重なっているものを取りこぼす。
+    let (x, y): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let want = x.len().min(y.len()) / 2 + 1;
+    if want > x.len() {
+        return false;
+    }
+    (0..=x.len() - want).any(|i| {
+        let piece: String = x[i..i + want].iter().collect();
+        b.contains(&piece)
+    })
+}
+
+/// その人の型を取り出す。
+///
+/// > 本人の単位の[一定割合以上](KATA_PERSON_MIN)に現れ、
+/// > 基準の単位には[ほとんど現れない](KATA_BASE_MAX)語の並び。
+///
+/// <strong>2 つとも要る。</strong> 前者だけなら「ています。」のような誰でも書く並びが並び、
+/// 後者だけなら 1 本にしかない偶然が並ぶ。
+///
+/// <strong>長い並びを先に採り、その一部になる短い並びは落とす。</strong> 同じ型を長短で二重に
+/// 数えない。
+fn katas_of(
+    person: &[Unit],
+    baseline: &[Unit],
+    measured: &BTreeMap<String, Measurements>,
+) -> Vec<Kata> {
+    let df = |units: &[Unit]| -> BTreeMap<String, (usize, Vec<f64>)> {
+        let mut out: BTreeMap<String, (usize, Vec<f64>)> = BTreeMap::new();
+        for u in units {
+            let Some(m) = measured.get(&u.name) else {
+                continue;
+            };
+            let mut here: BTreeMap<&str, f64> = BTreeMap::new();
+            for (g, at, _) in &m.grams {
+                here.entry(g.as_str()).or_insert(*at);
+            }
+            for (g, at) in here {
+                let e = out.entry(g.to_owned()).or_insert((0, Vec::new()));
+                e.0 += 1;
+                e.1.push(at);
+            }
+        }
+        out
+    };
+    let mine = df(person);
+    let theirs = df(baseline);
+    #[allow(clippy::cast_precision_loss)]
+    let (np, nb) = (person.len().max(1) as f64, baseline.len().max(1) as f64);
+    let mut cands: Vec<Kata> = mine
+        .into_iter()
+        .filter_map(|(text, (k, ats))| {
+            #[allow(clippy::cast_precision_loss)]
+            let rate = k as f64 / np;
+            #[allow(clippy::cast_precision_loss)]
+            let base = theirs.get(&text).map_or(0.0, |(b, _)| *b as f64) / nb;
+            if rate < KATA_PERSON_MIN || base > KATA_BASE_MAX {
+                return None;
+            }
+            Some(Kata {
+                text,
+                rate,
+                at: median(&ats).unwrap_or(0.0),
+                spread: spread_of(&ats),
+                tail: None,
+            })
+        })
+        .collect();
+    // <strong>広く使う順。同じなら長い順、次に文字の順。</strong> 決めておかないと並びが実装で変わる。
+    //
+    // <strong>長さを先に見てはいけない。</strong> 長い順に採ると、<strong>短くて頻度の高い型が枠から
+    // 押し出される</strong>——実測で、11 本の記事に出てくる挨拶の書き出しが落ちていた。
+    cands.sort_by(|a, b| {
+        b.rate
+            .partial_cmp(&a.rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.text.chars().count().cmp(&a.text.chars().count()))
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    // <strong>2 種類を別々に数える。</strong>
+    //
+    // | | 何を型とするか |
+    // | --- | --- |
+    // | <strong>場所の型</strong> | 位置が偏っているもの。短くてもよい |
+    // | <strong>言い回しの型</strong> | 長いもの。位置は問わない |
+    //
+    // <strong>まとめて数えると、場所の型が押し出される</strong>——場所の型は珍しいので割合が低い。
+    let mut out: Vec<Kata> = Vec::new();
+    let (mut tight, mut loose) = (0usize, 0usize);
+    for k in cands {
+        let is_tight = k.spread <= KATA_TIGHT;
+        let slot = if is_tight { &mut tight } else { &mut loose };
+        if *slot >= KATAS || (!is_tight && k.text.chars().count() < KATA_LONG) {
+            continue;
+        }
+        // <strong>重なっている型を二重に持たない。</strong> 入っている場合だけでなく、
+        // <strong>端が重なっているだけでも落とす</strong>——`ご無沙汰しており` と
+        // `無沙汰しております` は同じ型の切り出し方が違うだけである。
+        if out.iter().any(|kept| overlaps(&kept.text, &k.text)) {
+            continue;
+        }
+        *slot += 1;
+        out.push(k);
+    }
+    frames_of(&mut out, person, baseline, measured);
+    out.sort_by(|a, b| {
+        b.rate
+            .partial_cmp(&a.rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    out
+}
+
 /// 名指しする「繰り返しすぎ」の数。<strong>暫定値である。</strong>
 pub const OVERUSED: usize = 3;
 
@@ -472,10 +847,12 @@ pub fn measure_against(
     partners: &[Sample<'_>],
     analyzer: Option<&dyn Analyzer>,
 ) -> Measured {
-    let t = Measurements::of(target, analyzer);
+    // <strong>カセットが持つ辞書で測る。</strong> 作ったときと違う割り方をすれば、
+    // 比べたものに意味が無い。
+    let t = Measurements::of(target, analyzer, &scale.lexicon);
     let ps: Vec<Measurements> = partners
         .iter()
-        .map(|s| Measurements::of(*s, analyzer))
+        .map(|s| Measurements::of(*s, analyzer, &scale.lexicon))
         .collect();
 
     let vector = |m: &Measurements, name: &str| -> Option<Vec<f64>> {
@@ -600,10 +977,20 @@ pub struct Divergence {
     pub mine: f64,
     /// 相手集合の、標準化した値の中央値。
     pub theirs: f64,
+    /// 相手集合の、その次元での下端。
+    pub low: f64,
+    /// 相手集合の、その次元での上端。
+    pub high: f64,
     /// その系統の、合算での重み。
     pub weight: f64,
     /// この次元を本人の値に置いたときに照合値が動く量。<strong>正なら近づく。</strong>
     pub effect: f64,
+    /// <strong>この文章の、直す場所。</strong>
+    ///
+    /// <strong>「減らせ」と言うなら、どれを減らすのかを言う。</strong> 実測で、間隔の次元は
+    /// 場所を渡していなかったため、受け取った側が<strong>道具の外で数え直した</strong>
+    /// ——しかも数え方を間違えた（道具は日本語の文字だけを数える）。
+    pub spots: Vec<String>,
     /// 本人がその次元をどう書いているかの実例。
     ///
     /// <strong>「増やせ」と言うだけでは、どこに置くのかが分からない。</strong> 実測では、
@@ -613,6 +1000,31 @@ pub struct Divergence {
 }
 
 impl Divergence {
+    /// 本人の幅からのはみ出し。<strong>幅を 1 とした倍数。</strong>
+    ///
+    /// <strong>畳めば消える信号がある。</strong> 系統の距離は数百次元のコサインなので、
+    /// 1 次元が大きく動いても角度はわずかしか変わらない——実測で、敬体を常体に
+    /// 変えた文章は `です` の次元が −12.2（本人 +2.2）まで動いたのに、
+    /// <strong>照合値は 0.23 しか動かなかった。</strong>
+    ///
+    /// <strong>だから次元の側でも見る。</strong>
+    #[must_use]
+    pub fn outside(&self) -> f64 {
+        let spread = self.high - self.low;
+        let over = if self.mine > self.high {
+            self.mine - self.high
+        } else if self.mine < self.low {
+            self.low - self.mine
+        } else {
+            return 0.0;
+        };
+        if spread > 0.0 {
+            over / spread
+        } else {
+            over
+        }
+    }
+
     /// 隔たりの大きさ。
     #[must_use]
     pub fn size(&self) -> f64 {
@@ -692,6 +1104,44 @@ fn matching_of(
     median(&values)
 }
 
+/// 相手集合との、系統ごとの距離。<strong>相手ごとの中央値である。</strong>
+///
+/// <strong>照合値は 5 つの距離を重みで畳んだものなので、畳む前を見なければどこが動いたか
+/// 分からない。</strong> 判定には使わない——出すだけである。
+#[must_use]
+pub fn distances_against(
+    scale: &Scale,
+    target: Sample<'_>,
+    partners: &[Sample<'_>],
+    analyzer: Option<&dyn Analyzer>,
+) -> Vec<(String, f64)> {
+    let t = Measurements::of(target, analyzer, &scale.lexicon);
+    let ps: Vec<Measurements> = partners
+        .iter()
+        .map(|s| Measurements::of(*s, analyzer, &scale.lexicon))
+        .collect();
+    let vector = |m: &Measurements, name: &str| -> Option<Vec<f64>> {
+        let system = System::from_name(name)?;
+        let set = &scale.frozen.iter().find(|(n, _)| n == name)?.1;
+        set.project(m.parts.get(&system)?)
+    };
+    scale
+        .frozen
+        .iter()
+        .filter_map(|(name, _)| {
+            let ds: Vec<f64> = ps
+                .iter()
+                .filter_map(|p| {
+                    let a = vector(&t, name)?;
+                    let b = vector(p, name)?;
+                    Some(cosine_delta(&a, &b))
+                })
+                .collect();
+            Some((name.clone(), median(&ds)?))
+        })
+        .collect()
+}
+
 /// 相手集合からいちばん離れている次元を挙げる。
 ///
 /// <strong>照合値は 1 つの数なので、どこが違うのかを言えない。</strong> 帯の中で止まったときに
@@ -710,10 +1160,10 @@ pub fn diverging(
     systems: &[System],
     top: usize,
 ) -> Vec<Divergence> {
-    let t = Measurements::of(target, analyzer);
+    let t = Measurements::of(target, analyzer, &scale.lexicon);
     let ps: Vec<Measurements> = partners
         .iter()
-        .map(|s| Measurements::of(*s, analyzer))
+        .map(|s| Measurements::of(*s, analyzer, &scale.lexicon))
         .collect();
 
     let mut out: Vec<Divergence> = Vec::new();
@@ -770,8 +1220,11 @@ pub fn diverging(
                 dim: (*dim).to_owned(),
                 mine: m,
                 theirs: theirs_med,
+                low: col[0],
+                high: col[col.len() - 1],
                 weight,
                 effect: b - a,
+                spots: Vec::new(),
                 examples: Vec::new(),
             });
         }
@@ -792,6 +1245,8 @@ pub fn diverging(
     // 相手集合を何度も読み直すことになる。
     for d in &mut out {
         d.examples = examples_of(&d.system, &d.dim, partners);
+        // <strong>この文章のどこが、その次元を作っているか。</strong>
+        d.spots = spots_of(&d.system, &d.dim, target);
     }
     out
 }
@@ -802,6 +1257,27 @@ pub fn diverging(
 /// 渡された側は、結局その人の文章を自分で読みに行くことになる。
 ///
 /// <strong>拾えないものは無理に作らない。</strong> 間隔のような、字面に現れない次元がある。
+/// この文章の、その次元を作っている場所。
+///
+/// <strong>「減らせ」と言うなら、どれを減らすのかを言う。</strong> 本人の実例だけを渡しても、
+/// <strong>自分の文章のどこを直すのかは分からない。</strong>
+fn spots_of(system: &str, dim: &str, target: Sample<'_>) -> Vec<String> {
+    const WANT: usize = 3;
+    if system != "読点の打ち方" || !(dim.ends_with('字') || dim.ends_with("字以上")) {
+        return Vec::new();
+    }
+    let prose = kakiburi_doc::prose::mask_identifiers(&target.document.prose());
+    let mut out: Vec<String> = matching::comma_gaps(&prose)
+        .into_iter()
+        .filter(|(name, _)| name == dim)
+        .map(|(_, ctx)| ctx)
+        .collect();
+    out.sort();
+    out.dedup();
+    out.truncate(WANT);
+    out
+}
+
 fn examples_of(system: &str, dim: &str, partners: &[Sample<'_>]) -> Vec<String> {
     const WANT: usize = 3;
     const AROUND: usize = 6;
@@ -830,7 +1306,21 @@ fn examples_of(system: &str, dim: &str, partners: &[Sample<'_>]) -> Vec<String> 
             // 字面に現れる次元。<strong>読点の直前・直後は 1 文字、機能語は語である。</strong>
             let needle: String = if system == "読点の打ち方" {
                 if dim.ends_with('字') || dim.ends_with("字以上") {
-                    return Vec::new();
+                    // <strong>間隔の次元は、字面に現れない。</strong> その間隔を作っている読点を
+                    // まわりごと見せる——「増やせ」だけでは直せない。
+                    let mut out: Vec<String> = partners
+                        .iter()
+                        .flat_map(|p| {
+                            let prose = kakiburi_doc::prose::mask_identifiers(&p.document.prose());
+                            matching::comma_gaps(&prose)
+                        })
+                        .filter(|(name, _)| name == dim)
+                        .map(|(_, ctx)| ctx)
+                        .collect();
+                    out.sort();
+                    out.dedup();
+                    out.truncate(WANT);
+                    return out;
                 }
                 format!("{dim}、")
             } else {
@@ -1034,7 +1524,9 @@ mod tests {
     /// 「重なり 0」で止まる——両側が同じ範囲に散っている素材でなければ先へ進めない。
     fn document(index: usize, machine: bool) -> Document {
         let seed = index * if machine { 17 } else { 13 };
-        let nodes: Vec<Node> = (0..60 + index * 4)
+        // <strong>畳まれても下限に届く量にする。</strong> 作り物の文は繰り返しが強いので、
+        // [コーパスから見つけた語](kakiburi_metrics::lexicon)が実素材より多く畳む。
+        let nodes: Vec<Node> = (0..90 + index * 4)
             .map(|i| {
                 // <strong>骨格は両側で同じにする。</strong> 違えば、長さの差が両側の違いに混ざる。
                 let (a, b, c, d) = if machine {
@@ -1143,9 +1635,15 @@ mod tests {
     }
 
     #[test]
-    fn 他人の文書は人らしさの較正にだけ効く() {
+    fn 他人の文書は較正にだけ効き帯には効かない() {
         // <strong>足せる形を決めておく。</strong> 決めずに置くと、素材だけ入って判定に効かないと
         // いういちばん質の悪い状態になる——使う側は効いていると思って集め続ける。
+        //
+        // <strong>較正の違う人の側には効く。</strong> 基準だけで学習すると、測っているのは
+        // 「その人らしさ」ではなく「この基準との違い」になる。
+        //
+        // <strong>帯・割り・語彙には効かない。</strong> 帯の点の数が本人と基準で釣り合わなくなり、
+        // 他人が何人来たかで本人の測り方が変わる。
         let m = Fixture::new(10);
         let extra = Fixture::new(14);
         // 別の場面の他人。**名前が本人・基準と衝突しないようにする。**
@@ -1172,14 +1670,13 @@ mod tests {
         )
         .expect("目盛りができる");
 
-        // <strong>照合の側は 1 ミリも動かない。</strong> 動けば、相手集合か語彙か天井に
+        // <strong>割りと語彙は 1 ミリも動かない。</strong> 動けば、相手集合か語彙に
         // 他人が混ざっている。
         assert_eq!(with.selection, bare.selection, "割りが動かない");
         assert_eq!(with.frozen, bare.frozen, "語彙が動かない");
-        assert_eq!(with.band, bare.band, "照合値の帯が動かない");
-        assert_eq!(with.calibration, bare.calibration, "照合値の較正が動かない");
 
-        // <strong>人らしさの較正だけが動く。</strong> 動かなければ、入れたものが読まれていない。
+        // <strong>較正は動く。</strong> 動かなければ、入れたものが読まれていない。
+        assert_ne!(with.calibration, bare.calibration, "照合値の較正は動く");
         assert_ne!(with.humanness, bare.humanness, "人らしさの較正は動く");
     }
 

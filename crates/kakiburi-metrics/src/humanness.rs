@@ -44,8 +44,21 @@ pub const LONG_N: [usize; 2] = [4, 5];
 #[cfg(test)]
 const REPETITION_N: [usize; 4] = [2, 3, 4, 5];
 
-/// 語彙の豊富さを測る窓の大きさ。
+/// 人らしさを測る窓の大きさ。**語で数える。**
+///
+/// **どの次元も、この窓ごとに測って平均を取る。** 揃えなければ、測っているのは
+/// 書きぶりではなく長さである。
+///
+/// 実測で確かめた。窓を掛けていなかった次元は長さと強く相関していた——
+/// 語のエントロピー +0.585、文字のエントロピー +0.517、圧縮率 −0.481。
+/// 窓を掛けていた語彙の豊富さだけが +0.029 だった。
 pub const WINDOW: usize = 1000;
+
+/// 圧縮率を測る窓の大きさ。**バイトで数える。**
+///
+/// 圧縮率は[形態素解析を要らない数少ない指標](compression_ratio)なので、
+/// 語ではなくバイトで切る。**要らないものを要ることにしない。**
+pub const WINDOW_BYTES: usize = floor::PROSE_BYTES;
 
 /// 人らしさの指標。<strong>5 つである。</strong>
 ///
@@ -147,7 +160,7 @@ impl Humanness {
                 Metric::RepetitionShort => repetition(analyzed, &SHORT_N),
                 Metric::RepetitionLong => repetition(analyzed, &LONG_N),
                 Metric::Richness => vec![richness(analyzed)],
-                Metric::Entropy => entropy(prose, analyzed),
+                Metric::Entropy => entropy(analyzed),
             };
             let named = m.dims().into_iter().zip(got).collect();
             values.push((m, named));
@@ -211,23 +224,41 @@ pub fn joined(prose: &[Segment]) -> String {
 #[must_use]
 pub fn compression_ratio(prose: &[Segment]) -> Measured {
     let text = joined(prose);
-    let raw = text.as_bytes();
-    // 地の文が短いと、圧縮器のヘッダが結果を支配する。
-    if raw.len() < floor::PROSE_BYTES {
+    // <strong>窓ごとに圧縮して、比の平均を取る。</strong> 通しで圧縮すると、長い文書ほど
+    // 辞書が育って比が下がる——測っているのは書きぶりではなく長さになる。
+    //
+    // 地の文が短いと、圧縮器のヘッダが結果を支配する。窓が 1 つも取れなければ下限未満。
+    let mut ratios = Vec::new();
+    let mut window = String::new();
+    for c in text.chars() {
+        window.push(c);
+        if window.len() < WINDOW_BYTES {
+            continue;
+        }
+        let Some(r) = deflated(&window) else {
+            // <strong>圧縮器が返さないのは環境の壊れである。</strong> 素材が短いのと混ぜない
+            // ——混ぜれば、壊れた道具が「素材が足りない」という顔で回り続ける。
+            return Measured::ToolFailed;
+        };
+        ratios.push(r);
+        window.clear();
+    }
+    if ratios.is_empty() {
         return Measured::BelowFloor;
     }
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(ratios.iter().sum::<f64>() / ratios.len() as f64)
+}
+
+/// 1 つの窓を圧縮して、比を返す。<strong>圧縮器が返さなければ `None`。</strong>
+fn deflated(window: &str) -> Option<f64> {
+    let raw = window.as_bytes();
     let mut z =
         flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(COMPRESSION_LEVEL));
-    // <strong>圧縮器が返さないのは環境の壊れである。</strong> 素材が短いのと混ぜない——混ぜれば、
-    // 壊れた道具が「素材が足りない」という顔で回り続ける。
-    if z.write_all(raw).is_err() {
-        return Measured::ToolFailed;
-    }
-    let Ok(out) = z.finish() else {
-        return Measured::ToolFailed;
-    };
+    z.write_all(raw).ok()?;
+    let out = z.finish().ok()?;
     #[allow(clippy::cast_precision_loss)]
-    Measured::Value(out.len() as f64 / raw.len() as f64)
+    Some(out.len() as f64 / raw.len() as f64)
 }
 
 /// 繰り返し。<strong>n ごとに 2 つ、合わせて 8 次元。</strong>
@@ -344,6 +375,47 @@ pub fn recurring(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<String> {
     out
 }
 
+/// 窓ごとに切った語の並び。<strong>窓の中では node の切れ目を保つ。</strong>
+///
+/// n-gram は node を跨がないので、切れ目を落とすと構造が作った隣接を繰り返しとして
+/// 数えることになる。
+///
+/// <strong>端の半端は捨てる。</strong> 大きさの揃わない窓を混ぜれば、平均が長さで動く。
+fn token_windows(a: &Analyzed) -> Vec<Vec<Vec<&str>>> {
+    let mut out: Vec<Vec<Vec<&str>>> = Vec::new();
+    let mut cur: Vec<Vec<&str>> = Vec::new();
+    let mut run: Vec<&str> = Vec::new();
+    let mut n = 0usize;
+    for seg in a.segments() {
+        for m in seg {
+            run.push(m.surface.as_str());
+            n += 1;
+            if n == WINDOW {
+                cur.push(std::mem::take(&mut run));
+                out.push(std::mem::take(&mut cur));
+                n = 0;
+            }
+        }
+        if !run.is_empty() {
+            cur.push(std::mem::take(&mut run));
+        }
+    }
+    out
+}
+
+/// 窓ごとの値をならす。
+///
+/// <strong>値を返さない窓は平均から外す。</strong> 分母が 0 の窓を 0 として混ぜれば、
+/// 測れなかったことが値になる。1 つも残らなければ分母が無い。
+fn averaged(windows: &[Vec<Vec<&str>>], f: impl Fn(&[Vec<&str>]) -> Option<f64>) -> Measured {
+    let vals: Vec<f64> = windows.iter().filter_map(|w| f(w)).collect();
+    if vals.is_empty() {
+        return Measured::NoDenominator;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(vals.iter().sum::<f64>() / vals.len() as f64)
+}
+
 /// 繰り返しの数え上げ。
 #[must_use]
 pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
@@ -353,33 +425,42 @@ pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
     let Some(a) = analyzed else {
         return vec![Measured::ToolMissing; n_dims];
     };
-    if !a.enough_tokens() {
+    let ws = token_windows(a);
+    if ws.is_empty() {
         return vec![Measured::BelowFloor; n_dims];
     }
-    #[allow(clippy::cast_precision_loss)]
-    let tokens = a.tokens() as f64;
-    let mut out = Vec::with_capacity(n_dims);
-    for &n in ns {
+    let count = |w: &[Vec<&str>], n: usize| -> BTreeMap<String, usize> {
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-        for seg in a.segments() {
-            let words: Vec<&str> = seg.iter().map(|m| m.surface.as_str()).collect();
-            for w in words.windows(n) {
-                *counts.entry(w.join("\u{1F}")).or_default() += 1;
+        for run in w {
+            for g in run.windows(n) {
+                *counts.entry(g.join("\u{1F}")).or_default() += 1;
             }
         }
-        if counts.is_empty() {
-            // <strong>n-gram が 1 つも取れない。分母が 0 である。</strong> node がすべて n 語未満なら
-            // 素材を足しても同じことが起きる——下限未満とは別の理由である。
-            out.push(Measured::NoDenominator);
-            out.push(Measured::NoDenominator);
-            continue;
-        }
-        let again = counts.values().filter(|&&c| c >= 2).count();
-        #[allow(clippy::cast_precision_loss)]
-        out.push(Measured::Value(again as f64 / counts.len() as f64));
-        let top = counts.values().copied().max().unwrap_or(0);
-        #[allow(clippy::cast_precision_loss)]
-        out.push(Measured::Value(top as f64 / tokens));
+        counts
+    };
+    let mut out = Vec::with_capacity(n_dims);
+    for &n in ns {
+        // <strong>再来率。</strong> 2 回以上現れた n-gram の数 ÷ 異なり n-gram の数。
+        //
+        // <strong>n-gram が 1 つも取れない窓は平均から外す。分母が 0 である。</strong>
+        out.push(averaged(&ws, |w| {
+            let counts = count(w, n);
+            if counts.is_empty() {
+                return None;
+            }
+            #[allow(clippy::cast_precision_loss)]
+            Some(counts.values().filter(|&&c| c >= 2).count() as f64 / counts.len() as f64)
+        }));
+        // <strong>最多率。</strong> 最も多く現れた n-gram の出現回数 ÷ 窓の語数。
+        out.push(averaged(&ws, |w| {
+            let counts = count(w, n);
+            #[allow(clippy::cast_precision_loss)]
+            counts
+                .values()
+                .copied()
+                .max()
+                .map(|top| top as f64 / WINDOW as f64)
+        }));
     }
     out
 }
@@ -395,23 +476,16 @@ pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
     let Some(a) = analyzed else {
         return Measured::ToolMissing;
     };
-    if !a.enough_tokens() {
+    // 約物と記号の形態素も含める——外すと、読点の多い書き手ほど窓が長くなる。
+    let ws = token_windows(a);
+    if ws.is_empty() {
         return Measured::BelowFloor;
     }
-    // 約物と記号の形態素も含める——外すと、読点の多い書き手ほど窓が長くなる。
-    let words: Vec<&str> = a.all().map(|m| m.surface.as_str()).collect();
-    let mut ratios = Vec::new();
-    for w in words.chunks_exact(WINDOW) {
-        let types: std::collections::BTreeSet<&str> = w.iter().copied().collect();
+    averaged(&ws, |w| {
+        let types: std::collections::BTreeSet<&str> = w.iter().flatten().copied().collect();
         #[allow(clippy::cast_precision_loss)]
-        ratios.push(types.len() as f64 / w.len() as f64);
-    }
-    if ratios.is_empty() {
-        // 窓が 1 つも取れない。<strong>平均を取る分母が 0 である。</strong>
-        return Measured::NoDenominator;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(ratios.iter().sum::<f64>() / ratios.len() as f64)
+        Some(types.len() as f64 / WINDOW as f64)
+    })
 }
 
 /// エントロピー。<strong>語と文字の 2 次元。</strong>
@@ -424,17 +498,26 @@ pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
 /// <strong>文字の側も延べ語数の下限で外す。</strong> 除外は指標に掛かるものであって、次元ごとに
 /// 違う下限を持たない。
 #[must_use]
-pub fn entropy(prose: &[Segment], analyzed: Option<&Analyzed>) -> Vec<Measured> {
+pub fn entropy(analyzed: Option<&Analyzed>) -> Vec<Measured> {
     let Some(a) = analyzed else {
         return vec![Measured::ToolMissing; 2];
     };
-    if !a.enough_tokens() {
+    let ws = token_windows(a);
+    if ws.is_empty() {
         return vec![Measured::BelowFloor; 2];
     }
-    let words = shannon(a.all().map(|m| m.surface.as_str()));
+    let words = averaged(&ws, |w| Some(shannon(w.iter().flatten().copied())));
     // 文字は日本語の文字に限らない全文字である。
-    let chars = shannon(prose.iter().flat_map(|s| s.text.chars()).map(CharKey));
-    vec![Measured::Value(words), Measured::Value(chars)]
+    //
+    // <strong>語の窓から取る。</strong> 地の文をそのまま数えると、語の側と文字の側で
+    // 窓が揃わない——[除外は指標に掛かる](../../../docs/spec/100-metrics.md#除外の既定)
+    // ものであって、次元ごとに違う切り方を持たない。
+    let chars = averaged(&ws, |w| {
+        Some(shannon(
+            w.iter().flatten().flat_map(|t| t.chars()).map(CharKey),
+        ))
+    });
+    vec![words, chars]
 }
 
 /// 文字を鍵にする。`char` のままでは`shannon`の型が合わない。
@@ -664,15 +747,15 @@ mod tests {
 
     #[test]
     fn 語彙が散るほどエントロピーは高い() {
-        let (p1, same) = tokens("あ あ あ あ あ あ あ あ あ あ", 150);
+        let (_, same) = tokens("あ あ あ あ あ あ あ あ あ あ", 150);
         let words: String = (0..1500)
             .map(|i| format!("w{i} "))
             .collect::<Vec<_>>()
             .concat();
         let p2 = vec![seg(&words)];
         let varied = Analyzed::of(&p2, &Stub::unidic()).unwrap();
-        let a = entropy(&p1, Some(&same))[0].value().unwrap();
-        let b = entropy(&p2, Some(&varied))[0].value().unwrap();
+        let a = entropy(Some(&same))[0].value().unwrap();
+        let b = entropy(Some(&varied))[0].value().unwrap();
         assert!(a < b, "散るほうが高い: {a} vs {b}");
     }
 
@@ -686,8 +769,8 @@ mod tests {
     #[test]
     fn 文字のエントロピーも延べ語数で外す() {
         // 除外は指標に掛かる。次元ごとに違う下限を持たない。
-        let (p, a) = tokens("これ は 文 。", 10);
-        let e = entropy(&p, Some(&a));
+        let (_, a) = tokens("これ は 文 。", 10);
+        let e = entropy(Some(&a));
         assert!(e.iter().all(|m| !m.is_measured()), "2 次元とも外れる");
     }
 

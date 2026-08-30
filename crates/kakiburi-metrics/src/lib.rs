@@ -4,6 +4,7 @@
 
 pub mod definitions;
 pub mod humanness;
+pub mod lexicon;
 pub mod matching;
 pub mod mecab;
 pub mod morph;

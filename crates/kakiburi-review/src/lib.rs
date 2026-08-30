@@ -35,6 +35,65 @@ pub struct Review {
     /// <strong>枠を奪い合わせると、機械臭さを消す指示と、その人へ寄せる指示が、席を
     /// 取り合う。</strong>
     pub humanness: Vec<String>,
+    /// 本人の癖から外れているところ。<strong>書きぶりの枠を奪わない。</strong>
+    ///
+    /// <strong>判定には使わない。</strong> 実測で、この軸まで判定に入れるとカセットから抜いた
+    /// 本人の記事 16 本のうち幅の外に出るものが 2 本から 6 本に増えた。
+    pub habits: Vec<Point>,
+    /// 使われていない型。<strong>書きぶりの枠を奪わない。</strong>
+    ///
+    /// <strong>分布では言えないものがある。</strong> その人が繰り返し使う語の並びは、頻度の
+    /// ベクトルに均されて消える——[照合値](Self::matching)がどれだけ寄っても、
+    /// <strong>その人の型が 1 つも出てこない文章</strong>はありうる。
+    ///
+    /// <strong>判定には使わない。</strong> 実測で、本人の記事 50 本のうち 5 本が型を 1 つも
+    /// 使っていなかった。止める材料にはできない。
+    pub katas: Vec<String>,
+}
+
+/// その人の型 1 つ。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Kata {
+    /// 語の並び。<strong>穴あきなら、間を `〜` で見せた形。</strong>
+    pub text: String,
+    /// 本人の単位のうち、これが現れた割合。
+    pub rate: f64,
+    /// 文書の中での位置の中央。<strong>0 に近ければ書き出しの型である。</strong>
+    pub at: f64,
+    /// この文章に現れているか。
+    pub used: bool,
+}
+
+/// 使われていない型の渡し方。
+///
+/// <strong>どこで使うかまで言う。</strong> 位置が偏っている型は、そこで使うから型なのであって、
+/// どこかに混ぜればよいものではない。
+fn kata_remedies(katas: &[Kata]) -> Vec<String> {
+    let mut missing: Vec<&Kata> = katas.iter().filter(|k| !k.used).collect();
+    missing.sort_by(|a, b| {
+        b.rate
+            .partial_cmp(&a.rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    missing
+        .into_iter()
+        .take(MAX_POINTS)
+        .map(|k| {
+            let at = if k.at < 0.2 {
+                "書き出しで"
+            } else if k.at > 0.8 {
+                "結びで"
+            } else {
+                ""
+            };
+            format!(
+                "本人は{at}「{}」と書く（{:.0}% の記事で使っている）。この文章には出てこない。",
+                k.text,
+                k.rate * 100.0
+            )
+        })
+        .collect()
 }
 
 /// 照合の、次元ごとの観測。
@@ -57,6 +116,12 @@ pub struct MatchingObserved {
     ///
     /// <strong>「増やせ」と言うだけでは、どこに置くのかが分からない。</strong>
     pub examples: Vec<String>,
+    /// <strong>この文章の、直す場所。</strong>
+    ///
+    /// <strong>「減らせ」と言うなら、どれを減らすのかを言う。</strong> 本人の実例だけでは、
+    /// <strong>自分の文章のどこを直すのかが分からない</strong>——実測で、受け取った側が
+    /// 道具の外で数え直すことになった。
+    pub spots: Vec<String>,
 }
 
 /// 人らしさの、指標ごとの観測。<strong>正が人の側、負が機械の側。</strong>
@@ -103,21 +168,41 @@ pub struct HumannessObserved {
     pub target: f64,
 }
 
+/// 検めに渡す観測ぜんぶ。
+///
+/// <strong>ばらばらに渡さない。</strong> 段の数だけ引数が増えると、呼ぶ側が並びを間違えても
+/// 型が合ってしまう。
+pub struct Observations<'a> {
+    /// [検査](Inspected)の観測。<strong>0 段目。</strong>
+    pub inspections: &'a [Inspected],
+    /// 人らしさ値がどちら側か。<strong>1 段目。</strong>
+    pub humanness: Option<Side>,
+    /// 照合値がどちら側か。<strong>2 段目。</strong>
+    pub matching: Option<Side>,
+    /// 前に出す指標の観測。<strong>3 段目。</strong>
+    pub directives: &'a [Observed],
+    /// 一貫しているだけの指標の観測。<strong>判定には使わない。</strong>
+    ///
+    /// [条件 2](kakiburi_scale::effective::Effective::narrow_only)で捨てられた軸である
+    /// ——基準と本人が一致していても、草稿がそこから外れることはある。
+    pub habits: &'a [Observed],
+    /// 指標ごとの人らしさ値。<strong>1 段目の直し方を組む。</strong>
+    pub humanness_by_metric: &'a [HumannessObserved],
+    /// 相手集合から離れている次元。<strong>2 段目の直し方を組む。</strong>
+    pub diverging: &'a [MatchingObserved],
+    /// その人の型と、この文章で使われているか。
+    pub katas: &'a [Kata],
+}
+
 /// 検める。
 ///
 /// <strong>指摘は判定と同じ集合から取る。</strong> 別々に定めれば、止めた理由が指摘に出てこない
 /// という食い違いが起きる。
 #[must_use]
-pub fn review(
-    inspections: &[Inspected],
-    humanness: Option<Side>,
-    matching: Option<Side>,
-    directives: &[Observed],
-    remedies: &dyn Remedies,
-    humanness_by_metric: &[HumannessObserved],
-    diverging: &[MatchingObserved],
-) -> Review {
-    let outcome = judge(inspections, humanness, matching, directives);
+pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
+    let (humanness_by_metric, diverging, directives) =
+        (o.humanness_by_metric, o.diverging, o.directives);
+    let outcome = judge(o.inspections, o.humanness, o.matching, directives);
     // <strong>3 段目まで進んだときだけ書きぶりの指摘を組む。</strong> 前の段で止まったなら、
     // 出しても受け取った側は逆向きの直しをする。
     let points = if outcome.stage == Stage::Directive {
@@ -147,11 +232,33 @@ pub fn review(
     } else {
         Vec::new()
     };
+    // <strong>2 段目と 3 段目で渡す。</strong> 型はその人へ寄せるためのものなので、
+    // 人らしさの段で出せば、受け取った側は 2 つの目的を同時に追うことになる。
+    //
+    // <strong>通ったときにも渡す。</strong> 分布が寄っていても型が 1 つも出てこないことは
+    // ありうる——そこで黙れば、道具は「通った」としか言わないまま
+    // <strong>その人らしくない文章を返す。</strong>
+    let katas = if matches!(outcome.stage, Stage::Matching | Stage::Directive) {
+        kata_remedies(o.katas)
+    } else {
+        Vec::new()
+    };
+    // <strong>型と同じ扱いである。</strong> その人へ寄せるためのものなので、人らしさの段では出さない。
+    let habits = if matches!(outcome.stage, Stage::Matching | Stage::Directive) {
+        pick_points(o.habits)
+            .into_iter()
+            .filter_map(|(x, loc)| point::build(x, loc, remedies).ok())
+            .collect()
+    } else {
+        Vec::new()
+    };
     Review {
         outcome,
         points,
         matching,
         humanness,
+        habits,
+        katas,
     }
 }
 
@@ -185,6 +292,11 @@ fn matching_remedies(observed: &[MatchingObserved]) -> Vec<String> {
                 // <strong>本人がどう書いているかを見せる。</strong> 見せなければ、受け取った側は
                 // その人の文章を自分で読みに行くことになる。
                 line.push_str(&format!("本人はこう書いている: 「{}」。", o.examples.join("」「")));
+            }
+            if !o.spots.is_empty() {
+                // <strong>この文章のどこかを見せる。</strong> 本人の実例だけでは、自分の文章の
+                // どこを直すのかが分からない。
+                line.push_str(&format!("この文章のここ: 「{}」。", o.spots.join("」「")));
             }
             line
         })
@@ -299,13 +411,17 @@ mod tests {
     fn 通るときは指摘が無い() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[],
-            &[],
         );
         assert_eq!(r.outcome.verdict, Verdict::Pass);
         assert!(r.points.is_empty());
@@ -332,6 +448,7 @@ mod tests {
             theirs,
             effect: 0.05,
             examples: Vec::new(),
+            spots: Vec::new(),
         }
     }
 
@@ -342,13 +459,17 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let v = [diverge("機能語", "一方", 18.6, -0.2)];
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::InBand),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::InBand),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &v,
+                katas: &[],
+            },
             &All,
-            &[],
-            &v,
         );
         assert_eq!(r.outcome.stage, Stage::Matching);
         assert!(r.points.is_empty(), "書きぶりの枠は奪わない");
@@ -363,13 +484,17 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let v = [diverge("機能語", "のだ", -1.2, 2.4)];
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::InBand),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::InBand),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &v,
+                katas: &[],
+            },
             &All,
-            &[],
-            &v,
         );
         assert!(r.matching[0].contains("少ない"), "{:?}", r.matching);
         assert!(r.matching[0].contains("増やす"), "{:?}", r.matching);
@@ -383,13 +508,17 @@ mod tests {
             .map(|i| diverge("機能語", &format!("語{i}"), f64::from(i), 0.0))
             .collect();
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::InBand),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::InBand),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &v,
+                katas: &[],
+            },
             &All,
-            &[],
-            &v,
         );
         assert_eq!(r.matching.len(), MAX_POINTS, "{:?}", r.matching);
     }
@@ -398,7 +527,19 @@ mod tests {
     fn 照合を通ったら照合の直し方は出さない() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let v = [diverge("機能語", "一方", 18.6, -0.2)];
-        let r = review(&[], Some(Side::Human), Some(Side::Human), &d, &All, &[], &v);
+        let r = review(
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &v,
+                katas: &[],
+            },
+            &All,
+        );
         assert!(r.matching.is_empty(), "{:?}", r.matching);
     }
 
@@ -411,13 +552,17 @@ mod tests {
         let mut done = human("圧縮率", 0.4);
         done.effect = 0.0;
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[ok, done],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[ok, done],
-            &[],
         );
         assert_eq!(r.outcome.stage, Stage::Humanness);
         assert!(r.points.is_empty(), "書きぶりの枠は奪わない");
@@ -434,13 +579,17 @@ mod tests {
         h.raise = false;
         h.overused = vec!["ます。".into(), "ています".into()];
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[h],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[h],
-            &[],
         );
         assert!(r.humanness[0].contains("ます。"), "{:?}", r.humanness);
     }
@@ -453,13 +602,17 @@ mod tests {
         let mut h = human("長い繰り返し", -0.4);
         h.phrases = vec!["と思っています".into(), "しています。".into()];
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[h],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[h],
-            &[],
         );
         assert!(
             r.humanness[0].contains("と思っています"),
@@ -479,13 +632,17 @@ mod tests {
         let mut good = human("圧縮率", -0.78);
         good.effect = 0.99;
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[bad, good],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[bad, good],
-            &[],
         );
         assert_eq!(r.humanness.len(), 1, "{:?}", r.humanness);
         assert!(r.humanness[0].contains("圧縮率"), "{:?}", r.humanness);
@@ -501,13 +658,17 @@ mod tests {
         let mut shallow = human("圧縮率", -0.3);
         shallow.effect = 0.90;
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[deep, shallow],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[deep, shallow],
-            &[],
         );
         assert!(
             r.humanness[0].contains("圧縮率"),
@@ -526,13 +687,17 @@ mod tests {
         let mut b = human("圧縮率", 0.4);
         b.effect = -0.2;
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[a, b],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[a, b],
-            &[],
         );
         assert!(r.humanness.is_empty(), "{:?}", r.humanness);
     }
@@ -543,13 +708,17 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("繰り返し", -1.2)];
         let r = review(
-            &[],
-            Some(Side::InBand),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::InBand),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &h,
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &h,
-            &[],
         );
         assert_eq!(r.outcome.stage, Stage::Humanness);
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
@@ -561,7 +730,19 @@ mod tests {
         // **測れていないことと、機械の側にあることは違う。** 混ぜれば、短いだけの
         // 文章に「繰り返しを足せ」と言うことになる。
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
-        let r = review(&[], None, Some(Side::Human), &d, &All, &[], &[]);
+        let r = review(
+            &Observations {
+                inspections: &[],
+                humanness: None,
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
+            &All,
+        );
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
         assert!(r.humanness.is_empty());
     }
@@ -570,7 +751,19 @@ mod tests {
     fn 通るときは人らしさの直し方も無い() {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("繰り返し", -1.2)];
-        let r = review(&[], Some(Side::Human), Some(Side::Human), &d, &All, &h, &[]);
+        let r = review(
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &h,
+                diverging: &[],
+                katas: &[],
+            },
+            &All,
+        );
         assert!(r.humanness.is_empty(), "{:?}", r.humanness);
     }
 
@@ -584,25 +777,33 @@ mod tests {
         let mut down = human("圧縮率", -0.9);
         down.raise = false;
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[down],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[down],
-            &[],
         );
         assert_eq!(r.humanness.len(), 1, "{:?}", r.humanness);
         assert!(r.humanness[0].contains("減らす"), "{:?}", r.humanness);
 
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[human("圧縮率", -0.9)],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[human("圧縮率", -0.9)],
-            &[],
         );
         assert!(r.humanness[0].contains("足す"), "{:?}", r.humanness);
     }
@@ -623,13 +824,17 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("圧縮率", -0.9)];
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &h,
+                diverging: &[],
+                katas: &[],
+            },
             &UpperOnly,
-            &h,
-            &[],
         );
         assert_eq!(r.humanness.len(), 1, "{:?}", r.humanness);
         assert!(r.humanness[0].contains("減らす"), "{:?}", r.humanness);
@@ -640,13 +845,17 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let h = [human("繰り返し", -1.2)];
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &h,
+                diverging: &[],
+                katas: &[],
+            },
             &None_,
-            &h,
-            &[],
         );
         assert!(r.humanness.is_empty(), "{:?}", r.humanness);
     }
@@ -656,13 +865,17 @@ mod tests {
         // 出せば、受け取った側は照合値を上げようとして人らしさを下げる。
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
         let r = review(
-            &[],
-            Some(Side::Machine),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[],
-            &[],
         );
         assert_eq!(r.outcome.stage, Stage::Humanness);
         assert!(r.points.is_empty(), "指摘を出してはいけない");
@@ -672,13 +885,17 @@ mod tests {
     fn 照合値で止まっても指摘を出さない() {
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::InBand),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::InBand),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[],
-            &[],
         );
         assert_eq!(r.outcome.stage, Stage::Matching);
         assert!(r.points.is_empty());
@@ -691,13 +908,17 @@ mod tests {
             observed("感嘆符", 10.0, 0.0, 1.0),
         ];
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[],
-            &[],
         );
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
         assert_eq!(r.points.len(), 2);
@@ -710,13 +931,17 @@ mod tests {
         // 止めた理由が指摘に出てこないという食い違いを防ぐ。
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[],
-            &[],
         );
         assert!(
             r.outcome.reason.contains("全角括弧"),
@@ -732,13 +957,17 @@ mod tests {
         // 「言えるものがある以上、言って次の周へ回す」である。
         let d = [observed("全角括弧", 5.0, 0.0, 2.0)];
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
             &None_,
-            &[],
-            &[],
         );
         assert_eq!(r.outcome.verdict, Verdict::Unknown);
         assert!(r.points.is_empty());
@@ -750,14 +979,61 @@ mod tests {
             .map(|i| observed(&format!("m{i:02}"), 5.0, 0.0, 2.0))
             .collect();
         let r = review(
-            &[],
-            Some(Side::Human),
-            Some(Side::Human),
-            &d,
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+            },
             &All,
-            &[],
-            &[],
         );
         assert_eq!(r.points.len(), MAX_POINTS);
+    }
+
+    fn kata(text: &str, rate: f64, at: f64, used: bool) -> Kata {
+        Kata {
+            text: text.into(),
+            rate,
+            at,
+            used,
+        }
+    }
+
+    #[test]
+    fn 使われている型は渡さない() {
+        let got = kata_remedies(&[kata("となります。", 0.3, 0.5, true)]);
+        assert!(got.is_empty(), "{got:?}");
+    }
+
+    #[test]
+    fn 使われていない型は割合とともに渡す() {
+        let got = kata_remedies(&[kata("となります。", 0.3, 0.5, false)]);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].contains("となります。"), "{}", got[0]);
+        assert!(got[0].contains("30%"), "{}", got[0]);
+    }
+
+    #[test]
+    fn 位置の偏った型はどこで使うかまで言う() {
+        // **そこで使うから型なのであって、どこかに混ぜればよいものではない。**
+        let head = kata_remedies(&[kata("ご無沙汰しております", 0.26, 0.03, false)]);
+        assert!(head[0].contains("書き出しで"), "{}", head[0]);
+        let tail = kata_remedies(&[kata("以上です。", 0.26, 0.95, false)]);
+        assert!(tail[0].contains("結びで"), "{}", tail[0]);
+        let mid = kata_remedies(&[kata("となります。", 0.3, 0.5, false)]);
+        assert!(!mid[0].contains("書き出し"), "{}", mid[0]);
+    }
+
+    #[test]
+    fn 型は広く使う順に渡す() {
+        let got = kata_remedies(&[
+            kata("たまに書く", 0.26, 0.5, false),
+            kata("よく書く", 0.42, 0.5, false),
+        ]);
+        assert!(got[0].contains("よく書く"), "{}", got[0]);
     }
 }

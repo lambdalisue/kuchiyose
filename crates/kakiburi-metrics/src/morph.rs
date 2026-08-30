@@ -37,6 +37,15 @@ impl Morpheme {
     pub fn is_conjunction(&self) -> bool {
         self.pos1 == "接続詞"
     }
+
+    /// 前の語に付く語か。助詞と助動詞。
+    ///
+    /// <strong>単独で文節を始められない。</strong> だから読点の直後にこれが来ていたら、
+    /// [語を割っているかもしれない](splitting_commas)。
+    #[must_use]
+    pub fn is_clinging(&self) -> bool {
+        matches!(self.pos1.as_str(), "助詞" | "助動詞")
+    }
 }
 
 /// 辞書の体系。
@@ -108,6 +117,62 @@ pub fn check(analyzer: &dyn Analyzer) -> Result<(), MorphError> {
     Err(MorphError::WrongDictionary { name, version })
 }
 
+/// 読点を外したら語が繋がる箇所を探す。
+///
+/// **道具が「読点を増やせ」と言った結果、語の内側に読点が入ることがある。**
+/// `あらため、て` は `改めて` を割っている。`ある、という` は割っていない。
+///
+/// 読点を抜いて解析し直し、**読点があった位置に語の切れ目が残るか**を見る。
+/// 残らなければ、読点は語の内側にあったということである。
+///
+/// **直後が付属語のものだけを見る。** 絞らないと `あ、あと` や
+/// `リンタ、フォーマッタ` で誤る——名詞どうしの並びは、読点を外せば別の語に
+/// 読めてしまう。実測では、絞らないと素材 71 本のうち 5 本で誤り、絞ると 0 本になった。
+///
+/// **窓は前後 3 形態素に切る。** 文書ぜんぶを解析し直すと、離れた場所の切れ目の
+/// 変化まで拾ってしまう。
+fn splitting_commas(segments: &[Vec<Morpheme>], analyzer: &dyn Analyzer) -> Vec<String> {
+    const NEAR: usize = 3;
+    let mut windows: Vec<String> = Vec::new();
+    let mut cuts: Vec<(String, usize)> = Vec::new();
+    for seg in segments {
+        for i in 1..seg.len().saturating_sub(1) {
+            if seg[i].surface != "、" || !seg[i + 1].is_clinging() {
+                continue;
+            }
+            let lo = i.saturating_sub(NEAR);
+            let hi = (i + NEAR + 1).min(seg.len());
+            let near: Vec<&str> = seg[lo..hi].iter().map(|m| m.surface.as_str()).collect();
+            let cut = i - lo;
+            let at: usize = near[..cut].iter().map(|s| s.len()).sum();
+            windows.push(near[..cut].concat() + &near[cut + 1..].concat());
+            cuts.push((near.concat(), at));
+        }
+    }
+    if windows.is_empty() {
+        return Vec::new();
+    }
+    let refs: Vec<&str> = windows.iter().map(String::as_str).collect();
+    let got = analyzer.analyze_all(&refs);
+    if got.len() != refs.len() {
+        return Vec::new();
+    }
+    got.iter()
+        .zip(cuts)
+        .filter(|(ms, (_, at))| {
+            let mut n = 0usize;
+            // 位置 0 は必ず切れ目である。
+            !std::iter::once(0)
+                .chain(ms.iter().map(|m| {
+                    n += m.surface.len();
+                    n
+                }))
+                .any(|e| e == *at)
+        })
+        .map(|(_, (context, _))| context)
+        .collect()
+}
+
 /// 解析し終えた地の文。
 ///
 /// <strong>1 度だけ解析して、指標のあいだで使い回す。</strong> 指標ごとに解析器を呼べば、外の
@@ -119,6 +184,7 @@ pub fn check(analyzer: &dyn Analyzer) -> Result<(), MorphError> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Analyzed {
     segments: Vec<Vec<Morpheme>>,
+    split_commas: Vec<String>,
 }
 
 impl Analyzed {
@@ -127,17 +193,46 @@ impl Analyzed {
         prose: &[kakiburi_doc::prose::Segment],
         analyzer: &dyn Analyzer,
     ) -> Result<Self, MorphError> {
+        Self::with_lexicon(prose, analyzer, &crate::lexicon::Lexicon::default())
+    }
+
+    /// 地の文を解析し、<strong>コーパスから見つけた語を畳む。</strong>
+    ///
+    /// 辞書に無い語は複数の語に割れる。割れたままだと、その語のところで
+    /// 機能語の分布も品詞 bigram も型も狂う（[語](crate::lexicon)）。
+    pub fn with_lexicon(
+        prose: &[kakiburi_doc::prose::Segment],
+        analyzer: &dyn Analyzer,
+        lexicon: &crate::lexicon::Lexicon,
+    ) -> Result<Self, MorphError> {
         check(analyzer)?;
         let texts: Vec<&str> = prose.iter().map(|s| s.text.as_str()).collect();
-        let segments = analyzer.analyze_all(&texts);
+        let mut segments = analyzer.analyze_all(&texts);
+        for seg in &mut segments {
+            lexicon.fold(seg);
+        }
         // <strong>並びがずれたら受け取らない。</strong> ずれれば、node を跨がないはずの指標が
         // 別の node の形態素を数える——エラーにならず、値だけが違う。
         if segments.len() != texts.len() {
             return Ok(Self {
                 segments: vec![Vec::new(); texts.len()],
+                split_commas: Vec::new(),
             });
         }
-        Ok(Self { segments })
+        let split_commas = splitting_commas(&segments, analyzer);
+        Ok(Self {
+            segments,
+            split_commas,
+        })
+    }
+
+    /// 語を割っている読点の、前後の並び。
+    ///
+    /// 解析器を要るのでここで数える。[`Analyzed`]を作る道は 1 つしかないので、
+    /// 指標の側から解析器を呼び直さずに済む。
+    #[must_use]
+    pub fn split_commas(&self) -> &[String] {
+        &self.split_commas
     }
 
     /// node ごとの形態素列。<strong>跨がない指標はこちらを使う。</strong>

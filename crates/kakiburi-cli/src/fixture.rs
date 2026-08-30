@@ -42,7 +42,9 @@ impl Analyzer for Chars {
 /// <strong>長さは単位ごとに散らす。</strong> 揃えると広がりが 0 になり、長さの範囲の検査で止まる。
 pub fn document(index: usize, machine: bool) -> Document {
     let seed = index * if machine { 17 } else { 13 };
-    let nodes: Vec<Node> = (0..60 + index * 4)
+    // <strong>畳まれても下限に届く量にする。</strong> 作り物の文は繰り返しが強いので、
+    // [コーパスから見つけた語](kakiburi_metrics::lexicon)が実素材より多く畳む。
+    let nodes: Vec<Node> = (0..90 + index * 4)
         .map(|i| {
             let (a, b, c, d) = if machine {
                 // 機械の側。<strong>語を散らす</strong>——繰り返しが足りない側に出る。

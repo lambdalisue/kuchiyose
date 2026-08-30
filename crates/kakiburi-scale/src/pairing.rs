@@ -6,7 +6,7 @@
 //!
 //! <strong>単位は共有する。対は共有しない。</strong>
 
-use crate::split::Split;
+use crate::split::{Split, Unit};
 
 /// 対。順序を持たない——`(a, b)` と `(b, a)` は同じ対である。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,7 +35,7 @@ impl Pair {
 pub struct Pairing {
     /// 較正・同じ人の側。<strong>相手集合の中の対。</strong>
     pub calibration_same: Vec<Pair>,
-    /// 較正・違う人の側。<strong>基準の較正分 × 相手集合。</strong>
+    /// 較正・違う人の側。<strong>基準の較正分 × 相手集合</strong>と、<strong>他人 × 相手集合</strong>。
     pub calibration_different: Vec<Pair>,
     /// 天井。測る分の本人の単位 1 本 × 相手集合。1 本につき 1 点。
     pub ceiling: Vec<(String, Vec<Pair>)>,
@@ -47,7 +47,7 @@ pub struct Pairing {
 ///
 /// <strong>相手集合は較正にも天井にも現れるが、同じ対は 2 度使わない。</strong>
 #[must_use]
-pub fn pair(person: &Split, baseline: &Split) -> Pairing {
+pub fn pair(person: &Split, baseline: &Split, others: &[Unit]) -> Pairing {
     // 較正・同じ人の側は相手集合の中だけで閉じる。
     let mut calibration_same = Vec::new();
     for i in 0..person.partners.len() {
@@ -64,6 +64,19 @@ pub fn pair(person: &Split, baseline: &Split) -> Pairing {
     for b in &baseline.partners {
         for p in &person.partners {
             calibration_different.push(Pair::new(&b.name, &p.name));
+        }
+    }
+    // <strong>他人が手に入るなら、違う人の側に足す。</strong>
+    //
+    // <strong>基準だけで学習すると、測っているのは「その人らしさ」ではなく
+    // 「この基準との違い」になる。</strong> 基準と本人が共有している癖——同じ敬体で書く、
+    // といったこと——は、その系統の距離が動かないので重みが 0 に落ちる。
+    //
+    // 実測でそれが起きた。ですます体を丸ごとである体に変えても照合値は中央 +0.002 しか
+    // 動かず、機能語の重みは 0.106（ほかの系統は 0.507〜0.705）だった。
+    for o in others {
+        for p in &person.partners {
+            calibration_different.push(Pair::new(&o.name, &p.name));
         }
     }
     // 天井と床は相手集合の外の単位から出る。
@@ -143,7 +156,7 @@ mod tests {
     fn pairing() -> Pairing {
         let person = split(&units("p", 10)).unwrap();
         let baseline = split(&units("b", 10)).unwrap();
-        pair(&person, &baseline)
+        pair(&person, &baseline, &[])
     }
 
     #[test]
@@ -188,7 +201,7 @@ mod tests {
         let baseline = split(&units("b", 10)).unwrap();
         let mut bad = baseline.clone();
         bad.points = bad.partners.clone(); // 割らなかった状態
-        let p = pair(&person, &bad);
+        let p = pair(&person, &bad, &[]);
         assert!(
             p.shares_pairs(),
             "割らなければ共有が起きる——それを検出できる"

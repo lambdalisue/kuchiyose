@@ -110,6 +110,87 @@ pub fn conjunction_comma_names() -> Vec<String> {
     out
 }
 
+/// その単位に現れる語の並びと、文書の中での位置。
+///
+/// <strong>型を取り出すための材料である</strong>——並びが本人の多くの単位に現れ、基準にほとんど
+/// 現れないなら、それはその人の型である（[取り出し](../../kakiburi-scale/src/assemble.rs)）。
+///
+/// <strong>英数字を含む並びは落とす。</strong> URL・パス・製品名は題材であって書きぶりではない
+/// ——[識別子を伏せる](kakiburi_doc::prose::mask_identifiers)のと同じ理由である。
+///
+/// 位置は <strong>node の番号 ÷ node の総数</strong>。書き出しにしか現れない並びは、書き出しの型
+/// である。<strong>node の番号も返す</strong>——同じ node に現れる 2 つの型は、
+/// [穴あきの型](../../kakiburi-scale/src/assemble.rs)として繋がる。
+#[must_use]
+pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(String, f64, usize)> {
+    let Some(a) = analyzed else {
+        return Vec::new();
+    };
+    let total = a.segments().len().max(1);
+    let mut out = Vec::new();
+    for (i, seg) in a.segments().iter().enumerate() {
+        let words: Vec<(&str, &str)> = seg
+            .iter()
+            .map(|m| (m.surface.as_str(), m.pos1.as_str()))
+            .collect();
+        #[allow(clippy::cast_precision_loss)]
+        let at = i as f64 / total as f64;
+        for &n in ns {
+            for w in words.windows(n) {
+                let text: String = w.iter().map(|(s, _)| *s).collect();
+                // <strong>伏せ字を含む並びは型ではない。</strong> 識別子を畳んだ跡であって、
+                // 書き手が選んだ言い回しではない——渡せば「ゐゑと書け」と言うことになる。
+                // <strong>伏せ字の一部でも落とす。</strong> 並びが伏せ字の途中から始まれば、
+                // 全体は含まないのに欠片が残る。
+                if text
+                    .chars()
+                    .any(|c| kakiburi_doc::prose::SENTINEL.contains(c))
+                    || text.chars().any(|c| c.is_ascii_alphanumeric())
+                    || !text.chars().any(kakiburi_doc::text::is_japanese)
+                {
+                    continue;
+                }
+                // <strong>自立語を 1 つ以上含む。</strong> 付属語だけの並びは誰でも書くし、
+                // 機能語の系統が既に見ている——`ですね。` `に関しては` が型として
+                // 並んでも、その人の癖にはならない。
+                if !w.iter().any(is_content) {
+                    continue;
+                }
+                out.push((text, at, i));
+            }
+        }
+    }
+    out
+}
+
+/// 自立語か。<strong>単独で文節を始められる語。</strong>
+fn is_content(m: &(&str, &str)) -> bool {
+    matches!(
+        m.1,
+        "名詞" | "動詞" | "形容詞" | "副詞" | "接続詞" | "感動詞"
+    )
+}
+
+/// 語を割っている読点の数。
+///
+/// <strong>道具が「読点を増やせ」と言った結果、語の内側に読点が入ることがある。</strong>
+/// `あらため、て取得し直す` は `改めて` を割っている。指標は満たされ、日本語は壊れる。
+///
+/// <strong>数え方は[解析のとき](kakiburi_metrics::morph::Analyzed)に済ませてある</strong>——
+/// 読点を抜いて解析し直す必要があり、解析器を持っているのはそこだけである。
+///
+/// <strong>線は 0 である。</strong> 実測で、素材 71 本・読点 3,721 個のうち<strong>1 つも当たらなかった</strong>
+/// ——`ある、という` も `さて、では` も `はい、なので` も、読点を外して語が繋がらない。
+/// 壊れた草稿の `あらため、て` だけが当たる。
+#[must_use]
+pub fn splitting_commas(analyzed: Option<&Analyzed>) -> Measured {
+    let Some(a) = analyzed else {
+        return Measured::ToolMissing;
+    };
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(a.split_commas().len() as f64)
+}
+
 /// 接続詞直後の読点。<strong>語彙素 × 位置ごとのスカラー。</strong>
 ///
 /// 名前は「接続詞直後の読点・&lt;語彙素&gt;・&lt;文頭|文中&gt;」。12 × 2 = 24 本になる。
@@ -394,5 +475,18 @@ mod tests {
         let repeated = "同じ ".repeat(200);
         // 異なり語が 1 つしかないので、100 に届かない。
         assert_eq!(word_style(&analyzed(&[&repeated]), &Table), None);
+    }
+
+    #[test]
+    fn 語を割る読点は付属語が続くものだけを候補にする() {
+        // 名詞が続く並びは候補にしない。**絞らないと `あ、あと` で誤る。**
+        let a = analyzed(&["あ 、 あと ちなみに"]);
+        assert_eq!(splitting_commas(Some(&a)), Measured::Value(0.0));
+    }
+
+    #[test]
+    fn 語を割る読点は解析器が無ければ測らない() {
+        // **0 を返さない。** 0 は「数えて 0 だった」という値である。
+        assert_eq!(splitting_commas(None), Measured::ToolMissing);
     }
 }
