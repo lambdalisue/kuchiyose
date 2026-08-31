@@ -2880,14 +2880,20 @@ fn measure(args: &[String]) -> Exit {
     println!("日本語 {} 字", doc.japanese_chars());
     // <strong>形態素の数も出す。</strong> 字数で足りていても語で足りないことがあり、
     // そのとき何が測れないかが字数からは分からない。
+    // <strong>解析できたものは測る側にも渡す。</strong> ここで捨てると、辞書を指しているのに
+    // 解析器を要る軸が「道具が無い」で並ぶ。
+    let mut analyzed = None;
     if let Some(m) = analyzer::resolve() {
         match kakiburi_metrics::morph::Analyzed::of(&doc.prose(), &m) {
-            Ok(a) => println!(
-                "延べ {} 語（{} {}）",
-                a.tokens(),
-                m.dict_name,
-                m.dict_version
-            ),
+            Ok(a) => {
+                println!(
+                    "延べ {} 語（{} {}）",
+                    a.tokens(),
+                    m.dict_name,
+                    m.dict_version
+                );
+                analyzed = Some(a);
+            }
             Err(e) => println!("形態素解析できない: {e}"),
         }
     }
@@ -2901,7 +2907,7 @@ fn measure(args: &[String]) -> Exit {
     println!();
     println!("指示できる指標");
     println!("{}", "-".repeat(46));
-    for (name, m) in measured(&doc) {
+    for (name, m) in measured_with(&doc, analyzed.as_ref()) {
         match m.unmeasured() {
             None => println!("  {name:<28} {:>10.3}", m.value().unwrap_or_default()),
             // <strong>理由をそのまま出す。</strong> まとめて「測れない」と出せば、辞書を入れ忘れた
