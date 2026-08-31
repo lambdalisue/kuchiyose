@@ -135,10 +135,39 @@ pub fn conjunction_comma_names() -> Vec<String> {
     out
 }
 
+/// 形態素列を文節に割る。<strong>自立語 1 つと、それに続く付属語。</strong>
+///
+/// <strong>文節が並びの単位である。</strong> 形態素の窓で切ると、`が地味` `に分け` `が含ま` の
+/// ような<strong>言葉として立たない断片</strong>が候補を埋める——実測で、機械の型を
+/// 出したときに上位がそういう断片ばかりになった。<strong>並べ替えでは直らない。</strong>
+/// 候補の集合そのものが断片でできているからである。
+///
+/// <strong>自立語が続くときは切らない。</strong> `フロント`＋`エンド` のような複合語は 1 つの
+/// 文節である。切ると、複合語の途中から始まる並びが出る。
+fn bunsetsu(words: &[(&str, &str)]) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    for (i, w) in words.iter().enumerate() {
+        // <strong>自立語で始まる。</strong> 直前も自立語なら複合語なので切らない。
+        let starts = is_content(w) && !out.last().is_some_and(|_| is_content(&words[i - 1]));
+        if starts || out.is_empty() {
+            out.push((i, i + 1));
+        } else if let Some(last) = out.last_mut() {
+            last.1 = i + 1;
+        }
+    }
+    // <strong>先頭が付属語で始まる塊は落とす。</strong> 文節ではなく、前の文の残りである。
+    if out.first().is_some_and(|&(s, _)| !is_content(&words[s])) {
+        out.remove(0);
+    }
+    out
+}
+
 /// その単位に現れる語の並びと、文書の中での位置。
 ///
 /// <strong>型を取り出すための材料である</strong>——並びが本人の多くの単位に現れ、基準にほとんど
 /// 現れないなら、それはその人の型である（[取り出し](../../kakiburi-scale/src/assemble.rs)）。
+///
+/// <strong>数えるのは[文節](bunsetsu)の並びである。</strong> `ns` は文節の数を指す。
 ///
 /// <strong>英数字を含む並びは落とす。</strong> URL・パス・製品名は題材であって書きぶりではない
 /// ——[識別子を伏せる](kakiburi_doc::prose::mask_identifiers)のと同じ理由である。
@@ -160,8 +189,11 @@ pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(St
             .collect();
         #[allow(clippy::cast_precision_loss)]
         let at = i as f64 / total as f64;
+        let bs = bunsetsu(&words);
         for &n in ns {
-            for w in words.windows(n) {
+            for span in bs.windows(n) {
+                let (from, to) = (span[0].0, span[span.len() - 1].1);
+                let w = &words[from..to];
                 let text: String = w.iter().map(|(s, _)| *s).collect();
                 // <strong>伏せ字を含む並びは型ではない。</strong> 識別子を畳んだ跡であって、
                 // 書き手が選んだ言い回しではない——渡せば「ゐゑと書け」と言うことになる。
@@ -175,12 +207,6 @@ pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(St
                 {
                     continue;
                 }
-                // <strong>自立語を 1 つ以上含む。</strong> 付属語だけの並びは誰でも書くし、
-                // 機能語の系統が既に見ている——`ですね。` `に関しては` が型として
-                // 並んでも、その人の癖にはならない。
-                if !w.iter().any(is_content) {
-                    continue;
-                }
                 out.push((text, at, i));
             }
         }
@@ -189,10 +215,18 @@ pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(St
 }
 
 /// 自立語か。<strong>単独で文節を始められる語。</strong>
+///
+/// <strong>UniDic の体系をそのまま使う。</strong> 学校文法の「名詞」「形容動詞」を当てはめると
+/// 落ちるものが出る——<strong>UniDic は な形容詞の語幹を `形状詞` に、`私` `これ` を
+/// `代名詞` に分ける。</strong>
+///
+/// 実測で、この 2 つを落としていたために<strong>「地味に」が並びとして一度も拾えなかった</strong>
+/// ——`地味` は `形状詞` なので、`地味`＋`に` は自立語を含まない並びと見なされていた。
+/// 同じ理由で 静か・便利・重要・簡単・快適 も、すべて見えていなかった。
 fn is_content(m: &(&str, &str)) -> bool {
     matches!(
         m.1,
-        "名詞" | "動詞" | "形容詞" | "副詞" | "接続詞" | "感動詞"
+        "名詞" | "代名詞" | "形状詞" | "動詞" | "形容詞" | "副詞" | "接続詞" | "感動詞"
     )
 }
 

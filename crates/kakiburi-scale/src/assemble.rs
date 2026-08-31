@@ -514,8 +514,11 @@ pub const PHRASES: usize = 20;
 
 /// 型として見る語の並びの長さ。<strong>暫定値である。</strong>
 ///
+/// <strong>数えるのは[文節](kakiburi_metrics::word)の数である</strong>——形態素の窓ではない。
+/// 窓で切ると `が地味` `に分け` のような、言葉として立たない断片が候補を埋める。
+///
 /// 短すぎれば誰でも書く並びになり、長すぎれば 1 本にしか出てこない。
-pub const KATA_N: [usize; 7] = [2, 3, 4, 5, 6, 7, 8];
+pub const KATA_N: [usize; 4] = [1, 2, 3, 4];
 
 /// 型と認める、本人の単位に現れる割合。<strong>暫定値である。</strong>
 pub const KATA_PERSON_MIN: f64 = 0.10;
