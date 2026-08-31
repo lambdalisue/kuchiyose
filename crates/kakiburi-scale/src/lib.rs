@@ -202,6 +202,15 @@ pub struct Scale {
     /// 手で並べた定型ではない——道具は書き手を選ばないので、特定の言い回しを実装に
     /// 持たない（[取り出し](assemble::Kata)）。
     pub katas: Vec<assemble::Kata>,
+    /// <strong>機械の型。</strong> 基準がよく使い、本人がほとんど使わない語の並び。
+    ///
+    /// [その人の型](Self::katas)と同じ仕組みを、役を入れ替えて回したものである。
+    /// <strong>片側だけでは足りない</strong>——本人の型が入っていないことは言えても、
+    /// <strong>機械の言い回しが残っていることが言えない。</strong>
+    ///
+    /// 実測で、本人が 50 単位中 1 度も使わない「地味に〜」を、基準は 21 単位中 3 本で
+    /// 使っていた。<strong>元の草稿にそのまま残り、判定は通っていた。</strong>
+    pub machine_katas: Vec<assemble::Kata>,
 }
 
 impl Scale {

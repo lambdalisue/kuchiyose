@@ -49,6 +49,14 @@ pub struct Review {
     /// <strong>判定には使わない。</strong> 実測で、本人の記事 50 本のうち 5 本が型を 1 つも
     /// 使っていなかった。止める材料にはできない。
     pub katas: Vec<String>,
+    /// 残っている機械の型。<strong>書きぶりの枠を奪わない。</strong>
+    ///
+    /// <strong>片側だけでは足りない。</strong>[使われていない型](Self::katas)は「本人のものが
+    /// 入っていない」ことしか言えず、<strong>機械の言い回しが残っていることは言えない。</strong>
+    ///
+    /// <strong>判定には使わない。</strong> 基準がよく使う並びでも、本人が偶然そう書くことは
+    /// ありうる——止める材料にはできない。
+    pub machine_katas: Vec<String>,
 }
 
 /// その人の型 1 つ。
@@ -62,6 +70,19 @@ pub struct Kata {
     pub at: f64,
     /// この文章に現れているか。
     pub used: bool,
+    /// <strong>この文章の、直す場所。</strong> 現れた箇所の前後。
+    ///
+    /// <strong>「言い換えろ」と言うなら、どこを言い換えるのかを言う。</strong> 並びだけを渡せば、
+    /// 受け取った側が道具の外で探し直すことになる——
+    /// [照合の指摘](MatchingObserved::spots)と同じ理由である。
+    pub spots: Vec<String>,
+    /// この文章に現れた回数。
+    ///
+    /// <strong>繰り返し出ているものを先に出す。</strong> 基準での割合だけで並べると、
+    /// <strong>誰でも書く並びが、その機械の癖を押し出す</strong>——実測で、基準の 44% が使う
+    /// 「ことがあり」が、11% しか使わないが草稿では 4 回出ている「地味に」を
+    /// 隠していた。<strong>癖は 1 度ではなく何度も出る。</strong>
+    pub times: usize,
 }
 
 /// 使われていない型の渡し方。
@@ -90,6 +111,39 @@ fn kata_remedies(katas: &[Kata]) -> Vec<String> {
             format!(
                 "本人は{at}「{}」と書く（{:.0}% の記事で使っている）。この文章には出てこない。",
                 k.text,
+                k.rate * 100.0
+            )
+        })
+        .collect()
+}
+
+/// 残っている機械の型の渡し方。
+///
+/// <strong>使われている側を渡す。</strong>[その人の型](kata_remedies)とは向きが逆で、
+/// あちらは入っていないものを、こちらは入っているものを言う。
+fn machine_kata_remedies(katas: &[Kata]) -> Vec<String> {
+    let mut used: Vec<&Kata> = katas.iter().filter(|k| k.used).collect();
+    // <strong>草稿で繰り返している順。</strong> 基準での割合は同点の決め手にしか使わない。
+    used.sort_by(|a, b| {
+        b.times.cmp(&a.times).then_with(|| {
+            b.rate
+                .partial_cmp(&a.rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.text.cmp(&b.text))
+        })
+    });
+    used.into_iter()
+        .take(MAX_POINTS)
+        .map(|k| {
+            let where_ = if k.spots.is_empty() {
+                String::new()
+            } else {
+                format!(" 出ている箇所: {}", k.spots.join("／"))
+            };
+            format!(
+                "「{}」がこの文章に {} 回。基準の {:.0}% が使い、本人は使わない。言い換える。{where_}",
+                k.text,
+                k.times,
                 k.rate * 100.0
             )
         })
@@ -192,6 +246,8 @@ pub struct Observations<'a> {
     pub diverging: &'a [MatchingObserved],
     /// その人の型と、この文章で使われているか。
     pub katas: &'a [Kata],
+    /// 機械の型と、この文章で使われているか。
+    pub machine_katas: &'a [Kata],
 }
 
 /// 検める。
@@ -243,6 +299,9 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
     } else {
         Vec::new()
     };
+    // <strong>こちらは人らしさで止まったときにも出す。</strong> 機械の言い回しが残っている
+    // ことは、機械の側で止まった理由そのものでありうる。
+    let machine_katas = machine_kata_remedies(o.machine_katas);
     // <strong>型と同じ扱いである。</strong> その人へ寄せるためのものなので、人らしさの段では出さない。
     let habits = if matches!(outcome.stage, Stage::Matching | Stage::Directive) {
         pick_points(o.habits)
@@ -259,6 +318,7 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
         humanness,
         habits,
         katas,
+        machine_katas,
     }
 }
 
@@ -420,6 +480,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -468,6 +529,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &v,
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -493,6 +555,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &v,
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -517,6 +580,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &v,
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -537,6 +601,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &v,
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -561,6 +626,7 @@ mod tests {
                 humanness_by_metric: &[ok, done],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -588,6 +654,7 @@ mod tests {
                 humanness_by_metric: &[h],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -611,6 +678,7 @@ mod tests {
                 humanness_by_metric: &[h],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -641,6 +709,7 @@ mod tests {
                 humanness_by_metric: &[bad, good],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -667,6 +736,7 @@ mod tests {
                 humanness_by_metric: &[deep, shallow],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -696,6 +766,7 @@ mod tests {
                 humanness_by_metric: &[a, b],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -717,6 +788,7 @@ mod tests {
                 humanness_by_metric: &h,
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -740,6 +812,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -761,6 +834,7 @@ mod tests {
                 humanness_by_metric: &h,
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -786,6 +860,7 @@ mod tests {
                 humanness_by_metric: &[down],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -802,6 +877,7 @@ mod tests {
                 humanness_by_metric: &[human("圧縮率", -0.9)],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -833,6 +909,7 @@ mod tests {
                 humanness_by_metric: &h,
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &UpperOnly,
         );
@@ -854,6 +931,7 @@ mod tests {
                 humanness_by_metric: &h,
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &None_,
         );
@@ -874,6 +952,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -894,6 +973,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -917,6 +997,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -940,6 +1021,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -966,6 +1048,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &None_,
         );
@@ -988,6 +1071,7 @@ mod tests {
                 humanness_by_metric: &[],
                 diverging: &[],
                 katas: &[],
+                machine_katas: &[],
             },
             &All,
         );
@@ -1000,6 +1084,8 @@ mod tests {
             rate,
             at,
             used,
+            spots: Vec::new(),
+            times: usize::from(used),
         }
     }
 

@@ -2358,25 +2358,62 @@ fn review(args: &[String]) -> Exit {
         .collect();
     // <strong>型が使われているか。</strong> 地の文から探す——記法の外にある並びは型ではない。
     let joined = kakiburi_metrics::humanness::joined(&doc.prose());
-    let katas: Vec<kakiburi_review::Kata> = scale
-        .katas
-        .iter()
-        .map(|k| kakiburi_review::Kata {
-            // <strong>穴あきは、固定部が 2 つともこの順で同じ段落にあれば使われている。</strong>
-            // 間は書き手が埋めるので、そこは見ない。
-            used: match &k.tail {
-                Some(t) => joined.split('\n').any(|line| {
-                    line.find(&k.text)
-                        .and_then(|i| line[i + k.text.len()..].find(t.as_str()))
-                        .is_some()
-                }),
-                None => joined.contains(&k.text),
-            },
-            text: k.shown(),
-            rate: k.rate,
-            at: k.at,
-        })
-        .collect();
+    // <strong>出ている箇所と回数を数える。</strong>「言い換えろ」と言うなら、どこを言い換えるのかを言う。
+    // <strong>回数も要る</strong>——繰り返し出ているものほど、その機械の癖である。
+    const SPOTS_SHOWN: usize = 2;
+    let spots_of = |needle: &str| -> (Vec<String>, usize) {
+        const AROUND: usize = 12;
+        let (mut out, mut times) = (Vec::new(), 0usize);
+        let pat: Vec<char> = needle.chars().collect();
+        if pat.is_empty() {
+            return (out, 0);
+        }
+        for line in joined.split('\n') {
+            let chars: Vec<char> = line.chars().collect();
+            let mut i = 0usize;
+            while i + pat.len() <= chars.len() {
+                if chars[i..i + pat.len()] != pat[..] {
+                    i += 1;
+                    continue;
+                }
+                times += 1;
+                if out.len() < SPOTS_SHOWN {
+                    let from = i.saturating_sub(AROUND);
+                    let to = (i + pat.len() + AROUND).min(chars.len());
+                    out.push(chars[from..to].iter().collect::<String>());
+                }
+                i += pat.len();
+            }
+        }
+        (out, times)
+    };
+    let seen = |ks: &[kakiburi_scale::assemble::Kata]| -> Vec<kakiburi_review::Kata> {
+        ks.iter()
+            .map(|k| {
+                let (spots, times) = spots_of(&k.text);
+                kakiburi_review::Kata {
+                    spots,
+                    times,
+                    // <strong>穴あきは、固定部が 2 つともこの順で同じ段落にあれば使われている。</strong>
+                    // 間は書き手が埋めるので、そこは見ない。
+                    used: match &k.tail {
+                        Some(t) => joined.split('\n').any(|line| {
+                            line.find(&k.text)
+                                .and_then(|i| line[i + k.text.len()..].find(t.as_str()))
+                                .is_some()
+                        }),
+                        None => joined.contains(&k.text),
+                    },
+                    text: k.shown(),
+                    rate: k.rate,
+                    at: k.at,
+                }
+            })
+            .collect()
+    };
+    let katas = seen(&scale.katas);
+    // <strong>役を入れ替えた側も同じ見方で拾う。</strong>
+    let machine_katas = seen(&scale.machine_katas);
     let result = kakiburi_review::review(
         &kakiburi_review::Observations {
             inspections: &inspections,
@@ -2387,6 +2424,7 @@ fn review(args: &[String]) -> Exit {
             humanness_by_metric: &by_metric,
             diverging: &apart,
             katas: &katas,
+            machine_katas: &machine_katas,
         },
         &defs,
     );
@@ -2561,6 +2599,13 @@ fn review(args: &[String]) -> Exit {
         println!();
         println!("使われていない型 {} 本", result.katas.len());
         for k in &result.katas {
+            println!("  - {k}");
+        }
+    }
+    if !result.machine_katas.is_empty() {
+        println!();
+        println!("残っている機械の型 {} 本", result.machine_katas.len());
+        for k in &result.machine_katas {
             println!("  - {k}");
         }
     }

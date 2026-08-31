@@ -208,6 +208,7 @@ pub fn write(s: &Scale) -> String {
                             ("出現割合".to_owned(), Value::Number(k.rate)),
                             ("位置".to_owned(), Value::Number(k.at)),
                             ("ばらつき".to_owned(), Value::Number(k.spread)),
+                            ("相手側".to_owned(), Value::Number(k.base)),
                             (
                                 // <strong>穴あきなら、後ろの固定部を持つ。</strong> 間は書き手が埋める。
                                 "後ろ".to_owned(),
@@ -218,8 +219,52 @@ pub fn write(s: &Scale) -> String {
                     .collect(),
             ),
         ),
+        // <strong>役を入れ替えた側も持つ。</strong> 機械の言い回しが残っていることは、
+        // 本人の型が入っていないことからは言えない。
+        (
+            "機械の型".to_owned(),
+            Value::Array(
+                s.machine_katas
+                    .iter()
+                    .map(|k| {
+                        Value::obj([
+                            ("並び".to_owned(), Value::s(&k.text)),
+                            ("出現割合".to_owned(), Value::Number(k.rate)),
+                            ("位置".to_owned(), Value::Number(k.at)),
+                            ("ばらつき".to_owned(), Value::Number(k.spread)),
+                            ("相手側".to_owned(), Value::Number(k.base)),
+                            (
+                                "後ろ".to_owned(),
+                                k.tail.as_ref().map_or(Value::Null, Value::s),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
     ])
     .write()
+}
+
+/// 型の配列を読み戻す。<strong>無くてもよい</strong>——持たない版のカセットは指摘が 1 本減る。
+fn katas_at(v: &Value, key: &str) -> Vec<kakiburi_scale::assemble::Kata> {
+    v.get(key)
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| {
+                    Some(kakiburi_scale::assemble::Kata {
+                        text: x.get("並び")?.as_str()?.to_owned(),
+                        rate: x.get("出現割合")?.as_f64()?,
+                        at: x.get("位置")?.as_f64()?,
+                        spread: x.get("ばらつき").and_then(Value::as_f64).unwrap_or(1.0),
+                        base: x.get("相手側").and_then(Value::as_f64).unwrap_or(0.0),
+                        tail: x.get("後ろ").and_then(Value::as_str).map(str::to_owned),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// 読み戻す。<strong>1 つでも欠けたら組み立てない。</strong>
@@ -302,24 +347,8 @@ pub fn read(text: &str) -> Option<Scale> {
                 })
                 .unwrap_or_default(),
         ),
-        // <strong>無くてもよい。</strong> 型を持たない版のカセットは、指摘が 1 本減るだけである。
-        katas: v
-            .get("型")
-            .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| {
-                        Some(kakiburi_scale::assemble::Kata {
-                            text: x.get("並び")?.as_str()?.to_owned(),
-                            rate: x.get("出現割合")?.as_f64()?,
-                            at: x.get("位置")?.as_f64()?,
-                            spread: x.get("ばらつき").and_then(Value::as_f64).unwrap_or(1.0),
-                            tail: x.get("後ろ").and_then(Value::as_str).map(str::to_owned),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
+        katas: katas_at(&v, "型"),
+        machine_katas: katas_at(&v, "機械の型"),
         phrases: v
             .get("言い回し")
             .and_then(Value::as_array)

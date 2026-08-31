@@ -476,7 +476,9 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         humanness_target,
         phrases: phrases_of(&person_units, &measured),
         lexicon,
-        katas: katas_of(&person_units, &machine_units, &measured),
+        katas: katas_of(&person_units, &machine_units, &measured, KATAS),
+        // <strong>役を入れ替えて、もう 1 度回す。</strong> 同じ仕組みで機械の型が出る。
+        machine_katas: katas_of(&machine_units, &person_units, &measured, MACHINE_KATAS),
     })
 }
 
@@ -533,6 +535,17 @@ pub const KATA_BASE_MAX: f64 = 0.05;
 /// <strong>まとめて数えると、場所の型が押し出される</strong>——場所の型は珍しいので割合が低い。
 pub const KATAS: usize = 6;
 
+/// 残す機械の型の数。<strong>本人の型よりずっと多く持つ。</strong> 暫定値である。
+///
+/// <strong>枠の意味が違う。</strong> 本人の型は「この文章に<strong>入っていない</strong>もの」を言うので、
+/// 多く持つほど指摘が薄まる。機械の型は「この文章に<strong>出ている</strong>もの」だけを言うので、
+/// <strong>多く持っても指摘は増えない</strong>——持っていない並びは見つけられないだけである。
+///
+/// 実測で、6 本に絞ると<strong>割合の高い並びが枠を占め、珍しい言い回しが落ちた</strong>——
+/// 基準 3 本すべてが使う「地味に」は 18 単位中 2 本（11%）で、
+/// 56% の「のではなく、」に押し出されていた。
+pub const MACHINE_KATAS: usize = 200;
+
 /// 場所の型と認める、位置のばらつきの上限。<strong>暫定値である。</strong>
 ///
 /// <strong>短い並びは、決まった場所で使うときだけ型である。</strong> どこにでも出てくる短い
@@ -542,6 +555,12 @@ pub const KATA_TIGHT: f64 = 0.12;
 /// 場所を選ばない型と認める、並びの長さの下限（文字）。<strong>暫定値である。</strong>
 ///
 /// <strong>長い並びはそれ自体が珍しいので、位置を問わない。</strong>
+///
+/// <strong>相手側に 1 度も出てこないなら、短くても残す。</strong> 短い並びを落とすのは
+/// 「どこにでも出てくる短い並びは日本語であって癖ではない」からだが、
+/// <strong>日本語なら相手側にも出てくる。</strong> 片側にしか出てこない短い並びは、
+/// その側のものである——実測で、基準 3 本すべてが使う「地味に」を本人は
+/// 50 単位で 1 度も使っておらず、<strong>3 文字なので落ちていた。</strong>
 pub const KATA_LONG: usize = 6;
 
 /// その人の型。
@@ -558,6 +577,10 @@ pub struct Kata {
     pub at: f64,
     /// 位置のばらつき。<strong>小さければ決まった場所で使う型である。</strong>
     pub spread: f64,
+    /// 相手側の単位のうち、これが現れた割合。
+    ///
+    /// <strong>短い並びを残してよいかを、これで決める</strong>（[長さの下限](KATA_LONG)）。
+    pub base: f64,
     /// 穴あきの型なら、後ろの固定部。<strong>間は書き手が埋める。</strong>
     ///
     /// `どうも、` … `ありすえです。` のように、<strong>固定部が 2 つあって間が変わる</strong>
@@ -662,6 +685,8 @@ fn frames_of(
             rate,
             at: katas[a].at,
             spread: katas[a].spread.min(katas[b].spread),
+            // <strong>穴あきは 2 つとも相手側に出ないものから作る。</strong>
+            base: katas[a].base.max(katas[b].base),
         });
     }
     if made.is_empty() {
@@ -743,6 +768,7 @@ fn katas_of(
     person: &[Unit],
     baseline: &[Unit],
     measured: &BTreeMap<String, Measurements>,
+    cap: usize,
 ) -> Vec<Kata> {
     let df = |units: &[Unit]| -> BTreeMap<String, (usize, Vec<f64>)> {
         let mut out: BTreeMap<String, (usize, Vec<f64>)> = BTreeMap::new();
@@ -776,19 +802,32 @@ fn katas_of(
             if rate < KATA_PERSON_MIN || base > KATA_BASE_MAX {
                 return None;
             }
+            // <strong>ひらがなを 1 つも含まない並びは題材である。</strong>
+            //
+            // <strong>付属語も活用もひらがなで書かれる。</strong> 漢字とカタカナだけの並びは、
+            // 言い方ではなく<strong>語そのもの</strong>——実測で、繰り返し出ている順に並べたとたん
+            // `フロントエンド` が上位に来た。8 回出ていたが、それはその記事の題材である。
+            //
+            // [識別子を伏せる](kakiburi_doc::prose::mask_identifiers)のと同じ理由で、
+            // <strong>題材が書きぶりの指摘に混ざるのを止める。</strong>
+            if !text.chars().any(|c| ('\u{3041}'..='\u{309f}').contains(&c)) {
+                return None;
+            }
             Some(Kata {
                 text,
                 rate,
                 at: median(&ats).unwrap_or(0.0),
                 spread: spread_of(&ats),
+                base,
                 tail: None,
             })
         })
         .collect();
-    // <strong>広く使う順。同じなら長い順、次に文字の順。</strong> 決めておかないと並びが実装で変わる。
+    // <strong>広く使う順。同じなら長さ、次に文字の順。</strong> 決めておかないと並びが実装で変わる。
     //
     // <strong>長さを先に見てはいけない。</strong> 長い順に採ると、<strong>短くて頻度の高い型が枠から
     // 押し出される</strong>——実測で、11 本の記事に出てくる挨拶の書き出しが落ちていた。
+    //
     cands.sort_by(|a, b| {
         b.rate
             .partial_cmp(&a.rate)
@@ -809,7 +848,9 @@ fn katas_of(
     for k in cands {
         let is_tight = k.spread <= KATA_TIGHT;
         let slot = if is_tight { &mut tight } else { &mut loose };
-        if *slot >= KATAS || (!is_tight && k.text.chars().count() < KATA_LONG) {
+        // <strong>相手側に 1 度も出てこないなら、短くても残す。</strong>
+        let only_here = k.base <= 0.0;
+        if *slot >= cap || (!is_tight && !only_here && k.text.chars().count() < KATA_LONG) {
             continue;
         }
         // <strong>重なっている型を二重に持たない。</strong> 入っている場合だけでなく、
