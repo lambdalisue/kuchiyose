@@ -48,6 +48,31 @@ pub fn pos_bigrams(a: &Analyzed) -> Counts {
     counts
 }
 
+/// 副詞の密度。日本語 1,000 字あたり。
+///
+/// <strong>[品詞 bigram](pos_bigrams)の細い切り口である。</strong> あの系統は品詞の並びを
+/// 数百次元で持つが、<strong>系統としては指示にならない</strong>——「何番目かの次元を増やせ」は
+/// 言葉にならない。副詞は品詞そのものが読めるので、その 1 つを取り出せば指示になる。
+///
+/// <strong>向きを決め打たない。</strong> 生成文は副詞を重ねると言われることがあるが、実測では
+/// <strong>逆だった</strong>——ある書き手の 7.9〜9.9 に対し、同じ題材を書かせた生成文は
+/// 3.0〜3.6 で、<strong>機械のほうが 2〜3 倍少ない。</strong> 両側を見る。
+///
+/// <strong>解析器が要る。</strong> 副詞は語形では決まらない——`すでに` は副詞だが `すでの` は
+/// 名詞である。
+#[must_use]
+pub fn adverbs(analyzed: Option<&Analyzed>, japanese_chars: usize) -> Measured {
+    let Some(a) = analyzed else {
+        return Measured::ToolMissing;
+    };
+    if japanese_chars < crate::floor::JAPANESE_CHARS {
+        return Measured::BelowFloor;
+    }
+    let n = a.all().filter(|m| m.pos1 == "副詞").count();
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(1000.0 * n as f64 / japanese_chars as f64)
+}
+
 /// 接続詞直後の読点で見る語彙素。<strong>この一覧は定義の一部である。</strong>
 ///
 /// <strong>コーパスから選ばない。</strong> 書き手ごとに違う語彙素を採れば、指標の名前が書き手

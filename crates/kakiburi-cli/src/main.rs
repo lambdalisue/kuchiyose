@@ -2957,6 +2957,14 @@ fn measured_with(
         "語を割る読点".to_owned(),
         kakiburi_metrics::word::splitting_commas(analyzed),
     ));
+    out.push((
+        "副詞".to_owned(),
+        kakiburi_metrics::word::adverbs(analyzed, doc.japanese_chars()),
+    ));
+
+    // <strong>文末の軸は node の種類ごとに出す。</strong> 1 つの定義が種類の数だけ軸を作るので、
+    // 種類が増えても指標の側を書き足さなくてよい。
+    out.extend(structure::register_rates(&p, analyzed));
 
     match analyzed.map(kakiburi_metrics::word::conjunction_comma) {
         Some(got) => out.extend(got),
@@ -3008,8 +3016,6 @@ fn fixed(
             structure::single_sentence_paragraphs(doc),
         ),
         ("段落あたりの文数", structure::sentences_per_paragraph(doc)),
-        ("段落の敬体率", structure::polite_paragraphs(doc)),
-        ("箇条書きの敬体率", structure::polite_items(doc)),
         ("太字始まりの項目", structure::bold_leading_items(doc)),
         ("段落長の変動係数", structure::paragraph_length_cv(doc)),
         ("箇条書き項目長の変動係数", structure::item_length_cv(doc)),
@@ -3171,13 +3177,24 @@ mod tests {
     #[test]
     fn 指標の一覧が出る() {
         assert_eq!(run(&["metrics".to_owned()]), Exit::Pass);
-        // <strong>定義と軸は 1 対 1 ではない。</strong> 定義 43 本のうち 42 本が軸 1 本を作り、
-        // 接続詞直後の読点だけが語彙素 12 × 位置 2 の 24 本に展開される。
-        assert_eq!(measured_names().len(), 42 + 24);
+        // <strong>定義と軸は 1 対 1 ではない。</strong> ほとんどの定義は軸 1 本を作るが、
+        // 接続詞直後の読点は語彙素 × 位置に、文末の軸は node の種類に展開される。
+        //
+        // <strong>展開の分は数え上げない。</strong> 展開する側から取る——ここに数を書くと、
+        // 種類や語彙素を足すたびに 2 か所を直すことになる。
+        let expanded = kakiburi_metrics::word::conjunction_comma_names().len()
+            + kakiburi_metrics::structure::register_names().len();
+        assert_eq!(measured_names().len(), 41 + expanded);
         assert_eq!(
             kakiburi_metrics::word::conjunction_comma_names().len(),
             24,
             "展開後の軸"
+        );
+        // <strong>地の文に入る種類ごとに、敬体率と体言止め率が 1 本ずつ。</strong>
+        assert_eq!(
+            kakiburi_metrics::structure::register_names().len(),
+            kakiburi_doc::node::Kind::PROSE.len() * 2,
+            "文末の軸"
         );
     }
 

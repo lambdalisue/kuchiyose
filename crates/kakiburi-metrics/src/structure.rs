@@ -6,6 +6,7 @@
 use kakiburi_doc::node::{Kind, Node};
 use kakiburi_doc::{text, Document};
 
+use crate::morph::{Analyzed, Morpheme};
 use crate::{floor, Measured};
 
 /// node の数を、日本語 1,000 字あたりに直す。
@@ -191,18 +192,117 @@ fn register_of(sentence: &str) -> Option<bool> {
     None
 }
 
-/// 段落の敬体率。
-#[must_use]
-pub fn polite_paragraphs(doc: &Document) -> Measured {
-    let texts: Vec<String> = doc.paragraphs().iter().map(|p| p.text.clone()).collect();
-    polite_rate(&texts, 10)
+/// 体言止めの割合。<strong>[敬体率](polite_rate)が見られないものを、こちらが見る。</strong>
+///
+/// <strong>敬体率は体言止めを分母から落とす。</strong> どちらでもないものを混ぜれば、
+/// 体言止めの多い書き手ほど敬体率が下がるからである。だが落とした結果、
+/// <strong>項目を体言止めで書く人の項目は、1 つも数えられない</strong>——実測で、ある書き手の
+/// 50 単位のうち箇条書きの敬体率が出たのは 4 単位だけだった。
+///
+/// <strong>その人がいちばんしていることが、いちばん見えない。</strong> だからここで別に数える。
+///
+/// [文末表現](../../../docs/spec/metrics/文末表現.md)の系統は「取れなかった文も 1 つの
+/// 次元として数える」と決めている。これはその次元を node の種類ごとに切り出したものである。
+///
+/// <strong>解析器が要る。</strong> 体言止めは「文の最後の自立語が名詞で終わる」ことなので、
+/// 語尾の文字列では決まらない——`できる` のように、語尾の一覧に載っていない
+/// 動詞の活用形と見分けが付かない。
+fn taigen_rate<'a>(segments: impl Iterator<Item = &'a Vec<Morpheme>>, floor: usize) -> Measured {
+    let (mut taigen, mut total) = (0usize, 0usize);
+    for seg in segments {
+        for sentence in split_sentences(seg) {
+            let Some(last) = sentence.iter().rev().find(|m| !is_punctuation(m)) else {
+                continue;
+            };
+            total += 1;
+            if last.pos1.starts_with("名詞") {
+                taigen += 1;
+            }
+        }
+    }
+    if total < floor {
+        return Measured::BelowFloor;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(taigen as f64 / total as f64)
 }
 
-/// 箇条書きの項目の敬体率。
+/// 形態素列を文に割る。<strong>句点・感嘆符・疑問符で切る。</strong>
+fn split_sentences(seg: &[Morpheme]) -> Vec<&[Morpheme]> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    for (i, m) in seg.iter().enumerate() {
+        if matches!(m.surface.as_str(), "。" | "！" | "？" | "." | "!" | "?") {
+            out.push(&seg[start..=i]);
+            start = i + 1;
+        }
+    }
+    if start < seg.len() {
+        out.push(&seg[start..]);
+    }
+    out
+}
+
+/// 記号か。<strong>文の終わりを決めるのは、その手前の語である。</strong>
+fn is_punctuation(m: &Morpheme) -> bool {
+    m.pos1.starts_with("補助記号") || m.pos1.starts_with("記号")
+}
+
+/// 文末の軸を、node の種類ごとに数えるときの下限。<strong>暫定値である。</strong>
+const REGISTER_FLOOR: usize = 5;
+
+/// 文末の軸の名前。<strong>1 つの定義が node の種類の数だけ軸を作る。</strong>
+///
+/// <strong>種類ごとに書き足さない。</strong> 「段落の敬体率」「箇条書きの敬体率」と手で並べると、
+/// 指標を足すたびに種類の数だけ定義が要り、<strong>足し忘れた指標だけが混ぜたまま</strong>になる。
+/// [地の文に入る種類](kakiburi_doc::node::Kind::PROSE)を回して名前を作る。
 #[must_use]
-pub fn polite_items(doc: &Document) -> Measured {
-    let texts: Vec<String> = doc.items().iter().map(|p| p.text.clone()).collect();
-    polite_rate(&texts, 5)
+pub fn register_names() -> Vec<String> {
+    let mut out = Vec::with_capacity(Kind::PROSE.len() * 2);
+    for kind in Kind::PROSE {
+        out.push(format!("敬体率・{}", kind.name()));
+        out.push(format!("体言止め率・{}", kind.name()));
+    }
+    out
+}
+
+/// 文末の軸を、node の種類ごとに測る。
+///
+/// <strong>まとめて測らない。</strong> 同じ書き手が段落では敬体、項目では体言止めで書くので、
+/// 地の文を 1 つの袋にすると使い分けが袋の中で消える
+/// （[文体は node の種類ごとに違う](../../../docs/spec/100-metrics.md#文体は-node-の種類ごとに違う)）。
+///
+/// <strong>どれが効くかは選ばない。</strong> 種類ごとに軸を出しておき、
+/// [効くかの判定](../../kakiburi-scale/src/effective.rs)に選ばせる——書き手によって
+/// 使い分ける場所が違うので、ここで決め打つと当たらない書き手が出る。
+///
+/// <strong>敬体率は解析器を要らない。</strong> 体言止め率だけが要る——名詞で終わるかは
+/// 語尾の文字列では決まらないためである。
+#[must_use]
+pub fn register_rates(
+    prose: &[kakiburi_doc::prose::Segment],
+    analyzed: Option<&Analyzed>,
+) -> Vec<(String, Measured)> {
+    let mut out = Vec::with_capacity(Kind::PROSE.len() * 2);
+    for kind in Kind::PROSE {
+        let texts: Vec<String> = prose
+            .iter()
+            .filter(|s| s.kind == kind)
+            .map(|s| s.text.clone())
+            .collect();
+        out.push((
+            format!("敬体率・{}", kind.name()),
+            polite_rate(&texts, REGISTER_FLOOR),
+        ));
+        out.push((
+            format!("体言止め率・{}", kind.name()),
+            match analyzed {
+                Some(a) => taigen_rate(a.segments_of(kind), REGISTER_FLOOR),
+                None => Measured::ToolMissing,
+            },
+        ));
+    }
+    out
 }
 
 /// 段落あたりの文数。<strong>段落に含まれる</strong>文を、段落の数で割る。

@@ -184,6 +184,10 @@ fn splitting_commas(segments: &[Vec<Morpheme>], analyzer: &dyn Analyzer) -> Vec<
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Analyzed {
     segments: Vec<Vec<Morpheme>>,
+    /// 各 node の種類。<strong>並びは `segments` と同じである。</strong>
+    ///
+    /// <strong>文体は node の種類ごとに違う</strong>ので、種類で絞って数える指標がある。
+    kinds: Vec<kakiburi_doc::node::Kind>,
     split_commas: Vec<String>,
 }
 
@@ -206,6 +210,7 @@ impl Analyzed {
         lexicon: &crate::lexicon::Lexicon,
     ) -> Result<Self, MorphError> {
         check(analyzer)?;
+        let kinds: Vec<kakiburi_doc::node::Kind> = prose.iter().map(|s| s.kind).collect();
         let texts: Vec<&str> = prose.iter().map(|s| s.text.as_str()).collect();
         let mut segments = analyzer.analyze_all(&texts);
         for seg in &mut segments {
@@ -216,12 +221,14 @@ impl Analyzed {
         if segments.len() != texts.len() {
             return Ok(Self {
                 segments: vec![Vec::new(); texts.len()],
+                kinds,
                 split_commas: Vec::new(),
             });
         }
         let split_commas = splitting_commas(&segments, analyzer);
         Ok(Self {
             segments,
+            kinds,
             split_commas,
         })
     }
@@ -239,6 +246,21 @@ impl Analyzed {
     #[must_use]
     pub fn segments(&self) -> &[Vec<Morpheme>] {
         &self.segments
+    }
+
+    /// その種類の node の形態素列だけ。
+    ///
+    /// <strong>文体は node の種類ごとに違う</strong>ので、段落と項目を混ぜて数えると
+    /// 使い分けが袋の中で消える。
+    pub fn segments_of(
+        &self,
+        kind: kakiburi_doc::node::Kind,
+    ) -> impl Iterator<Item = &Vec<Morpheme>> {
+        self.kinds
+            .iter()
+            .zip(&self.segments)
+            .filter(move |(k, _)| **k == kind)
+            .map(|(_, s)| s)
     }
 
     /// node を跨いだ 1 つの列。<strong>分布を出す指標はこちらを使う。</strong>

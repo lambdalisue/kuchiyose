@@ -57,6 +57,48 @@ impl Kind {
         )
     }
 
+    /// [地の文](crate::prose)に入る種類。<strong>並びは軸の名前に出るので固定する。</strong>
+    ///
+    /// <strong>種類ごとに測る指標は、この一覧から軸を作る。</strong> 種類を足したときに、
+    /// 指標の側を書き足さずに済む——<strong>書き足す形にすると、足し忘れた指標だけが
+    /// 混ぜたままになる。</strong>
+    pub const PROSE: [Kind; 9] = [
+        Kind::Paragraph,
+        Kind::Heading,
+        Kind::Item,
+        Kind::Quote,
+        Kind::Note,
+        Kind::Warning,
+        Kind::Details,
+        Kind::Footnote,
+        Kind::Cell,
+    ];
+
+    /// 軸の名前に出す呼び名。
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::Paragraph => "段落",
+            Kind::Heading => "見出し",
+            Kind::Bullet => "箇条書き",
+            Kind::Ordered => "番号リスト",
+            Kind::Item => "項目",
+            Kind::Quote => "引用",
+            Kind::Note => "補足",
+            Kind::Warning => "警告",
+            Kind::Details => "折りたたみ",
+            Kind::Footnote => "脚注",
+            Kind::Table => "表",
+            Kind::Cell => "セル",
+            Kind::CodeBlock => "コードブロック",
+            Kind::Emphasis => "強調",
+            Kind::Divider => "区切り線",
+            Kind::Image => "画像",
+            Kind::InlineCode => "インラインコード",
+            Kind::Link => "リンク",
+        }
+    }
+
     /// この node のテキストが[地の文](crate::prose)に入るか。
     ///
     /// 入らないのは、書き手が日本語で書いた部分ではないものである。外さなければ、
