@@ -3044,10 +3044,6 @@ fn measured_with(
         "語を割る読点".to_owned(),
         kakiburi_metrics::word::splitting_commas(analyzed),
     ));
-    out.push((
-        "副詞".to_owned(),
-        kakiburi_metrics::word::adverbs(analyzed, doc.japanese_chars()),
-    ));
 
     // <strong>文末の軸は node の種類ごとに出す。</strong> 1 つの定義が種類の数だけ軸を作るので、
     // 種類が増えても指標の側を書き足さなくてよい。
@@ -3271,7 +3267,7 @@ mod tests {
         // 種類や語彙素を足すたびに 2 か所を直すことになる。
         let expanded = kakiburi_metrics::word::conjunction_comma_names().len()
             + kakiburi_metrics::structure::register_names().len();
-        assert_eq!(measured_names().len(), 41 + expanded);
+        assert_eq!(measured_names().len(), 40 + expanded);
         assert_eq!(
             kakiburi_metrics::word::conjunction_comma_names().len(),
             24,
