@@ -124,9 +124,10 @@ kakiburi add <カセット> <ファイル...> --as other --source <取り込み�
       baseline  基準。LLM の既定出力。床になる
       other     <strong>他人の文書。</strong> 人らしさの人の側の較正にだけ効く
 
-    <strong>--as other だけが --scene を取らない。</strong> 人らしさは「誰の文章でも人が
-    書いたものは人の側に落ちる」ので、仕様がこの用途に限って場面を跨ぐことを
-    許している——場面は人と機械の別を跨がない。<strong>照合の側には一切効かない。</strong>";
+    <strong>--as other だけが --scene を取らない。</strong> この軸が見ているのは機械の書きぶりが
+    残っていないかであって、その人らしさではない。繰り返しの少なさは書き手も
+    場面も問わず同じ向きに出るので、この用途に限って両方を跨げる。
+    <strong>目的の側——照合——には一切効かない。</strong>";
 
 const REPLACE: &str = "\
 kakiburi replace <カセット> <ファイル> --id <名前> --source <取り込み元>

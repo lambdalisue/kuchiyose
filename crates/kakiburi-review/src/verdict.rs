@@ -158,21 +158,21 @@ pub fn judge(
             return Outcome {
                 verdict: Verdict::Unknown,
                 stage: Stage::Humanness,
-                reason: "人らしさ値が測れていない。通過の必要条件を確かめずに先へ進めない".into(),
+                reason: "機械の書きぶりが残っているかを測れていない。読みづらさの元を確かめずに先へ進めない".into(),
             }
         }
         Some(Side::Machine) => {
             return Outcome {
                 verdict: Verdict::Fail,
                 stage: Stage::Humanness,
-                reason: "人らしさ値が機械の側にある".into(),
+                reason: "機械の書きぶりが残っている".into(),
             }
         }
         Some(Side::InBand) => {
             return Outcome {
                 verdict: Verdict::Unknown,
                 stage: Stage::Humanness,
-                reason: "人らしさ値が帯の中にある".into(),
+                reason: "機械の書きぶりが残っているかを決められない".into(),
             }
         }
         Some(Side::Human) => {}
@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn 人らしさが測れなければ判定できない() {
-        // 通過の必要条件を確かめずに先へ進めない。
+        // 読みづらさの元を確かめずに先へ進めない。
         let o = judge(&[], None, Some(Side::Human), &[]);
         assert_eq!(o.verdict, Verdict::Unknown);
         assert_eq!(o.stage, Stage::Humanness);

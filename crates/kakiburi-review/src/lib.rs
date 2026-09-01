@@ -350,17 +350,20 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
     } else {
         Vec::new()
     };
-    // <strong>2 段目と 3 段目で渡す。</strong> 型はその人へ寄せるためのものなので、
-    // 人らしさの段で出せば、受け取った側は 2 つの目的を同時に追うことになる。
+    // <strong>どの段で止まっても渡す。</strong> 型はその人へ寄せるためのもので、
+    // <strong>寄せることが目的そのもの</strong>である（[軸](../../../docs/spec/000-axis.md#やりたいこと)）。
+    //
+    // <strong>人らしさの段で黙ってはいけない。</strong> あの段が見ているのは
+    // <strong>読みづらさの元が残っているか</strong>であって、目的ではない——そこで型を伏せると、
+    // <strong>目的の側の言葉が 1 つも出ないまま止まる。</strong>
+    //
+    // <strong>向きも衝突しない。</strong> 人らしさは「同じ言い回しを繰り返せ」と言い、型は
+    // 「本人はこう書く」と言う。<strong>型を使えば繰り返しも増える。</strong>
     //
     // <strong>通ったときにも渡す。</strong> 分布が寄っていても型が 1 つも出てこないことは
     // ありうる——そこで黙れば、道具は「通った」としか言わないまま
     // <strong>その人らしくない文章を返す。</strong>
-    let katas = if matches!(outcome.stage, Stage::Matching | Stage::Directive) {
-        kata_remedies(o.katas)
-    } else {
-        Vec::new()
-    };
+    let katas = kata_remedies(o.katas);
     // <strong>こちらは人らしさで止まったときにも出す。</strong> 機械の言い回しが残っている
     // ことは、機械の側で止まった理由そのものでありうる。
     let machine_katas = machine_kata_remedies(o.machine_katas);
