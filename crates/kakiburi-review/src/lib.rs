@@ -57,6 +57,13 @@ pub struct Review {
     /// <strong>判定には使わない。</strong> 基準がよく使う並びでも、本人が偶然そう書くことは
     /// ありうる——止める材料にはできない。
     pub machine_katas: Vec<String>,
+    /// 本人の言い回しを使いすぎている箇所。<strong>書きぶりの枠を奪わない。</strong>
+    ///
+    /// <strong>「繰り返せ」と言う指摘には上限が要る</strong>——言わなければ、受け取った側は
+    /// 本人の何倍も入れる。日本語は壊れないので、検査では止まらない。
+    ///
+    /// <strong>判定には使わない。</strong> その人がたまたま多く使う 1 本はありうる。
+    pub overused_katas: Vec<String>,
 }
 
 /// その人の型 1 つ。
@@ -83,6 +90,55 @@ pub struct Kata {
     /// 「ことがあり」が、11% しか使わないが草稿では 4 回出ている「地味に」を
     /// 隠していた。<strong>癖は 1 度ではなく何度も出る。</strong>
     pub times: usize,
+    /// この文章での、日本語 1,000 字あたりの回数。
+    pub density: f64,
+    /// 本人が 1 本の中で使う、日本語 1,000 字あたりの最大。
+    pub ceiling: f64,
+}
+
+/// 本人の言い回しを使いすぎていると言う、本人の上限に対する倍率。<strong>暫定値である。</strong>
+///
+/// <strong>1.0 は[幅の外](Range)と同じ扱いである</strong>——本人が一度も書かなかった濃さなら
+/// 外である、とする。指示できる指標が本人の幅で見るのと揃えてある。
+///
+/// <strong>2.0 では捕まらなかった。</strong> 実測で、本人の上限 1.9 に対し使いすぎた草稿が
+/// 2.6——<strong>超えてはいるが 2 倍には遠い。</strong>
+///
+/// > <strong>誤報の率は確かめられていない。</strong> 上限は本人の全単位から作るので、
+/// > <strong>そのうちの 1 本を当てても原理的に超えない</strong>——42 本で 0 本という結果は
+/// > 循環していて、証拠にならない。本人の held-out が要る。
+pub const OVERUSE: f64 = 1.0;
+
+/// 本人の言い回しを使いすぎている箇所。
+///
+/// <strong>「繰り返せ」には上限が要る。</strong>[人らしさの直し方](Review::humanness)は
+/// 「その人が現に繰り返している言い回しを、そのまま繰り返す」と言うが、
+/// <strong>どこまで繰り返してよいかを言わない。</strong> 受け取った側は本人の何倍も入れる
+/// ——実測で、本人が 42 本で 25 回しか使わない `ことができます` が、直した 1 本に
+/// 10 回入った。
+///
+/// <strong>日本語は壊れないので[検査](Inspected)では止まらない。</strong> 本人の頻度と
+/// 比べるしかない。
+fn overused_katas(katas: &[Kata]) -> Vec<String> {
+    let mut over: Vec<&Kata> = katas
+        .iter()
+        .filter(|k| k.ceiling > 0.0 && k.times > 1 && k.density > k.ceiling * OVERUSE)
+        .collect();
+    over.sort_by(|a, b| {
+        (b.density / b.ceiling)
+            .partial_cmp(&(a.density / a.ceiling))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    over.into_iter()
+        .take(MAX_POINTS)
+        .map(|k| {
+            format!(
+                "「{}」を {} 回。本人は多くても 1,000 字あたり {:.1} 回で、この文章は {:.1} 回。減らす。",
+                k.text, k.times, k.ceiling, k.density
+            )
+        })
+        .collect()
 }
 
 /// 使われていない型の渡し方。
@@ -248,6 +304,12 @@ pub struct Observations<'a> {
     pub katas: &'a [Kata],
     /// 機械の型と、この文章で使われているか。
     pub machine_katas: &'a [Kata],
+    /// 直し方に載せた言い回しと、この文章での使われ方。
+    ///
+    /// <strong>型とは別に渡す。</strong> 使いすぎが起きるのは<strong>道具自身が「繰り返せ」と
+    /// 名指しした言い回し</strong>であって、型ではない——型は本人にしか出ないものなので、
+    /// そもそも受け取った側が知らない。
+    pub phrases: &'a [Kata],
 }
 
 /// 検める。
@@ -302,6 +364,8 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
     // <strong>こちらは人らしさで止まったときにも出す。</strong> 機械の言い回しが残っている
     // ことは、機械の側で止まった理由そのものでありうる。
     let machine_katas = machine_kata_remedies(o.machine_katas);
+    // <strong>本人の型を使いすぎていないか。</strong> 寄せろと言った側が行きすぎるのを止める。
+    let overused_katas = overused_katas(o.phrases);
     // <strong>型と同じ扱いである。</strong> その人へ寄せるためのものなので、人らしさの段では出さない。
     let habits = if matches!(outcome.stage, Stage::Matching | Stage::Directive) {
         pick_points(o.habits)
@@ -319,6 +383,7 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
         habits,
         katas,
         machine_katas,
+        overused_katas,
     }
 }
 
@@ -481,6 +546,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -530,6 +596,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -556,6 +623,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -581,6 +649,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -602,6 +671,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -627,6 +697,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -655,6 +726,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -679,6 +751,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -710,6 +783,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -737,6 +811,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -767,6 +842,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -789,6 +865,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -813,6 +890,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -835,6 +913,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -861,6 +940,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -878,6 +958,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -910,6 +991,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &UpperOnly,
         );
@@ -932,6 +1014,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &None_,
         );
@@ -953,6 +1036,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -974,6 +1058,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -998,6 +1083,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -1022,6 +1108,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
@@ -1049,6 +1136,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &None_,
         );
@@ -1072,10 +1160,44 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                phrases: &[],
             },
             &All,
         );
         assert_eq!(r.points.len(), MAX_POINTS);
+    }
+
+    fn dense(text: &str, times: usize, density: f64, ceiling: f64) -> Kata {
+        Kata {
+            text: text.into(),
+            rate: 0.5,
+            at: 0.5,
+            used: true,
+            spots: Vec::new(),
+            times,
+            density,
+            ceiling,
+        }
+    }
+
+    #[test]
+    fn 本人の上限を大きく超えたら使いすぎと言う() {
+        let over = overused_katas(&[dense("ことができます", 10, 1.0, 0.3)]);
+        assert_eq!(over.len(), 1, "{over:?}");
+        assert!(over[0].contains("ことができます"), "{over:?}");
+        assert!(over[0].contains("10 回"), "{over:?}");
+    }
+
+    #[test]
+    fn 上限のちょうどでは言わない() {
+        // <strong>幅の外と同じ扱いである。</strong> 超えたときだけ言う。
+        assert!(overused_katas(&[dense("ています", 3, 0.3, 0.3)]).is_empty());
+    }
+
+    #[test]
+    fn 本人が使わない並びは使いすぎと言わない() {
+        // 上限が 0 のものは、そもそも本人の型ではない。
+        assert!(overused_katas(&[dense("と考えています", 9, 2.0, 0.0)]).is_empty());
     }
 
     fn kata(text: &str, rate: f64, at: f64, used: bool) -> Kata {
@@ -1086,6 +1208,8 @@ mod tests {
             used,
             spots: Vec::new(),
             times: usize::from(used),
+            density: 0.0,
+            ceiling: 0.0,
         }
     }
 

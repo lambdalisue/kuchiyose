@@ -184,6 +184,16 @@ pub fn write(s: &Scale) -> String {
             Value::Array(s.phrases.iter().map(Value::s).collect()),
         ),
         (
+            // <strong>繰り返せと言うなら、上限も渡す。</strong>
+            "言い回しの上限".to_owned(),
+            Value::Array(
+                s.phrase_ceilings
+                    .iter()
+                    .map(|(p, c)| Value::Array(vec![Value::s(p), Value::Number(*c)]))
+                    .collect(),
+            ),
+        ),
+        (
             // <strong>その人の型。</strong> コーパスから見つけたものなので、カセットに残さないと
             // 検めのたびに素材を読み直すことになる。
             // <strong>コーパスから見つけた語。</strong> 検めるときも同じ辞書で割らなければ、
@@ -209,6 +219,7 @@ pub fn write(s: &Scale) -> String {
                             ("位置".to_owned(), Value::Number(k.at)),
                             ("ばらつき".to_owned(), Value::Number(k.spread)),
                             ("相手側".to_owned(), Value::Number(k.base)),
+                            ("上限".to_owned(), Value::Number(k.ceiling)),
                             (
                                 // <strong>穴あきなら、後ろの固定部を持つ。</strong> 間は書き手が埋める。
                                 "後ろ".to_owned(),
@@ -233,6 +244,7 @@ pub fn write(s: &Scale) -> String {
                             ("位置".to_owned(), Value::Number(k.at)),
                             ("ばらつき".to_owned(), Value::Number(k.spread)),
                             ("相手側".to_owned(), Value::Number(k.base)),
+                            ("上限".to_owned(), Value::Number(k.ceiling)),
                             (
                                 "後ろ".to_owned(),
                                 k.tail.as_ref().map_or(Value::Null, Value::s),
@@ -259,6 +271,7 @@ fn katas_at(v: &Value, key: &str) -> Vec<kakiburi_scale::assemble::Kata> {
                         at: x.get("位置")?.as_f64()?,
                         spread: x.get("ばらつき").and_then(Value::as_f64).unwrap_or(1.0),
                         base: x.get("相手側").and_then(Value::as_f64).unwrap_or(0.0),
+                        ceiling: x.get("上限").and_then(Value::as_f64).unwrap_or(0.0),
                         tail: x.get("後ろ").and_then(Value::as_str).map(str::to_owned),
                     })
                 })
@@ -355,6 +368,19 @@ pub fn read(text: &str) -> Option<Scale> {
             .map(|a| {
                 a.iter()
                     .filter_map(|x| x.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        // <strong>無くてもよい。</strong> 上限を持たない版のカセットは、指摘が 1 本減るだけである。
+        phrase_ceilings: v
+            .get("言い回しの上限")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| {
+                        let p = x.as_array()?;
+                        Some((p.first()?.as_str()?.to_owned(), p.get(1)?.as_f64()?))
+                    })
                     .collect()
             })
             .unwrap_or_default(),

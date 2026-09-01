@@ -52,6 +52,12 @@ struct Measurements {
     humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
     chars: usize,
+    /// 地の文をつないだもの。<strong>言い回しの上限を文字列として数えるために持つ。</strong>
+    ///
+    /// <strong>[文節の並び](Self::grams)では数えられない。</strong> 渡す言い回しは
+    /// `ています。` のように文節にならないものを含むので、文節の並びと照らすと
+    /// <strong>ほとんどが 0 になる</strong>——実測で、20 本のうち 15 本の上限が 0 だった。
+    text: String,
 }
 
 /// 本人の素材からコーパスの語を見つける。
@@ -108,6 +114,7 @@ impl Measurements {
             grams: kakiburi_metrics::word::grams_with_position(analyzed.as_ref(), &KATA_N),
             humanness: Humanness::measure(&prose, analyzed.as_ref()),
             chars: sample.document.japanese_chars(),
+            text: kakiburi_metrics::humanness::joined(&prose),
         }
     }
 
@@ -475,11 +482,52 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         // 見てから言い回しを選び直す経路が書ける。
         humanness_target,
         phrases: phrases_of(&person_units, &measured),
+        // <strong>渡した言い回しには上限も渡す。</strong> 繰り返せとだけ言えば、行きすぎる。
+        phrase_ceilings: ceilings_of(
+            &phrases_of(&person_units, &measured),
+            &person_units,
+            &measured,
+        ),
         lexicon,
         katas: katas_of(&person_units, &machine_units, &measured, KATAS),
         // <strong>役を入れ替えて、もう 1 度回す。</strong> 同じ仕組みで機械の型が出る。
         machine_katas: katas_of(&machine_units, &person_units, &measured, MACHINE_KATAS),
     })
+}
+
+/// 言い回しごとの、本人が 1 本の中で使う上限。<strong>日本語 1,000 字あたりの最大。</strong>
+///
+/// <strong>「繰り返せ」と言うなら、どこまで繰り返してよいかも言う。</strong> 言わなければ、
+/// 受け取った側は本人の何倍も入れる。<strong>日本語は壊れないので検査では止まらない</strong>
+/// ——本人の頻度と比べるしかない。
+///
+/// <strong>本文をそのまま数える。</strong> 形態素の並びではなく文字列として数えるので、
+/// 検める側が同じ数え方をできる。
+fn ceilings_of(
+    phrases: &[String],
+    units: &[Unit],
+    measured: &BTreeMap<String, Measurements>,
+) -> Vec<(String, f64)> {
+    let mut out = Vec::with_capacity(phrases.len());
+    for p in phrases {
+        let mut top = 0.0f64;
+        for u in units {
+            let Some(m) = measured.get(&u.name) else {
+                continue;
+            };
+            if m.chars == 0 {
+                continue;
+            }
+            let n = m.text.matches(p.as_str()).count();
+            #[allow(clippy::cast_precision_loss)]
+            let r = 1000.0 * n as f64 / m.chars as f64;
+            if r > top {
+                top = r;
+            }
+        }
+        out.push((p.clone(), top));
+    }
+    out
 }
 
 /// 何本の単位で再来したかで、言い回しを並べる。
@@ -581,6 +629,14 @@ pub struct Kata {
     ///
     /// <strong>短い並びを残してよいかを、これで決める</strong>（[長さの下限](KATA_LONG)）。
     pub base: f64,
+    /// 本人が 1 本の中でこれを使う、日本語 1,000 字あたりの最大。
+    ///
+    /// <strong>「本人の言い回しを繰り返せ」には上限が要る。</strong> 繰り返せとだけ言うと、
+    /// 受け取った側は<strong>本人の何倍も入れる</strong>——実測で、本人が 42 本で 25 回しか
+    /// 使わない `ことができます` を、直した 1 本に 10 回入れていた。
+    ///
+    /// <strong>日本語は壊れないので検査では止まらない。</strong> 止めるならここで測るしかない。
+    pub ceiling: f64,
     /// 穴あきの型なら、後ろの固定部。<strong>間は書き手が埋める。</strong>
     ///
     /// `どうも、` … `ありすえです。` のように、<strong>固定部が 2 つあって間が変わる</strong>
@@ -687,6 +743,8 @@ fn frames_of(
             spread: katas[a].spread.min(katas[b].spread),
             // <strong>穴あきは 2 つとも相手側に出ないものから作る。</strong>
             base: katas[a].base.max(katas[b].base),
+            // <strong>穴あきは前の固定部の上限で見る。</strong>
+            ceiling: katas[a].ceiling,
         });
     }
     if made.is_empty() {
@@ -788,6 +846,34 @@ fn katas_of(
         }
         out
     };
+    // <strong>1 本の中で何回使うか。</strong> 何本に出るか（df）とは別の量である——
+    // <strong>「繰り返せ」と言うなら、どこまで繰り返してよいかを言わなければ、
+    // 受け取った側は本人の何倍も入れる。</strong>
+    let per_1000 = |units: &[Unit]| -> BTreeMap<String, f64> {
+        let mut out: BTreeMap<String, f64> = BTreeMap::new();
+        for u in units {
+            let Some(m) = measured.get(&u.name) else {
+                continue;
+            };
+            if m.chars == 0 {
+                continue;
+            }
+            let mut here: BTreeMap<&str, usize> = BTreeMap::new();
+            for (g, _, _) in &m.grams {
+                *here.entry(g.as_str()).or_default() += 1;
+            }
+            for (g, n) in here {
+                #[allow(clippy::cast_precision_loss)]
+                let r = 1000.0 * n as f64 / m.chars as f64;
+                let e = out.entry(g.to_owned()).or_insert(0.0);
+                if r > *e {
+                    *e = r;
+                }
+            }
+        }
+        out
+    };
+    let ceilings = per_1000(person);
     let mine = df(person);
     let theirs = df(baseline);
     #[allow(clippy::cast_precision_loss)]
@@ -813,12 +899,14 @@ fn katas_of(
             if !text.chars().any(|c| ('\u{3041}'..='\u{309f}').contains(&c)) {
                 return None;
             }
+            let ceiling = ceilings.get(&text).copied().unwrap_or(0.0);
             Some(Kata {
                 text,
                 rate,
                 at: median(&ats).unwrap_or(0.0),
                 spread: spread_of(&ats),
                 base,
+                ceiling,
                 tail: None,
             })
         })

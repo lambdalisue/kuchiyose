@@ -2358,6 +2358,7 @@ fn review(args: &[String]) -> Exit {
         .collect();
     // <strong>型が使われているか。</strong> 地の文から探す——記法の外にある並びは型ではない。
     let joined = kakiburi_metrics::humanness::joined(&doc.prose());
+    let ja = doc.japanese_chars();
     // <strong>出ている箇所と回数を数える。</strong>「言い換えろ」と言うなら、どこを言い換えるのかを言う。
     // <strong>回数も要る</strong>——繰り返し出ているものほど、その機械の癖である。
     const SPOTS_SHOWN: usize = 2;
@@ -2391,9 +2392,17 @@ fn review(args: &[String]) -> Exit {
         ks.iter()
             .map(|k| {
                 let (spots, times) = spots_of(&k.text);
+                #[allow(clippy::cast_precision_loss)]
+                let density = if ja == 0 {
+                    0.0
+                } else {
+                    1000.0 * times as f64 / ja as f64
+                };
                 kakiburi_review::Kata {
                     spots,
                     times,
+                    density,
+                    ceiling: k.ceiling,
                     // <strong>穴あきは、固定部が 2 つともこの順で同じ段落にあれば使われている。</strong>
                     // 間は書き手が埋めるので、そこは見ない。
                     used: match &k.tail {
@@ -2411,6 +2420,30 @@ fn review(args: &[String]) -> Exit {
             })
             .collect()
     };
+    // <strong>直し方に載せた言い回しも、同じ見方で数える。</strong> 使いすぎを止めるためである。
+    let phrases: Vec<kakiburi_review::Kata> = scale
+        .phrase_ceilings
+        .iter()
+        .map(|(text, ceiling)| {
+            let (spots, times) = spots_of(text);
+            #[allow(clippy::cast_precision_loss)]
+            let density = if ja == 0 {
+                0.0
+            } else {
+                1000.0 * times as f64 / ja as f64
+            };
+            kakiburi_review::Kata {
+                text: text.clone(),
+                rate: 0.0,
+                at: 0.0,
+                used: times > 0,
+                spots,
+                times,
+                density,
+                ceiling: *ceiling,
+            }
+        })
+        .collect();
     let katas = seen(&scale.katas);
     // <strong>役を入れ替えた側も同じ見方で拾う。</strong>
     let machine_katas = seen(&scale.machine_katas);
@@ -2425,6 +2458,7 @@ fn review(args: &[String]) -> Exit {
             diverging: &apart,
             katas: &katas,
             machine_katas: &machine_katas,
+            phrases: &phrases,
         },
         &defs,
     );
@@ -2606,6 +2640,13 @@ fn review(args: &[String]) -> Exit {
         println!();
         println!("残っている機械の型 {} 本", result.machine_katas.len());
         for k in &result.machine_katas {
+            println!("  - {k}");
+        }
+    }
+    if !result.overused_katas.is_empty() {
+        println!();
+        println!("使いすぎている言い回し {} 本", result.overused_katas.len());
+        for k in &result.overused_katas {
             println!("  - {k}");
         }
     }
