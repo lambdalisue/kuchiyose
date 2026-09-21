@@ -1897,7 +1897,7 @@ fn broken_environment(
         if analyzer.is_some() && analyzed.is_none() {
             note("形態素解析", kakiburi_metrics::Measured::ToolFailed);
         }
-        for (name, m) in kakiburi_metrics::Humanness::measure(&prose, analyzed.as_ref()).flat() {
+        for (name, m) in humanness_of(s.document, analyzer).flat() {
             note(&name, m);
         }
         for (name, m) in measured_with(s.document, analyzed.as_ref()) {
@@ -1929,6 +1929,24 @@ fn rows(
                 .collect()
         })
         .collect()
+}
+
+/// 人らしさを測る。<strong>識別子を伏せてから測る。</strong>
+///
+/// [目盛りを作る側](kakiburi_scale)が同じ前処理を掛けている。掛けないと、`measure` が
+/// 出す値と `review` が判定に使う値が食い違う——<strong>同じ文書で違う数を 2 つ出す道具</strong>に
+/// なる。実際そうなっていて、生の圧縮率がほぼ同じ本人と基準の記事で、寄与が
+/// <strong>+2.604 と −0.539</strong> に割れていた。
+///
+/// <strong>掛けるのは人らしさと照合だけである。</strong> 指示できる指標は和欧間スペースや
+/// 半角英字そのものを測るので、生の文から測り続ける。
+fn humanness_of(
+    doc: &kakiburi_doc::Document,
+    analyzer: Option<&dyn kakiburi_metrics::morph::Analyzer>,
+) -> kakiburi_metrics::Humanness {
+    let prose = kakiburi_doc::prose::mask_identifiers(&doc.prose());
+    let analyzed = analyzed_of(&prose, analyzer);
+    kakiburi_metrics::Humanness::measure(&prose, analyzed.as_ref())
 }
 
 /// 解析し終えた形。<strong>解析器が無ければ `None`。</strong>
@@ -2916,14 +2934,24 @@ fn measure(args: &[String]) -> Exit {
         }
     };
 
+    // <strong>解析は 1 度だけ行い、両方の出し方が同じ値を使う。</strong>
+    //
+    // 別々に解析すると<strong>片方だけが解析器を捨てる</strong>。実際そうなっていた——
+    // 人向けは `語を割る読点 0.000`、`--json` は `道具が無い` を返していた。
+    // <strong>同じ入力に対して、測れたか測れていないかが出し方で変わってはいけない。</strong>
+    let mecab = analyzer::resolve();
+    let analyzed = analyzed_of(
+        &doc.prose(),
+        mecab
+            .as_ref()
+            .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+    );
+    #[allow(clippy::cast_precision_loss)]
+    let tokens = analyzed.as_ref().map(|a| a.tokens() as f64);
+    let values = measured_with(&doc, analyzed.as_ref());
+
     if json {
         // <strong>人向けの表示は変えない。</strong> 出すのは同じ値の生の形である。
-        let mecab = analyzer::resolve();
-        #[allow(clippy::cast_precision_loss)]
-        let tokens = mecab
-            .as_ref()
-            .and_then(|m| kakiburi_metrics::morph::Analyzed::of(&doc.prose(), m).ok())
-            .map(|a| a.tokens() as f64);
         println!(
             "{}",
             kakiburi_cassette::json::Value::obj([
@@ -2938,23 +2966,19 @@ fn measure(args: &[String]) -> Exit {
                 ),
                 ("tokens".to_owned(), machine::number(tokens)),
                 ("structure".to_owned(), machine::structure(&doc)),
-                ("directives".to_owned(), machine::metrics(&measured(&doc))),
+                ("directives".to_owned(), machine::metrics(&values)),
                 (
                     // <strong>人らしさの生の値も出す。</strong> カセットが無くても測れる値であり、
                     // 出さなければ<strong>素材が向きを支えているかを外から確かめられない</strong>。
                     "humanness".to_owned(),
                     machine::metrics(
-                        &kakiburi_metrics::humanness::Humanness::measure(
-                            &doc.prose(),
-                            analyzed_of(
-                                &doc.prose(),
-                                mecab
-                                    .as_ref()
-                                    .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
-                            )
-                            .as_ref(),
+                        &humanness_of(
+                            &doc,
+                            mecab
+                                .as_ref()
+                                .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer)
                         )
-                        .flat(),
+                        .flat()
                     ),
                 ),
             ])
@@ -2967,22 +2991,8 @@ fn measure(args: &[String]) -> Exit {
     println!("日本語 {} 字", doc.japanese_chars());
     // <strong>形態素の数も出す。</strong> 字数で足りていても語で足りないことがあり、
     // そのとき何が測れないかが字数からは分からない。
-    // <strong>解析できたものは測る側にも渡す。</strong> ここで捨てると、辞書を指しているのに
-    // 解析器を要る軸が「道具が無い」で並ぶ。
-    let mut analyzed = None;
-    if let Some(m) = analyzer::resolve() {
-        match kakiburi_metrics::morph::Analyzed::of(&doc.prose(), &m) {
-            Ok(a) => {
-                println!(
-                    "延べ {} 語（{} {}）",
-                    a.tokens(),
-                    m.dict_name,
-                    m.dict_version
-                );
-                analyzed = Some(a);
-            }
-            Err(e) => println!("形態素解析できない: {e}"),
-        }
+    if let (Some(n), Some(m)) = (tokens, mecab.as_ref()) {
+        println!("延べ {n} 語（{} {}）", m.dict_name, m.dict_version);
     }
     println!(
         "段落 {} / 文 {} / 節 {} / 項目 {}",
@@ -2994,7 +3004,7 @@ fn measure(args: &[String]) -> Exit {
     println!();
     println!("指示できる指標");
     println!("{}", "-".repeat(46));
-    for (name, m) in measured_with(&doc, analyzed.as_ref()) {
+    for (name, m) in values {
         match m.unmeasured() {
             None => println!("  {name:<28} {:>10.3}", m.value().unwrap_or_default()),
             // <strong>理由をそのまま出す。</strong> まとめて「測れない」と出せば、辞書を入れ忘れた
@@ -3159,6 +3169,49 @@ fn measured_names() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 人らしさは識別子を伏せてから測る() {
+        // <strong>目盛りを作る側が同じ前処理を掛けている。</strong> 掛けないと、`measure` が出す値と
+        // `review` が判定に使う値が食い違う——同じ文書で違う数を 2 つ出す道具になる。
+        // <strong>圧縮率の下限を越える長さが要る。</strong> 越えないとどちらも「測っていない」に
+        // なり、同じ値として通ってしまう。
+        let body = "ここでは denops.vim という名前のプラグインを書いていきます。\n\n".repeat(200);
+        let doc = normalize(&body, Source::PlainMarkdown).expect("正規化できる");
+        let masked = humanness_of(&doc, None);
+        let raw = kakiburi_metrics::Humanness::measure(&doc.prose(), None);
+        assert_ne!(
+            masked, raw,
+            "識別子だらけの文章で、伏せた値と伏せない値が同じになっている"
+        );
+    }
+
+    #[test]
+    fn 測る値は出し方で変わらない() {
+        // <strong>片方だけが解析器を捨てる</strong>という壊れ方をした。人向けは
+        // `語を割る読点 0.000`、`--json` は `道具が無い` を返していた。
+        //
+        // <strong>解析器の有無で測れる軸は変わってよい。</strong> 変わってはいけないのは、
+        // 同じ解析器を渡したのに出し方で結果が違うことである。
+        let doc = normalize(
+            "あらためて取得し直す。\n\n次の段落。",
+            Source::PlainMarkdown,
+        )
+        .expect("正規化できる");
+        let a = analyzed_of(&doc.prose(), None);
+        assert_eq!(
+            measured_with(&doc, a.as_ref()),
+            measured_with(&doc, a.as_ref()),
+            "同じ入力と同じ解析器からは同じ値が出る"
+        );
+        // 解析器を捨てれば、要る軸は<strong>0 ではなく「道具が無い」</strong>になる。
+        let without: Vec<Measured> = measured_with(&doc, None)
+            .into_iter()
+            .filter(|(n, _)| n == "語を割る読点")
+            .map(|(_, m)| m)
+            .collect();
+        assert_eq!(without, vec![Measured::ToolMissing]);
+    }
 
     #[test]
     fn 引数が無ければ助けを出す() {
