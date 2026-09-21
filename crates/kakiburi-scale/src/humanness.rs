@@ -361,23 +361,27 @@ mod tests {
             .collect()
     }
 
-    /// 人の側は繰り返しが多く、ほかの 3 つが低い。
+    /// 人の側は繰り返しが多く、ほかは低い。<strong>並びは[次元](dims)の順である。</strong>
     fn human_row(seed: f64) -> Vec<f64> {
         let mut row = vec![0.30 + seed; 1];
         row.extend(std::iter::repeat_n(0.50 + seed, 8));
         row.push(0.30 + seed);
         row.push(8.0 + seed);
         row.push(6.0 + seed);
+        row.push(20.0 + seed);
+        row.push(18.0 + seed);
         row
     }
 
-    /// 機械の側は繰り返しが足りず、ほかの 3 つが高い。
+    /// 機械の側は繰り返しが足りず、ほかは高い。
     fn machine_row(seed: f64) -> Vec<f64> {
         let mut row = vec![0.45 + seed; 1];
         row.extend(std::iter::repeat_n(0.10 + seed, 8));
         row.push(0.60 + seed);
         row.push(10.0 + seed);
         row.push(7.5 + seed);
+        row.push(28.0 + seed);
+        row.push(26.0 + seed);
         row
     }
 
@@ -426,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn 向きが定義どおりなら_4_つとも定義の側になる() {
+    fn 向きが定義どおりならどれも定義の側になる() {
         let s = scale();
         assert!(
             s.contradicting_dims().is_empty(),
@@ -443,8 +447,8 @@ mod tests {
     }
 
     #[test]
-    fn 次元は_12_である() {
-        assert_eq!(dims().len(), 12);
+    fn 次元は_14_である() {
+        assert_eq!(dims().len(), 14);
     }
 
     #[test]
@@ -467,7 +471,7 @@ mod tests {
     /// 繰り返しの次元と異なり語率は 0.003〜0.4、語のエントロピーは 7 前後、
     /// 圧縮率は 6 前後である。
     fn wide_row(human: bool, i: usize) -> Vec<f64> {
-        // 並びは 圧縮率 1 / 繰り返し 8 / 異なり語率 1 / エントロピー 2。
+        // 並びは 圧縮率 1 / 繰り返し 8 / 異なり語率 1 / エントロピー 2 / 句読点 2。
         //
         // <strong>繰り返しと異なり語率は両側が重なる。</strong> 実測の広がりをそのまま使い、
         // 向きだけ定義に合わせる——繰り返しは人が多い側、異なり語率は機械が高い側。
@@ -493,11 +497,20 @@ mod tests {
         } else {
             [7.23, 7.45, 7.60, 7.80, 7.96][i]
         };
+        // <strong>句読点の密度は 2 桁の値である。</strong> 尺度がさらに 1 桁ちがう次元を混ぜても
+        // 合算が支配されないことを、この素材で見る。
+        let punct = if human {
+            [22.0, 23.5, 24.0, 25.5, 26.0][i]
+        } else {
+            [27.0, 28.0, 29.0, 30.5, 31.0][i]
+        };
         let mut row = vec![if human { 6.35 } else { 6.40 } + i as f64 * 0.02];
         row.extend(std::iter::repeat_n(rep, 8));
         row.push(rich);
         row.push(ent);
         row.push(ent - 2.0);
+        row.push(punct);
+        row.push(punct - 4.0);
         row
     }
 
@@ -548,7 +561,7 @@ mod tests {
         let s = scale();
         let e = s.value(&[]).unwrap_err();
         let HumannessError::MissingDims { names } = e;
-        assert_eq!(names.len(), 12, "人らしさの次元が欠けている");
+        assert_eq!(names.len(), 14, "人らしさの次元が欠けている");
     }
 
     #[test]
@@ -556,7 +569,7 @@ mod tests {
         // 次元ごとの重みを少ない点から当てはめない。繰り返しの次元が重みを持ち去る。
         let s = scale();
         assert_eq!(s.fusion().slopes().len(), Metric::ALL.len());
-        assert_eq!(s.per_dim().len(), 12);
+        assert_eq!(s.per_dim().len(), 14);
     }
 
     #[test]

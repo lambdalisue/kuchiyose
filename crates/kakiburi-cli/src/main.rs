@@ -1572,8 +1572,8 @@ fn build_scene(
         scale.humanness_band.floor.high
     ));
     if scale.humanness.evenly_spread() {
-        // 4 つは同じ現象を別の角度から見ている。<strong>均等に開いたら較正を疑う。</strong>
-        eprintln!("但し書き: 人らしさの合算が 5 指標に均等に開いている。較正を疑う");
+        // 語彙の狭さを見る 5 つは同じ現象を別の角度から見ている。<strong>均等に開いたら較正を疑う。</strong>
+        eprintln!("但し書き: 人らしさの合算が指標に均等に開いている。較正を疑う");
     }
 
     // <strong>効くかの判定はここで出す。</strong> 検めが作り直せる形にしておくと、検める文書を

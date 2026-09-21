@@ -96,7 +96,7 @@ fn 種別の内訳が仕様と合う() {
     // 照合の系統は 8 本。判定に使える層 1 はそのうちの一部である。
     assert_eq!(matching, 8, "照合の系統は 8 本");
     // 繰り返しは短いと長いに割れている。**まとめると向きが指標の中で割れる。**
-    assert_eq!(humanness, 5, "人らしさは 5 本");
+    assert_eq!(humanness, 6, "人らしさは 6 本");
 }
 
 #[test]
@@ -166,5 +166,85 @@ fn 両側の指標は直し方を_2_つ書いている() {
             "{}.md: 両側なのに上下が揃っていない（上: {up:?} / 下: {down:?}）",
             def_.file
         );
+    }
+}
+
+/// 直し方の節から、`上` と `下` の行を取る。
+fn directions(remedy: &str) -> (Option<String>, Option<String>) {
+    let pick = |label: &str| -> Option<String> {
+        remedy.lines().find_map(|l| {
+            let l = l.trim();
+            for open in ["<strong>", "**"] {
+                let close = if open == "**" { "**" } else { "</strong>" };
+                let head = format!("{open}{label}{close}");
+                if let Some(rest) = l.strip_prefix(&head) {
+                    return Some(rest.trim_start_matches([':', '：']).trim().to_owned());
+                }
+            }
+            None
+        })
+    };
+    (pick("上"), pick("下"))
+}
+
+#[test]
+fn 両側の指標は上と下の両方を書く() {
+    // <strong>片方しか書かなければ、直す側はもう片方を自分で考えることになる。</strong>
+    // 人らしさは向きを較正が決めるので、<strong>両方が要る</strong>——決め打つと、較正が
+    // 「減らせ」と言った場面でも「増やせ」と指示することになる。
+    let defs = read_definitions();
+    if defs.is_empty() {
+        eprintln!("定義ファイルが見つからないので飛ばした");
+        return;
+    }
+    for d in &defs {
+        let Ok(tag) = Tag::parse(&d.tag_line) else {
+            continue;
+        };
+        if !matches!(tag, Tag::Humanness { .. }) {
+            continue;
+        }
+        let (up, down) = directions(&d.remedy);
+        assert!(up.is_some(), "{}: 直し方に「上」が無い", d.name);
+        assert!(down.is_some(), "{}: 直し方に「下」が無い", d.name);
+        assert_ne!(up, down, "{}: 上と下が同じ", d.name);
+    }
+}
+
+/// <strong>この試験は「入れ替わり」を捕まえない。</strong>
+///
+/// 上下を取り違えると、道具は自分の判定を悪くする方向へ指示する。実際に 1 度そう書いた
+/// ——較正が「句読点の密度を下げろ」と言うのに、直し方は「文を短く切り、読点を増やす」
+/// と出ていた。<strong>入れ替えたまま、この試験は通る。</strong> 実際に戻して確かめた。
+///
+/// 捕まえるのは<strong>上下が同じ向きを言っている</strong>ときだけである。入れ替わりを捕まえるには、
+/// 定義ごとに「上の直し方を当てた前後の文」を持たせて実際に測るしかない
+/// （[句読点の密度でやっている形](kakiburi_metrics::humanness)）。<strong>まだ 1 本しかない。</strong>
+#[test]
+fn 上と下が同じ向きを言っていない() {
+    let defs = read_definitions();
+    if defs.is_empty() {
+        eprintln!("定義ファイルが見つからないので飛ばした");
+        return;
+    }
+    let more = ["増やす", "増やし", "多くする"];
+    let less = ["減らす", "減らし", "抑える", "避ける"];
+    for d in &defs {
+        let Ok(tag) = Tag::parse(&d.tag_line) else {
+            continue;
+        };
+        if !matches!(tag, Tag::Humanness { .. }) {
+            continue;
+        }
+        let (Some(up), Some(down)) = directions(&d.remedy) else {
+            continue;
+        };
+        let has = |s: &str, words: &[&str]| words.iter().any(|w| s.contains(w));
+        if has(&up, &more) && has(&down, &more) && !has(&up, &less) && !has(&down, &less) {
+            panic!("{}: 上も下も「増やす」と言っている", d.name);
+        }
+        if has(&up, &less) && has(&down, &less) && !has(&up, &more) && !has(&down, &more) {
+            panic!("{}: 上も下も「減らす」と言っている", d.name);
+        }
     }
 }

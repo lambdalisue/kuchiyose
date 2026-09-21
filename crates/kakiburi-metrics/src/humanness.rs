@@ -1,9 +1,13 @@
-//! 人らしさの 5 指標。<strong>その人らしさではない。</strong>
+//! 人らしさの指標。<strong>その人らしさではない。</strong>
 //!
 //! 人が書いたものに見えるかを測る（[通るための 2 つ目の条件](../../../docs/spec/010-strategy.md#通るには-2-つ要る)）。
 //!
-//! <strong>5 つを独立した 5 つの証拠として数えない。</strong> 圧縮率・短い繰り返し・長い繰り返し・
-//! 語彙の豊富さ・エントロピーは<strong>同じ現象を別の角度から見ている</strong>。
+//! <strong>語彙の狭さを見る 5 つを、独立した 5 つの証拠として数えない。</strong> 圧縮率・短い繰り返し・
+//! 長い繰り返し・語彙の豊富さ・エントロピーは<strong>同じ現象を別の角度から見ている</strong>。
+//!
+//! <strong>句読点の密度だけは、その 5 つと現象が違う。</strong> 語を数えないので、題材の広い文章が
+//! 誰の手でも機械の側へ出る交絡を受けない（[Przystalski ほか 2025](../../../docs/references/przystalski-2025.md)
+//! は句点・句読点・読点を重要度の上位 10 に挙げている）。
 //!
 //! <strong>ただし寄せる向きは同じとはかぎらない。</strong> 短い言い回しの反復と長い言い回しの
 //! 再来は逆に出ることがあるので、[別の指標として持つ](Metric::RepetitionShort)。
@@ -60,7 +64,7 @@ pub const WINDOW: usize = 1000;
 /// 語ではなくバイトで切る。**要らないものを要ることにしない。**
 pub const WINDOW_BYTES: usize = floor::PROSE_BYTES;
 
-/// 人らしさの指標。<strong>5 つである。</strong>
+/// 人らしさの指標。
 ///
 /// 繰り返しは<strong>短いと長いに割れている</strong>——2〜3 語の反復と 4〜5 語の再来は別の
 /// 現象で、まとめると向きが指標の中で割れる。
@@ -84,16 +88,24 @@ pub enum Metric {
     Richness,
     /// エントロピー。2 次元。
     Entropy,
+    /// 句読点の密度。2 次元。
+    ///
+    /// <strong>ほかの指標と現象が違う。</strong> ほかの 5 つは語彙の狭さを見ているので、
+    /// <strong>題材の広い文章は誰が書いても機械の側に出る</strong>。この指標は語を数えない。
+    ///
+    /// 形態素解析を要らない——[圧縮率](Metric::Compression)と 2 つだけである。
+    Punctuation,
 }
 
 impl Metric {
     /// 全部。<strong>合算の入力の並びはこの順である。</strong>
-    pub const ALL: [Metric; 5] = [
+    pub const ALL: [Metric; 6] = [
         Metric::Compression,
         Metric::RepetitionShort,
         Metric::RepetitionLong,
         Metric::Richness,
         Metric::Entropy,
+        Metric::Punctuation,
     ];
 
     /// 指標の名前。定義ファイルの 1 行目と同じ。
@@ -105,6 +117,7 @@ impl Metric {
             Metric::RepetitionLong => "長い繰り返し",
             Metric::Richness => "語彙の豊富さ",
             Metric::Entropy => "エントロピー",
+            Metric::Punctuation => "句読点の密度",
         }
     }
 
@@ -123,6 +136,7 @@ impl Metric {
                 .collect(),
             Metric::Richness => vec!["異なり語率".into()],
             Metric::Entropy => vec!["語のエントロピー".into(), "文字のエントロピー".into()],
+            Metric::Punctuation => vec!["句点の密度".into(), "読点の密度".into()],
         }
     }
 
@@ -161,6 +175,7 @@ impl Humanness {
                 Metric::RepetitionLong => repetition(analyzed, &LONG_N),
                 Metric::Richness => vec![richness(analyzed)],
                 Metric::Entropy => entropy(analyzed),
+                Metric::Punctuation => punctuation(prose),
             };
             let named = m.dims().into_iter().zip(got).collect();
             values.push((m, named));
@@ -183,7 +198,7 @@ impl Humanness {
             .collect()
     }
 
-    /// <strong>5 指標が全部測れたか。</strong>
+    /// <strong>指標が全部測れたか。</strong>
     ///
     /// 1 つでも欠ければ人らしさ値を出さない——[欠けた分を抜いて合算しない](crate::morph)。
     #[must_use]
@@ -248,6 +263,53 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
     }
     #[allow(clippy::cast_precision_loss)]
     Measured::Value(ratios.iter().sum::<f64>() / ratios.len() as f64)
+}
+
+/// 句読点の密度。<strong>句点と読点を別々に、1,000 字あたりで数える。</strong>
+///
+/// <strong>ほかの人らしさの指標と現象が違う。</strong> 語を数えないので、題材の広い文章が
+/// 誰の手でも機械の側へ出る交絡を受けない。
+///
+/// 形態素解析を要らないので、[圧縮率](compression_ratio)と同じくバイトの窓で切る。
+#[must_use]
+pub fn punctuation(prose: &[Segment]) -> Vec<Measured> {
+    let text = joined(prose);
+    let mut periods = Vec::new();
+    let mut commas = Vec::new();
+    let mut window = String::new();
+    for c in text.chars() {
+        window.push(c);
+        if window.len() < WINDOW_BYTES {
+            continue;
+        }
+        push_rates(&window, &mut periods, &mut commas);
+        window.clear();
+    }
+    if periods.is_empty() {
+        // 窓が 1 つも取れない。<strong>0 を返さない</strong>——0 は「測って 0 だった」である。
+        return vec![Measured::BelowFloor, Measured::BelowFloor];
+    }
+    vec![mean(&periods), mean(&commas)]
+}
+
+/// 1 つの窓から、句点と読点の 1,000 字あたりの数を出して足す。
+fn push_rates(window: &str, periods: &mut Vec<f64>, commas: &mut Vec<f64>) {
+    let chars = window.chars().count();
+    if chars == 0 {
+        return;
+    }
+    // <strong>全角のみを数える。</strong> 和文の句読点と `.` `,` は用途が違う。
+    let count = |target: char| window.chars().filter(|c| *c == target).count();
+    #[allow(clippy::cast_precision_loss)]
+    let per_thousand = |n: usize| n as f64 / chars as f64 * 1000.0;
+    periods.push(per_thousand(count('。')));
+    commas.push(per_thousand(count('、')));
+}
+
+/// 窓ごとの値の平均。
+fn mean(values: &[f64]) -> Measured {
+    #[allow(clippy::cast_precision_loss)]
+    Measured::Value(values.iter().sum::<f64>() / values.len() as f64)
 }
 
 /// 1 つの窓を圧縮して、比を返す。<strong>圧縮器が返さなければ `None`。</strong>
@@ -569,6 +631,11 @@ mod tests {
         v
     }
 
+    /// 同じ文を n 回並べた地の文。
+    fn long_times(unit: &str, times: usize) -> Vec<Segment> {
+        (0..times).map(|_| seg(unit)).collect()
+    }
+
     /// 延べ 1,000 語を越える形態素列。<strong>Stub は空白で切る。</strong>
     fn tokens(unit: &str, times: usize) -> (Vec<Segment>, Analyzed) {
         let prose: Vec<Segment> = (0..times).map(|_| seg(unit)).collect();
@@ -577,11 +644,11 @@ mod tests {
     }
 
     #[test]
-    fn 次元は合わせて_12_である() {
+    fn 次元は合わせて_14_である() {
         let total: usize = Metric::ALL.iter().map(|m| m.dims().len()).sum();
         assert_eq!(
-            total, 12,
-            "圧縮率 1 ＋ 繰り返し 8 ＋ 豊富さ 1 ＋ エントロピー 2"
+            total, 14,
+            "圧縮率 1 ＋ 繰り返し 8 ＋ 豊富さ 1 ＋ エントロピー 2 ＋ 句読点 2"
         );
     }
 
@@ -727,6 +794,34 @@ mod tests {
         assert!((a - b).abs() < 1e-9, "長さに依らない: {a} vs {b}");
     }
 
+    // <strong>ここから 6 本は、定義ファイルの `上` と実装の向きを結ぶ見張りである。</strong>
+    //
+    // 定義の `上` は<strong>「値が高すぎるときの直し方」</strong>である。取り違えると、道具は
+    // 較正が「減らせ」と言った場面で「増やせ」と指示する——<strong>従うほど人らしさが
+    // 下がる。</strong> 実際に 1 度そう書いた（句読点の密度）。
+    //
+    // <strong>文言の意味は機械で読めない。</strong> だから<strong>上の直し方を当てた前後の文</strong>を置いて、
+    // 値が実際に下がることを見る。定義を書き換えただけでは、この見張りは動かない
+    // ——<strong>指標ごとに 1 本ずつ要る。</strong>
+    //
+    // | 指標 | 見張り |
+    // | --- | --- |
+    // | 圧縮率 | [`繰り返しが多いほど圧縮率は下がる`] |
+    // | 短い繰り返し・長い繰り返し | [`繰り返しの再来率は同じ言い回しで上がる`] |
+    // | 語彙の豊富さ | [`上の直し方を当てると語彙の豊富さは下がる`] |
+    // | エントロピー | [`語彙が散るほどエントロピーは高い`] |
+    // | 句読点の密度 | [`上の直し方を当てると句読点の密度は下がる`] |
+
+    #[test]
+    fn 上の直し方を当てると語彙の豊富さは下がる() {
+        // 上の直し方は「語を散らさない。同じものを指すのに別の語を使い分けない」。
+        let (_, scattered) = tokens("あ い う え お か き く け こ", 150);
+        let (_, narrow) = tokens("あ あ あ い い い あ あ い い", 150);
+        let wide = richness(Some(&scattered)).value().expect("測れる");
+        let tight = richness(Some(&narrow)).value().expect("測れる");
+        assert!(tight < wide, "語を散らさないほうが低い: {tight} vs {wide}");
+    }
+
     #[test]
     fn 豊富さは窓で測る() {
         // 窓を切らなければ、長いほど下がる——測っているのは長さになる。
@@ -775,13 +870,86 @@ mod tests {
     }
 
     #[test]
-    fn 揃えば_12_次元が全部出る() {
+    fn 揃えば_14_次元が全部出る() {
         let prose: Vec<Segment> = (0..200)
             .map(|i| seg(&format!("これ は {i} 番目 の 文 で ある 。")))
             .collect();
         let a = Analyzed::of(&prose, &Stub::unidic()).unwrap();
         let h = Humanness::measure(&prose, Some(&a));
         assert!(h.all_measured(), "測れていない: {:?}", h.missing());
-        assert_eq!(h.flat().len(), 12);
+        assert_eq!(h.flat().len(), 14);
+    }
+
+    #[test]
+    fn 句読点の密度は_1000_字あたりで数える() {
+        // 7 字の文に句点 1・読点 1。**繋ぎの改行も 1 字に数える**ので 8 字あたり 1 つ。
+        let v = punctuation(&long("あい、うえお。"));
+        let period = v[0].value().expect("句点が測れる");
+        let comma = v[1].value().expect("読点が測れる");
+        assert!((period - 125.0).abs() < 1.0, "8 字に句点 1 つ: {period}");
+        assert!((comma - period).abs() < 1.0, "読点も同じ数: {comma}");
+    }
+
+    #[test]
+    fn 句読点の密度は長さに依らない() {
+        // **窓ごとの割合の平均である。** 長い文書ほど大きくなるなら、測っているのは
+        // 書きぶりではなく長さになる。
+        let short = punctuation(&long_times("あい、うえお。", 400))[0]
+            .value()
+            .unwrap();
+        let doubled = punctuation(&long_times("あい、うえお。", 800))[0]
+            .value()
+            .unwrap();
+        assert!(
+            (short - doubled).abs() < 1.0,
+            "長さで動いた: {short} vs {doubled}"
+        );
+    }
+
+    #[test]
+    fn 句読点の密度は形態素解析を要らない() {
+        // 圧縮率と 2 つだけである。辞書の無い環境でも残る。
+        let prose = long("あい、うえお。");
+        let h = Humanness::measure(&prose, None);
+        let got: Vec<(String, Measured)> = h
+            .per_metric()
+            .iter()
+            .find(|(m, _)| *m == Metric::Punctuation)
+            .expect("句読点の密度がある")
+            .1
+            .clone();
+        assert!(got.iter().all(|(_, m)| m.is_measured()), "{got:?}");
+    }
+
+    #[test]
+    fn 短い地の文では句読点の密度を測らない() {
+        // 窓が 1 つも取れない。**0 を返さない。**
+        let v = punctuation(&[seg("短い。")]);
+        assert_eq!(v, vec![Measured::BelowFloor, Measured::BelowFloor]);
+    }
+
+    #[test]
+    fn 上の直し方を当てると句読点の密度は下がる() {
+        // <strong>定義ファイルの `上` は「値が高すぎるときの直し方」である。</strong>
+        // 逆に書くと、較正が「減らせ」と言った場面で道具は「増やせ」と指示する
+        // ——<strong>直し方に従うほど人らしさが下がる。</strong> 実際に 1 度そう書いた。
+        //
+        // 上の直し方は「文を繋いで長くし、読点を減らす」。当てて下がることを見る。
+        let before = punctuation(&long("あい、うえお。"));
+        let after = punctuation(&long("あいうえおかきくけこさしすせそたちつてと。"));
+        for (i, name) in ["句点", "読点"].iter().enumerate() {
+            let b = before[i].value().expect("測れる");
+            let a = after[i].value().expect("測れる");
+            assert!(a < b, "{name}の密度が下がらない: {b} → {a}");
+        }
+    }
+
+    #[test]
+    fn 半角の句読点は数えない() {
+        // 和文の句読点と用途が違ううえ、識別子を伏せたあとの半角記号は題材の残りかす。
+        let zenkaku = punctuation(&long("あい、うえお。"))[0].value().unwrap();
+        let hankaku = punctuation(&long("あいxうえおy."))[0].value().unwrap();
+        assert!(zenkaku > 0.0, "全角は数える: {zenkaku}");
+        assert_eq!(hankaku, 0.0, "半角は数えない: {hankaku}");
     }
 }

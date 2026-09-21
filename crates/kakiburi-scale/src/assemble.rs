@@ -1896,6 +1896,6 @@ mod tests {
         );
         assert_eq!(got.matching, None);
         assert_eq!(got.missing_systems.len(), 5);
-        assert_eq!(got.missing_humanness.len(), 12);
+        assert_eq!(got.missing_humanness.len(), 14);
     }
 }
