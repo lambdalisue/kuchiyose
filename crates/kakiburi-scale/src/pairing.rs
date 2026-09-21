@@ -210,16 +210,33 @@ mod tests {
 
     #[test]
     fn 天井は相手集合の外の単位から出る() {
-        let p = pairing();
+        // 相手集合の中から出せば、較正に使った対で天井を測ることになる。
+        let person = split(&units("p", 10)).unwrap();
+        let p = pair(&person, &split(&units("b", 10)).unwrap(), &[]);
         let names: Vec<&str> = p.ceiling.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, vec!["p05", "p06", "p07", "p08", "p09"]);
+        let points: Vec<&str> = person.points.iter().map(|u| u.name.as_str()).collect();
+        assert_eq!(names, points, "天井の点は測る分そのもの");
+        for n in &names {
+            assert!(
+                !person.partners.iter().any(|u| u.name == *n),
+                "{n} が相手集合に入っている"
+            );
+        }
     }
 
     #[test]
     fn 床は基準の外の単位から出る() {
-        let p = pairing();
+        let baseline = split(&units("b", 10)).unwrap();
+        let p = pair(&split(&units("p", 10)).unwrap(), &baseline, &[]);
         let names: Vec<&str> = p.floor.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, vec!["b05", "b06", "b07", "b08", "b09"]);
+        let points: Vec<&str> = baseline.points.iter().map(|u| u.name.as_str()).collect();
+        assert_eq!(names, points, "床の点は床の点そのもの");
+        for n in &names {
+            assert!(
+                !baseline.partners.iter().any(|u| u.name == *n),
+                "{n} が較正分に入っている"
+            );
+        }
     }
 
     #[test]

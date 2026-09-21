@@ -413,7 +413,7 @@ mod tests {
             &back.selection.baseline_partners,
             &back.selection.baseline_points,
         ] {
-            assert_eq!(names.len(), kakiburi_scale::split::PER_SIDE);
+            assert!(!names.is_empty(), "割りが空になっている");
         }
         assert_eq!(back.selection, s.selection);
     }

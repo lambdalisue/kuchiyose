@@ -57,12 +57,41 @@ impl Ends {
         Some(Self { low, high })
     }
 
+    /// 天井の端。<strong>下の裾を切る。</strong>
+    ///
+    /// 下端は「ここ以上なら通る」の閾値である。<strong>最小値で取ると、点を足すほど外れた
+    /// 1 本まで下がる</strong>——素材を足すほど帯が緩み、機械の側の文章が通るようになる。
+    /// 分位で取れば点の数で漂わないので、[帯の点](crate::split::Split::points)を
+    /// 5 本に固定せずに済む。
+    ///
+    /// <strong>上端は最大のまま切らない。</strong> 上端は[判定](Band::judge)に使わないので、
+    /// 外れた 1 本が伸ばしても誰も否定されない。
+    #[must_use]
+    pub fn trimmed_low(points: &[f64]) -> Option<Self> {
+        let mut s: Vec<f64> = points.to_vec();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let low = quantile(&s, CEILING_TRIM);
+        let high = *s.last()?;
+        if (high - low).abs() < f64::EPSILON {
+            return None;
+        }
+        Some(Self { low, high })
+    }
+
     /// 広がり。
     #[must_use]
     pub fn spread(self) -> f64 {
         self.high - self.low
     }
 }
+
+/// 天井の下端に取る分位。<strong>暫定値である。</strong>
+///
+/// 向きは[代償が対称でない](Ends::trimmed)ことから決まる——天井の下端を下げると
+/// <strong>機械の側の文章を通す</strong>ので、床の上端とは逆に、切って上へ倒すのが保守側である。
+/// <strong>どこで切るかは 1 人分の実測で選んだ。</strong> カセットの `provisional` が「帯の端」を
+/// 挙げているのはこのことである。
+pub const CEILING_TRIM: f64 = 0.25;
 
 /// 床の上端に取る分位。<strong>暫定値である。</strong>
 ///
@@ -186,7 +215,7 @@ impl Band {
 
     fn of_ends(ceiling: &[f64], floor: &[f64]) -> Result<Self, BandError> {
         Ok(Self {
-            ceiling: Ends::of(ceiling).ok_or(BandError::NoSpread { side: "天井" })?,
+            ceiling: Ends::trimmed_low(ceiling).ok_or(BandError::NoSpread { side: "天井" })?,
             floor: Ends::trimmed(floor).ok_or(BandError::NoSpread { side: "床" })?,
         })
     }
@@ -275,11 +304,33 @@ mod tests {
     }
 
     #[test]
+    fn 天井は下の裾を切る() {
+        // <strong>下端は「ここ以上なら通る」の閾値である。</strong> 最小値で取ると、点を足すほど
+        // 外れた 1 本まで下がって、機械の側の文章が通る。
+        let e = Ends::trimmed_low(&[0.0, 1.0, 2.0, 3.0, 4.0]).expect("端が決まる");
+        assert_eq!(e.low, 1.0, "下端は 25% 分位");
+        assert_eq!(e.high, 4.0, "上端は最大のまま");
+    }
+
+    #[test]
+    fn 天井の下端は外れた_1_本で落ちない() {
+        // 最小値で取っていれば、この 1 本がそのまま下端になる。
+        let e = Ends::trimmed_low(&[-10.0, 1.0, 2.0, 3.0, 4.0, 5.0]).expect("端が決まる");
+        assert!(e.low > 0.0, "下端が外れ値に引かれない: {}", e.low);
+    }
+
+    #[test]
+    fn 天井も裾を切って広がりが_0_になれば端が決まらない() {
+        // 下位 4 分の 1 を除くと 1 点に潰れる並び。
+        assert_eq!(Ends::trimmed_low(&[-9.0, 1.0, 1.0, 1.0, 1.0]), None);
+    }
+
+    #[test]
     fn 分離していれば隙間が出る() {
-        // 床は上の裾を切るので 0.0〜0.75。隙間は 0.75〜2.0 の 1.25。
+        // 天井は下の裾を切るので 2.25〜3.0、床は上の裾を切るので 0.0〜0.75。
         let b = Band::build(&[2.0, 3.0], &[0.0, 1.0]).unwrap();
         assert!(b.separated());
-        assert_eq!(b.gap(), Some(1.25));
+        assert_eq!(b.gap(), Some(1.5));
         assert_eq!(b.overlap(), None);
     }
 
@@ -292,10 +343,10 @@ mod tests {
 
     #[test]
     fn 重なっていれば区間が出る() {
-        // 天井 1.0〜3.0、床は裾を切って 0.0〜1.5。重なりは 1.0〜1.5 の 0.5。
-        let b = Band::build(&[1.0, 3.0], &[0.0, 2.0]).unwrap();
+        // 天井は裾を切って 2.0〜5.0、床も裾を切って 0.0〜3.0。重なりは 2.0〜3.0 の 1.0。
+        let b = Band::build(&[1.0, 5.0], &[0.0, 4.0]).unwrap();
         assert!(!b.separated());
-        assert_eq!(b.overlap(), Some(0.5));
+        assert_eq!(b.overlap(), Some(1.0));
         assert_eq!(b.gap(), None);
     }
 
@@ -308,7 +359,7 @@ mod tests {
 
     #[test]
     fn 片側だけ超えても帯は作る() {
-        // 天井 0.0〜10.0、床 4.0〜6.0。重なりは 4.0〜6.0 の 2.0。
+        // 天井は裾を切って 2.5〜10.0、床も裾を切って 4.0〜5.5。重なりは 4.0〜5.5 の 1.5。
         // 床に対しては 100% だが、天井に対しては 20%。片方だけでは止めない。
         let b = Band::build(&[0.0, 10.0], &[4.0, 6.0]).expect("片側だけなら作る");
         assert_eq!(b.overlap(), Some(1.5));
@@ -318,7 +369,7 @@ mod tests {
     fn 人らしさは重なっても帯を作る() {
         // 覆っていることが判定不能として出る仕組みなので、止めれば自己診断が消える。
         let b = Band::build_humanness(&[0.0, 2.0], &[0.0, 2.0]).expect("覆っていても作る");
-        assert_eq!(b.overlap(), Some(1.5));
+        assert_eq!(b.overlap(), Some(1.0));
     }
 
     #[test]
@@ -338,16 +389,21 @@ mod tests {
 
     #[test]
     fn 分離しているときの判定() {
-        // 天井 2.0〜3.0、床 0.0〜1.0。帯は 1.0〜2.0。
+        // 天井は裾を切って 2.25〜3.0、床も裾を切って 0.0〜0.75。帯は 0.75〜2.25。
         let b = Band::build(&[2.0, 3.0], &[0.0, 1.0]).unwrap();
         assert_eq!(b.judge(2.5), Verdict::Pass);
-        assert_eq!(b.judge(2.0), Verdict::Pass, "天井の下端は通る");
+        assert_eq!(b.judge(2.25), Verdict::Pass, "天井の下端は通る");
         assert_eq!(b.judge(0.5), Verdict::Fail);
         assert_eq!(b.judge(0.75), Verdict::Fail, "床の上端は通らない");
         assert_eq!(
             b.judge(1.0),
             Verdict::Unknown,
             "切った裾は判定できないになる"
+        );
+        assert_eq!(
+            b.judge(2.0),
+            Verdict::Unknown,
+            "天井の切った裾も判定できないになる"
         );
         assert_eq!(b.judge(1.5), Verdict::Unknown, "帯の中");
     }
