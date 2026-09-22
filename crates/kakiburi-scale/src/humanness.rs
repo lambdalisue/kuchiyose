@@ -61,6 +61,65 @@ pub struct HumannessScale {
 /// 7% しかなく、それだけでエントロピーが指示できない指標になっていた。
 pub const FAINT: f64 = 0.2;
 
+/// 分けているとみなす、対ごとの並べ替え性能（AUC）の 0.5 からの隔たり。
+///
+/// <strong>暫定値である。</strong> 実測では、異なり語率の AUC が 0.541——本人 28 単位と
+/// 機械 21 単位の 588 対で、機械のほうが高い対が半分をわずかに超えるだけだった。
+/// 同じ素材で圧縮率は 0.768、語のエントロピーは 0.723 である。
+///
+/// <strong>それでも重みは語のエントロピーの約 11 倍あった。</strong> 当てはめは、次元どうしが
+/// 相関していると、分けていない次元にも大きな傾きを置く。
+pub const SEPARATES: f64 = 0.1;
+
+/// その次元だけで本人と機械を分けているか。<strong>対ごとに数える。</strong>
+///
+/// <strong>並べ替え性能で見る</strong>——傾きの大きさでは見られない。当てはめが置いた傾きが
+/// 大きいことと、その次元が分けていることは<strong>別である。</strong>
+fn separates(column: &[f64], labels: &[u8]) -> bool {
+    let human: Vec<f64> = column
+        .iter()
+        .zip(labels)
+        .filter(|(_, l)| **l == 1)
+        .map(|(v, _)| *v)
+        .collect();
+    let machine: Vec<f64> = column
+        .iter()
+        .zip(labels)
+        .filter(|(_, l)| **l == 0)
+        .map(|(v, _)| *v)
+        .collect();
+    if human.is_empty() || machine.is_empty() {
+        return true;
+    }
+    let mut win = 0.0_f64;
+    for h in &human {
+        for m in &machine {
+            if m > h {
+                win += 1.0;
+            } else if (m - h).abs() < f64::EPSILON {
+                win += 0.5;
+            }
+        }
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let auc = win / (human.len() * machine.len()) as f64;
+    (auc - 0.5).abs() >= SEPARATES
+}
+
+/// 傾きを 0 にした重み。<strong>どんな入力でも 0 を返す。</strong>
+///
+/// 次元を[並び](dims)から外さない——外すと保存した派生物の形が変わり、
+/// 古いカセットが読めなくなる。<strong>効かせないことだけを傾きで表す。</strong>
+fn silenced(w: &Weights) -> Weights {
+    Weights::restore(
+        0.0,
+        vec![0.0; w.slopes().len()],
+        w.centers().to_vec(),
+        w.scales().to_vec(),
+    )
+    .expect("傾きを 0 にしただけなので組み立てられる")
+}
+
 /// 人らしさの次元の並び。<strong>指標の並びから引く。</strong>
 #[must_use]
 pub fn dims() -> Vec<String> {
@@ -104,12 +163,46 @@ impl HumannessScale {
                 Weights::fit(&column, &labels)
             })
             .collect();
+        // <strong>分けていない次元を合算に効かせない。</strong> 当てはめは、本人と機械を
+        // 分けていない次元にも大きな傾きを置くことがある——次元どうしが相関して
+        // いるためである。<strong>そこに乗った重みは、直し方の先頭に来て人を逆へ導く。</strong>
+        //
+        // 仕様は[照合と指示の側に同じ検め](crate::effective)を持っている。
+        let per_dim: Vec<Weights> = per_dim
+            .into_iter()
+            .enumerate()
+            .map(|(j, w)| {
+                let column: Vec<f64> = rows
+                    .iter()
+                    .map(|r| r.get(j).copied().unwrap_or(0.0))
+                    .collect();
+                if separates(&column, &labels) {
+                    w
+                } else {
+                    silenced(&w)
+                }
+            })
+            .collect();
         let fused: Vec<Vec<f64>> = rows.iter().map(|r| per_metric(&per_dim, r)).collect();
         Self {
             dims,
             per_dim,
             fusion: Weights::fit(&fused, &labels),
         }
+    }
+
+    /// 合算に効かせていない次元の名前。<strong>本人と機械を分けていない次元である。</strong>
+    ///
+    /// <strong>落とした理由は向きではなく、分けていないことである</strong>——
+    /// [向きが定義と逆](Self::contradicting_dims)でも、分けているなら使う。
+    #[must_use]
+    pub fn ineffective_dims(&self) -> Vec<String> {
+        self.dims
+            .iter()
+            .zip(&self.per_dim)
+            .filter(|(_, w)| w.slopes().iter().all(|s| *s == 0.0))
+            .map(|(n, _)| n.clone())
+            .collect()
     }
 
     /// 1 本の人らしさ値。<strong>1 次元でも欠けたら出さない。</strong>
@@ -427,6 +520,63 @@ mod tests {
                 "{m}: {toward:?}"
             );
         }
+    }
+
+    #[test]
+    fn 分けない次元は合算に効かせない() {
+        // <strong>本人と機械を分けていない次元に、大きな重みが乗ることがある。</strong>
+        // 実測で当たった——異なり語率は対ごとに機械が高い割合が 0.541（ほぼ偶然）
+        // なのに、重みが語のエントロピーの約 11 倍あった。<strong>直し方の先頭に来て、
+        // 従うと人らしさ値が下がる。</strong>
+        //
+        // 仕様は照合と指示の側に[効くかの判定](crate::effective)を持っている。
+        // <strong>人らしさの次元にも同じ検めが要る。</strong>
+        //
+        // 異なり語率（10 番目の次元）だけを、両側で同じ分布に置く。
+        let row = |human: bool, i: usize| {
+            #[allow(clippy::cast_precision_loss)]
+            let seed = i as f64 * 0.01;
+            let mut row = if human {
+                human_row(seed)
+            } else {
+                machine_row(seed)
+            };
+            row[9] = 0.40 + seed;
+            row
+        };
+        let human: Vec<Vec<f64>> = (0..5).map(|i| row(true, i)).collect();
+        let machine: Vec<Vec<f64>> = (0..5).map(|i| row(false, i)).collect();
+        let s = HumannessScale::fit(&human, &machine);
+
+        assert_eq!(
+            s.ineffective_dims(),
+            vec!["異なり語率".to_owned()],
+            "分けていない次元を名指しできていない"
+        );
+
+        // <strong>その次元を動かしても値が変わらない。</strong> 効かせているなら変わる。
+        let mut a = human_row(0.0);
+        let mut b = human_row(0.0);
+        a[9] = 0.10;
+        b[9] = 0.90;
+        let (va, vb) = (
+            s.value(&named(&a)).expect("測れている"),
+            s.value(&named(&b)).expect("測れている"),
+        );
+        assert!(
+            (va - vb).abs() < 1e-9,
+            "分けない次元が合算を動かしている: {va} と {vb}"
+        );
+    }
+
+    #[test]
+    fn 分けている次元は落とさない() {
+        let s = scale();
+        assert!(
+            s.ineffective_dims().is_empty(),
+            "分けている次元を落としている: {:?}",
+            s.ineffective_dims()
+        );
     }
 
     #[test]

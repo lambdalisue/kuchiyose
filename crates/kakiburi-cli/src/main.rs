@@ -1540,7 +1540,23 @@ fn build_scene(
     // どちらが機械の側かを名乗っている。<strong>素材がその向きを否定したなら、目盛りは
     // 作れても人らしさを名乗れない</strong>——黙って出せば、重なった帯が「判定できない」
     // として出るだけで、原因が基準の側にあることが誰にも見えない。
-    let bad = scale.humanness.contradicting_dims();
+    // <strong>分けていないので落とした次元を先に言う。</strong> 言わなければ、次の行が
+    // その次元を「定義と逆に出た」として数えてしまう——落とした理由は向きではない。
+    let dropped = scale.humanness.ineffective_dims();
+    if !dropped.is_empty() {
+        say(format!(
+            "人らしさ: {} / {} 次元が本人と機械を分けておらず、合算から外れた（{}）",
+            dropped.len(),
+            scale.humanness.dims().len(),
+            dropped.join("、")
+        ));
+    }
+    let bad: Vec<String> = scale
+        .humanness
+        .contradicting_dims()
+        .into_iter()
+        .filter(|n| !dropped.contains(n))
+        .collect();
     if !bad.is_empty() {
         say(format!(
             "人らしさ: {} / {} 次元が定義と逆に出た（{}）",
