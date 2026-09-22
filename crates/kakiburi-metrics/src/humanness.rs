@@ -332,6 +332,18 @@ fn deflated(window: &str) -> Option<f64> {
 ///
 /// <strong>n-gram は node を跨がない。</strong> 跨げば、構造が作った隣接を繰り返しとして数える。
 ///
+/// 伏せ字の跡か。<strong>1 文字でも触れていれば渡さない。</strong>
+///
+/// 識別子を畳んだ跡であって、書き手が選んだ言い回しではない。渡せば
+/// 「ゐゑと書け」と言うことになる。
+///
+/// <strong>並び全体で照らしてはいけない。</strong> 伏せ字が隣り合うと、境目を跨いだ並びが
+/// 伏せ字を逆順に並べた形（`ゑゐ`）になる——伏せ字そのものを含まないので素通りし、
+/// 本人の記事の指摘に「この文章が繰り返しているのは『ゑゐ』」として出た。
+fn is_sentinel_debris(s: &str) -> bool {
+    s.chars().any(|c| kakiburi_doc::prose::SENTINEL.contains(c))
+}
+
 /// その単位で<strong>一度しか出てこない語</strong>を挙げる。
 ///
 /// <strong>「語を散らすな」と言うなら、どれが散らしているのかを言わなければ直せない。</strong>
@@ -356,6 +368,7 @@ pub fn once_only(analyzed: Option<&Analyzed>, top: usize) -> Vec<String> {
         .filter(|(w, k)| **k == 1 && content.get(*w).copied().unwrap_or(false))
         // <strong>1 文字の語は挙げない。</strong> 潰しようがない。
         .filter(|(w, _)| w.chars().count() >= 2)
+        .filter(|(w, _)| !is_sentinel_debris(w))
         .map(|(w, _)| *w)
         .collect();
     // <strong>長い順。</strong> 長い語ほど言い換えである見込みが高い。
@@ -390,8 +403,7 @@ pub fn overused(analyzed: Option<&Analyzed>, ns: &[usize], top: usize) -> Vec<St
     }
     let mut out: Vec<(usize, String)> = counts
         .into_iter()
-        // <strong>伏せ字を含む並びは渡さない。</strong> 識別子を畳んだ跡である。
-        .filter(|(g, _)| !g.contains(kakiburi_doc::prose::SENTINEL))
+        .filter(|(g, _)| !is_sentinel_debris(g))
         .map(|(g, k)| (k, g))
         .collect();
     // <strong>多い順。同じなら文字の順。</strong> 決めておかないと並びが実装で変わる。
@@ -425,12 +437,10 @@ pub fn recurring(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<String> {
         // <strong>1 本の中で 2 回以上出たものだけを、その人の癖として数える。</strong>
         // 1 回きりの並びは、その文書の題材が作ったものである。
         //
-        // <strong>伏せ字を含む並びは渡さない。</strong> 識別子を畳んだ跡であって、
-        // 書き手が選んだ言い回しではない。
         out.extend(
             counts
                 .into_iter()
-                .filter(|(g, k)| *k >= 2 && !g.contains(kakiburi_doc::prose::SENTINEL))
+                .filter(|(g, k)| *k >= 2 && !is_sentinel_debris(g))
                 .map(|(g, _)| g),
         );
     }
@@ -684,6 +694,52 @@ mod tests {
                 .any(|g| g.contains(kakiburi_doc::prose::SENTINEL)),
             "{got:?}"
         );
+    }
+
+    #[test]
+    fn 伏せ字の欠片も渡さない() {
+        // <strong>伏せ字が隣り合うと、境目を跨いだ並びが伏せ字を逆順に並べた形になる。</strong>
+        // 「ゐゑ ゐゑ」からは「ゑゐ」が取れる——<strong>これは伏せ字そのものを含まない</strong>ので、
+        // 並び全体で照らす除け方では素通りする。実際に本人の記事の指摘へ出た。
+        //
+        // 落とすのは 1 文字ずつ照らしたときである。
+        let t = format!("{0} {0} {0}", kakiburi_doc::prose::SENTINEL);
+        let a = Analyzed::of(&[seg(t.replace("", " ").trim())], &Stub::unidic()).ok();
+        let got = recurring(a.as_ref(), &[2, 3]);
+        for g in &got {
+            assert!(
+                !g.chars().any(|c| kakiburi_doc::prose::SENTINEL.contains(c)),
+                "伏せ字の欠片が渡っている: {g:?}（全体: {got:?}）"
+            );
+        }
+    }
+
+    #[test]
+    fn 繰り返しすぎにも伏せ字の欠片を渡さない() {
+        // 本人の記事の指摘に「この文章が繰り返しているのは『ゑゐ』」と出た。
+        // <strong>原文に 1 度も無い並びである。</strong>
+        let t = format!("{0} {0} {0}", kakiburi_doc::prose::SENTINEL);
+        let a = Analyzed::of(&[seg(t.replace("", " ").trim())], &Stub::unidic()).ok();
+        let got = overused(a.as_ref(), &[2, 3], 5);
+        for g in &got {
+            assert!(
+                !g.chars().any(|c| kakiburi_doc::prose::SENTINEL.contains(c)),
+                "伏せ字の欠片が渡っている: {g:?}（全体: {got:?}）"
+            );
+        }
+    }
+
+    #[test]
+    fn 一度きりの語にも伏せ字を渡さない() {
+        let t = format!("{} を使う", kakiburi_doc::prose::SENTINEL);
+        let a = Analyzed::of(&[seg(&t)], &Stub::unidic()).ok();
+        let got = once_only(a.as_ref(), 10);
+        for g in &got {
+            assert!(
+                !g.chars().any(|c| kakiburi_doc::prose::SENTINEL.contains(c)),
+                "伏せ字が語として渡っている: {g:?}（全体: {got:?}）"
+            );
+        }
     }
 
     #[test]
