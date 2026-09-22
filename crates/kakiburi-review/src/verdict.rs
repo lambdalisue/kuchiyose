@@ -154,13 +154,13 @@ pub fn judge(
 
     // 1 段目。人らしさ値。
     match humanness {
-        None => {
-            return Outcome {
-                verdict: Verdict::Unknown,
-                stage: Stage::Humanness,
-                reason: "機械の書きぶりが残っているかを測れていない。読みづらさの元を確かめずに先へ進めない".into(),
-            }
-        }
+        None => return Outcome {
+            verdict: Verdict::Unknown,
+            stage: Stage::Humanness,
+            reason:
+                "機械の書きぶりが残っているかを測れていない。読みづらさの元を確かめずに先へ進めない"
+                    .into(),
+        },
         Some(Side::Machine) => {
             return Outcome {
                 verdict: Verdict::Fail,
