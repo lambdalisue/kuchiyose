@@ -93,6 +93,18 @@ impl Ends {
 /// 挙げているのはこのことである。
 pub const CEILING_TRIM: f64 = 0.25;
 
+/// 分離しているときに、[真ん中](Band::judge)のまわりへ置く保留の幅。
+/// <strong>隙間の幅に対する割合。暫定値である。</strong>
+///
+/// <strong>真ん中は有限の標本から出した推定である。</strong> すれすれの値を断定すれば、
+/// 推定の誤差がそのまま誤判定になる。
+///
+/// <strong>0.05 は実測で選んだ。</strong> 取り置いた本人の記事 22 本のうち、真ん中より下に
+/// 落ちたのは 2 本で、深さは −0.296 と <strong>−0.028</strong> だった。後者は線上と言ってよい。
+/// 幅 0.05 を置くと<strong>通る本数を 1 本も失わずに</strong>その 1 本が保留に戻り、機械の
+/// すり抜けは 0 のままである。
+pub const GAP_MARGIN: f64 = 0.05;
+
 /// 床の上端に取る分位。<strong>暫定値である。</strong>
 ///
 /// 向きは[代償が対称でない](Ends::trimmed)ことから決まるが、<strong>どこで切るかは
@@ -259,6 +271,26 @@ impl Band {
     /// 同時に成立する。
     #[must_use]
     pub fn judge(self, value: f64) -> Verdict {
+        // <strong>分離しているなら重なりは無い。</strong>[帯は 2 つの分布の重なりである](Self::overlap)
+        // ——隙間を帯として扱うと、<strong>どちら側かが決まっている場所を「分からない」と
+        // 言うことになる。</strong>
+        //
+        // <strong>捨てていたのは安全ではなく感度だった。</strong> 実測では、各側の分位で切ると
+        // 取り置いた本人の記事は 22 本中 11 本しか通らず、隙間の真ん中で切ると 20 本が
+        // 通った。<strong>機械のすり抜けはどちらも 0 本である。</strong>
+        if self.separated() {
+            // <strong>真ん中は推定なので、まわりに保留を置く。</strong> すれすれを断定すると、
+            // 推定の誤差がそのまま誤判定になる（[幅](GAP_MARGIN)）。
+            let mid = f64::midpoint(self.floor.high, self.ceiling.low);
+            let margin = (self.ceiling.low - self.floor.high) * GAP_MARGIN;
+            return if value >= mid + margin {
+                Verdict::Pass
+            } else if value <= mid - margin {
+                Verdict::Fail
+            } else {
+                Verdict::Unknown
+            };
+        }
         let above_ceiling_low = value >= self.ceiling.low;
         let above_floor_high = value > self.floor.high;
         let below_floor_high = value <= self.floor.high;
@@ -388,24 +420,35 @@ mod tests {
     }
 
     #[test]
-    fn 分離しているときの判定() {
-        // 天井は裾を切って 2.25〜3.0、床も裾を切って 0.0〜0.75。帯は 0.75〜2.25。
+    fn 分離しているときは隙間の真ん中で分ける() {
+        // <strong>帯は 2 つの分布の重なりである。</strong> 分離しているなら重なりは無い——
+        // <strong>隙間は「分からない」ではなく、どちら側かが決まっている場所である。</strong>
+        //
+        // 隙間を判定できないにすると、<strong>本人の記事がそこへ落ちる。</strong> 実測では、
+        // 各側の分位を閾値にすると取り置いた本人の記事は 22 本中 11 本しか通らず、
+        // 隙間の真ん中で分けると 20 本が通った。<strong>機械のすり抜けはどちらも 0 である</strong>
+        // ——両側の広がりが 照合で 本人 0.587〜5.353 / 機械 −2.983〜0.084 と離れており、
+        // 捨てていたのは安全ではなく感度だった。
         let b = Band::build(&[2.0, 3.0], &[0.0, 1.0]).unwrap();
+        assert!(b.separated());
+        // 天井は裾を切って 2.25〜3.0、床も裾を切って 0.0〜0.75。真ん中は 1.5。
         assert_eq!(b.judge(2.5), Verdict::Pass);
-        assert_eq!(b.judge(2.25), Verdict::Pass, "天井の下端は通る");
+        assert_eq!(b.judge(1.6), Verdict::Pass, "真ん中より上は通る");
+        assert_eq!(b.judge(1.4), Verdict::Fail, "真ん中より下は通らない");
         assert_eq!(b.judge(0.5), Verdict::Fail);
-        assert_eq!(b.judge(0.75), Verdict::Fail, "床の上端は通らない");
         assert_eq!(
-            b.judge(1.0),
+            b.judge(1.5),
             Verdict::Unknown,
-            "切った裾は判定できないになる"
+            "真ん中すれすれは保留する——真ん中は推定であって線ではない"
         );
-        assert_eq!(
-            b.judge(2.0),
-            Verdict::Unknown,
-            "天井の切った裾も判定できないになる"
-        );
-        assert_eq!(b.judge(1.5), Verdict::Unknown, "帯の中");
+    }
+
+    #[test]
+    fn 重なっているときは重なりが判定できないになる() {
+        // <strong>こちらは本物の重なりである。</strong> 分からないと言うべき場所は残す。
+        let b = Band::build(&[1.0, 5.0], &[0.0, 4.0]).unwrap();
+        assert!(!b.separated());
+        assert_eq!(b.judge(2.5), Verdict::Unknown, "重なりの中");
     }
 
     #[test]
