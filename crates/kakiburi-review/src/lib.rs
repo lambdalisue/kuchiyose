@@ -120,10 +120,7 @@ pub const OVERUSE: f64 = 1.0;
 /// <strong>日本語は壊れないので[検査](Inspected)では止まらない。</strong> 本人の頻度と
 /// 比べるしかない。
 fn overused_katas(katas: &[Kata]) -> Vec<String> {
-    let mut over: Vec<&Kata> = katas
-        .iter()
-        .filter(|k| k.ceiling > 0.0 && k.times > 1 && k.density > k.ceiling * OVERUSE)
-        .collect();
+    let mut over = over_used(katas);
     over.sort_by(|a, b| {
         (b.density / b.ceiling)
             .partial_cmp(&(a.density / a.ceiling))
@@ -138,6 +135,17 @@ fn overused_katas(katas: &[Kata]) -> Vec<String> {
                 k.text, k.times, k.ceiling, k.density
             )
         })
+        .collect()
+}
+
+/// 本人の上限を超えて使っている型。
+///
+/// <strong>「減らせ」と「繰り返せ」が同じ言い回しに出ないよう、1 箇所で決める。</strong>
+/// 分かれていたときは、同じ言い回しに増やせと減らせが同時に出ていた。
+fn over_used(katas: &[Kata]) -> Vec<&Kata> {
+    katas
+        .iter()
+        .filter(|k| k.ceiling > 0.0 && k.times > 1 && k.density > k.ceiling * OVERUSE)
         .collect()
 }
 
@@ -338,8 +346,15 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
     // <strong>帯の中で止まったときも渡す。</strong> 機械の側に落ちたときだけ出すと、
     // <strong>帯の中から人の側へ出る道が示されない</strong>——通らないよりも判定できないの
     // ほうが多いので、そちらで黙るほうが害が大きい。
+    // <strong>上限を超えている言い回しは「繰り返せ」の一覧から外す。</strong> 外さないと、
+    // 同じ言い回しに増やせと減らせが同時に出て、受け取った側はどちらに従っても
+    // 片方の指摘に背く。実測では減らした結果、人らしさ値が 0.788 から 0.484 へ下がった。
+    let ceiling_hit: Vec<&str> = over_used(o.phrases)
+        .iter()
+        .map(|k| k.text.as_str())
+        .collect();
     let humanness = if outcome.stage == Stage::Humanness {
-        humanness_remedies(humanness_by_metric, remedies)
+        humanness_remedies(humanness_by_metric, remedies, &ceiling_hit)
     } else {
         Vec::new()
     };
@@ -435,7 +450,11 @@ fn matching_remedies(observed: &[MatchingObserved]) -> Vec<String> {
 ///
 /// <strong>向きは観測が持っている。</strong> 較正から読んだもので、定義の名乗る向きとは限らない
 /// ——同じ型で書かせた生成文は、先行研究の言う「機械の側」に来ないことがある。
-fn humanness_remedies(observed: &[HumannessObserved], remedies: &dyn Remedies) -> Vec<String> {
+fn humanness_remedies(
+    observed: &[HumannessObserved],
+    remedies: &dyn Remedies,
+    ceiling_hit: &[&str],
+) -> Vec<String> {
     // <strong>本人へ寄せると合算が上がる指標だけを渡す。</strong>
     //
     // <strong>0 と比べない。</strong> 0 は人と機械の境目であって、その人のところではない。
@@ -469,12 +488,21 @@ fn humanness_remedies(observed: &[HumannessObserved], remedies: &dyn Remedies) -
                 "{}が本人より{way}（この文章 {:.3} / 本人 {:.3}）。{remedy}人らしさ値が {:+.3} 動く。",
                 o.name, o.value, o.target, o.effect
             );
-            if !o.phrases.is_empty() {
-                // <strong>本人が現に繰り返している言い回しを添える。</strong> 添えなければ、
-                // 受け取った側は自分ででっち上げた定型句を挿し込む。
+            // <strong>本人が現に繰り返している言い回しを添える。</strong> 添えなければ、
+            // 受け取った側は自分ででっち上げた定型句を挿し込む。
+            //
+            // <strong>上限を超えているものは外す。</strong> 残せば同じ言い回しに増やせと減らせが
+            // 同時に出て、どちらに従っても片方の指摘に背くことになる。
+            let phrases: Vec<&str> = o
+                .phrases
+                .iter()
+                .map(String::as_str)
+                .filter(|p| !ceiling_hit.contains(p))
+                .collect();
+            if !phrases.is_empty() {
                 line.push_str(&format!(
                     " 本人が繰り返しているのは「{}」。",
-                    o.phrases.join("」「")
+                    phrases.join("」「")
                 ));
             }
             if !o.once_only.is_empty() {
@@ -764,6 +792,49 @@ mod tests {
             r.humanness
         );
         assert!(r.humanness[0].contains("しています。"), "{:?}", r.humanness);
+    }
+
+    #[test]
+    fn 使いすぎと言った言い回しを繰り返せとは言わない() {
+        // <strong>同じ言い回しに、増やせと減らせが同時に出ていた。</strong> 実測で当たった——
+        // 「しています。」は本人が繰り返している言い回しなので<strong>繰り返せ</strong>の一覧に
+        // 入り、同時に本人の上限を超えていたので<strong>減らせ</strong>にも出た。
+        //
+        // 受け取った側は、どちらに従っても片方の指摘に背く。減らした結果、
+        // 人らしさ値は 0.788 から 0.484 へ下がった。<strong>上限が勝つ。</strong>
+        let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
+        let mut h = human("長い繰り返し", -0.4);
+        h.phrases = vec!["ています。".into(), "しています。".into()];
+        let r = review(
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[h],
+                diverging: &[],
+                katas: &[],
+                machine_katas: &[],
+                phrases: &[dense("しています。", 10, 4.4, 2.8)],
+            },
+            &All,
+        );
+        assert!(
+            r.overused_katas.iter().any(|s| s.contains("しています。")),
+            "上限を超えているのに減らせと言っていない: {:?}",
+            r.overused_katas
+        );
+        assert!(
+            !r.humanness.iter().any(|s| s.contains("しています。")),
+            "減らせと言った言い回しを、繰り返せの一覧にも渡している: {:?}",
+            r.humanness
+        );
+        assert!(
+            r.humanness.iter().any(|s| s.contains("ています。")),
+            "上限に触れていない言い回しまで落としている: {:?}",
+            r.humanness
+        );
     }
 
     #[test]
