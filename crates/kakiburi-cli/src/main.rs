@@ -57,6 +57,7 @@ fn run(args: &[String]) -> Exit {
         Some("compare") => compare(&args[1..]),
         Some("doctor") => doctor(&args[1..]),
         Some("build") => build(&args[1..]),
+        Some("quick") => quick(&args[1..]),
         Some("review") => review(&args[1..]),
         Some("help" | "--help" | "-h") | None => {
             print_help();
@@ -82,6 +83,7 @@ fn section(name: &str) -> Option<&'static str> {
         "replace" => REPLACE,
         "decide" => DECIDE,
         "build" => BUILD,
+        "quick" => QUICK,
         "review" => REVIEW,
         "compare" => COMPARE,
         "show" => SHOW,
@@ -147,6 +149,20 @@ kakiburi build <カセット> [--scene <場面>] [--json]
     目盛りを作る。<strong>省くと全場面。</strong>
     <strong>作らずに終わる条件を持つ</strong>——止まっても失敗ではない。
     作れたら割りを出す。場面が 2 つ以上あれば、分かれ方も出す。";
+
+const QUICK: &str = "\
+kakiburi quick <本人の記事のフォルダ> [--cassette <カセット>] [--scene <場面>]
+                                      [--baseline <基準の池>]
+    フォルダを指すだけで目盛りまで作る。new・scene・add・build をまとめて回す。
+    <strong>取り込み元は拡張子から決める</strong>——.html は html、ほかは directive-markdown。
+
+    基準は<strong>同梱の池から取る</strong>。基準は機械がどう書くかであって書き手ごとに
+    変わらないので、あらかじめ作ったものでよい（[題材の統制](../../../docs/spec/200-extract.md)は
+    対ではなく素材全体に効かせる）。
+
+    <strong>長さの範囲が合うように束ねる。</strong> 池の 1 本は地の文 4,500 字あたりで
+    頭打ちになるので、本人に長い記事があると[長さの範囲](../../../docs/spec/200-extract.md)の
+    防護柵に当たる。届かない分は池の記事を束ねて 1 単位にする。";
 
 const REVIEW: &str = "\
 kakiburi review <ファイル> --cassette <カセット> --scene <場面> --source <取り込み元>
@@ -1311,6 +1327,320 @@ fn check_names(c: &Cassette, adding: &[Unit]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// フォルダを指すだけで目盛りまで作る。
+///
+/// <strong>新しい経路を作らない。</strong> `new` / `scene` / `add` / `build` をそのまま呼ぶ——
+/// 別の道を作れば、そちらだけが古くなる。
+fn quick(args: &[String]) -> Exit {
+    let Some(dir) = args.first() else {
+        eprintln!("本人の記事が入ったフォルダを渡す");
+        return Exit::Usage;
+    };
+    let mut cassette: Option<String> = None;
+    let mut scene_name = "既定".to_owned();
+    let mut pool_dir: Option<String> = None;
+    let mut i = 1;
+    while i < args.len() {
+        let Some(v) = args.get(i + 1) else {
+            eprintln!("{} に値を渡す", args[i]);
+            return Exit::Usage;
+        };
+        match args[i].as_str() {
+            "--cassette" => cassette = Some(v.clone()),
+            "--scene" => scene_name = v.clone(),
+            "--baseline" => pool_dir = Some(v.clone()),
+            other => {
+                eprintln!("知らない引数: {other}");
+                return Exit::Usage;
+            }
+        }
+        i += 2;
+    }
+    let cassette = cassette.unwrap_or_else(|| format!("{dir}.kb"));
+    let Some(pool) = pool_dir.or_else(baseline_pool) else {
+        eprintln!("基準の池が見つからない。--baseline で渡すか KAKIBURI_BASELINES を指す");
+        return Exit::Usage;
+    };
+
+    let person = readable_files(dir);
+    if person.is_empty() {
+        eprintln!("記事が 1 本も見つからない: {dir}");
+        return Exit::Unreadable;
+    }
+    let pool_files = readable_files(&pool);
+    if pool_files.is_empty() {
+        eprintln!("基準の池が空: {pool}");
+        return Exit::Unreadable;
+    }
+
+    for step in [
+        vec!["new".to_owned(), cassette.clone()],
+        vec!["scene".to_owned(), cassette.clone(), scene_name.clone()],
+    ] {
+        if run(&step) != Exit::Pass {
+            return Exit::Usage;
+        }
+    }
+
+    // <strong>取り込み元は拡張子から決める。</strong> `add` が既定を置かないのは取り違えを
+    // 静かに通さないためで、拡張子から決めるのは既定ではなく判別である。
+    for (src, files) in group_by_source(&person) {
+        let mut a = vec!["add".to_owned(), cassette.clone()];
+        a.extend(files);
+        a.extend(["--as", "person", "--scene", &scene_name, "--source", src].map(str::to_owned));
+        if run(&a) != Exit::Pass {
+            return Exit::Usage;
+        }
+    }
+
+    // <strong>題材で選んでから、長さで束ねる。</strong> 逆にすると、題材の合わない分を
+    // 束ねてから捨てることになる。
+    let picked = pick_by_topic(&person, &pool_files, POOL_TAKE);
+    let pool_files: Vec<String> = picked.iter().map(|&i| pool_files[i].clone()).collect();
+    println!("基準を池から {} 本選んだ（題材の近い順）", pool_files.len());
+
+    let plan = bundle_plan(&japanese_chars_of(&person), &japanese_chars_of(&pool_files));
+    let bundled = plan.iter().filter(|g| g.len() > 1).count();
+    if bundled > 0 {
+        println!("基準のうち {bundled} 単位を束ねる。本人の長い記事に、池の 1 本では届かない");
+    }
+    for (n, group) in plan.iter().enumerate() {
+        let mut a = vec!["add".to_owned(), cassette.clone()];
+        a.extend(group.iter().map(|&i| pool_files[i].clone()));
+        a.extend(
+            [
+                "--as",
+                "baseline",
+                "--scene",
+                &scene_name,
+                "--source",
+                "plain-markdown",
+                "--model",
+                "同梱の池",
+                "--version",
+                POOL_VERSION,
+            ]
+            .map(str::to_owned),
+        );
+        if group.len() > 1 {
+            a.extend(["--unit".to_owned(), format!("pool{n:03}")]);
+        }
+        if run(&a) != Exit::Pass {
+            return Exit::Usage;
+        }
+    }
+    run(&["build".to_owned(), cassette])
+}
+
+/// 同梱の池の版。<strong>指紋に入る。</strong>
+///
+/// 池を作り直したら上げる——<strong>上げなければ、中身が変わったのに過去の値と
+/// 比べられてしまう。</strong>
+const POOL_VERSION: &str = "2026-09";
+
+/// 池から取る本数。<strong>暫定値である。</strong>
+///
+/// [下限](kakiburi_scale::split::UNITS_FLOOR)は 10 だが、測れない分が出るので余裕を
+/// 持たせる。手作りの基準 21 本で目盛りが作れていたので、そのあたりに置いた。
+///
+/// <strong>多く取れば題材の遠いものが混ざり、少なく取れば本数が下限を割る。</strong>
+const POOL_TAKE: usize = 24;
+
+/// 同梱の池の場所。
+fn baseline_pool() -> Option<String> {
+    if let Ok(p) = std::env::var("KAKIBURI_BASELINES") {
+        return Some(p);
+    }
+    let here = std::path::Path::new("baselines");
+    here.is_dir().then(|| "baselines".to_owned())
+}
+
+/// フォルダの中の、読める文書。<strong>決定的に並べる。</strong>
+fn readable_files(dir: &str) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .and_then(|x| x.to_str())
+                .is_some_and(|x| matches!(x, "md" | "markdown" | "html" | "htm" | "txt"))
+        })
+        .filter_map(|p| p.to_str().map(str::to_owned))
+        .collect();
+    out.sort();
+    out
+}
+
+/// 拡張子ごとに分ける。<strong>取り込み元が違うものは同じ呼び出しに混ぜられない。</strong>
+fn group_by_source(files: &[String]) -> Vec<(&'static str, Vec<String>)> {
+    let mut html = Vec::new();
+    let mut md = Vec::new();
+    for f in files {
+        if f.ends_with(".html") || f.ends_with(".htm") {
+            html.push(f.clone());
+        } else {
+            md.push(f.clone());
+        }
+    }
+    let mut out = Vec::new();
+    if !md.is_empty() {
+        out.push(("directive-markdown", md));
+    }
+    if !html.is_empty() {
+        out.push(("html", html));
+    }
+    out
+}
+
+/// 地の文の日本語の文字数。<strong>読めないものは数えない。</strong>
+fn japanese_chars_of(files: &[String]) -> Vec<usize> {
+    files
+        .iter()
+        .filter_map(|f| {
+            let body = std::fs::read_to_string(f).ok()?;
+            let source = if f.ends_with(".html") || f.ends_with(".htm") {
+                Source::Html
+            } else {
+                Source::DirectiveMarkdown
+            };
+            normalize(&body, source).ok().map(|d| d.japanese_chars())
+        })
+        .collect()
+}
+
+/// 池の 1 本を何本束ねて 1 単位にするかを決める。
+///
+/// <strong>池の 1 本では本人の長い記事に届かない。</strong> 生成は地の文 4,500 字あたりで
+/// 頭打ちになるので、本人に長い記事があると[長さの範囲](kakiburi_scale::length_range_ok)の
+/// 防護柵に当たり、目盛りが作れない。
+///
+/// <strong>束ねる仕組みは既にある</strong>——短い文書を 1 単位にまとめるためのものを、
+/// 長さを届かせるために使う。束ねた結果は 1 単位なので、下限も範囲も単位で数える。
+///
+/// 池から、本人の題材に近い分を選ぶ。
+///
+/// <strong>題材を揃えないと、測っているのは題材である。</strong> 統制しないで訓練した文体表現は、
+/// 題材を揃えたテストで AUC が .79 から .58 へ落ちる
+/// （[Wegmann](../../../docs/references/wegmann-2022.md)）。
+///
+/// <strong>揃えるのは対ごとではなく素材全体である</strong>——対で絞ると相手の本数が変わる
+/// （[統制](../../../docs/spec/200-extract.md)）。だから池から部分集合を選ぶ形にする。
+///
+/// 近さは<strong>自立語の重なり</strong>で測る。助詞や助動詞は誰が書いても同じで、題材を
+/// 分けない。
+fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> {
+    let all = || (0..pool.len()).collect();
+    if pool.len() <= take {
+        return all();
+    }
+    let Some(analyzer) = analyzer::resolve() else {
+        // <strong>解析器が無ければ選ばない。</strong> 題材で絞れないことを、黙って
+        // 別の基準で絞ったことにしない。
+        return all();
+    };
+    let words = |files: &[String]| -> std::collections::BTreeSet<String> {
+        let mut out = std::collections::BTreeSet::new();
+        for f in files {
+            let Ok(body) = std::fs::read_to_string(f) else {
+                continue;
+            };
+            let source = source_of(f);
+            let Ok(doc) = normalize(&body, source) else {
+                continue;
+            };
+            let Ok(a) = kakiburi_metrics::morph::Analyzed::of(&doc.prose(), &analyzer) else {
+                continue;
+            };
+            out.extend(
+                a.all()
+                    .filter(|m| !m.is_function_word())
+                    .filter(|m| m.surface.chars().count() >= 2)
+                    .map(|m| m.surface.clone()),
+            );
+        }
+        out
+    };
+    let mine = words(person);
+    if mine.is_empty() {
+        return all();
+    }
+    let mut scored: Vec<(usize, usize)> = pool
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let theirs = words(std::slice::from_ref(f));
+            (theirs.intersection(&mine).count(), i)
+        })
+        .collect();
+    // <strong>重なりの多い順。同点なら池の並び順。</strong> 決めておかないと、同じ素材から
+    // 違う目盛りができる。
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let mut picked: Vec<usize> = scored.into_iter().take(take).map(|(_, i)| i).collect();
+    picked.sort_unstable();
+    picked
+}
+
+/// 拡張子から取り込み元を決める。
+fn source_of(path: &str) -> Source {
+    if path.ends_with(".html") || path.ends_with(".htm") {
+        Source::Html
+    } else {
+        Source::DirectiveMarkdown
+    }
+}
+
+/// 返すのは<strong>池の何番目をどう束ねるか</strong>である。中の並びは池の添字。
+///
+/// <strong>一律に束ねない。</strong> 全部を同じ本数で束ねると、大きいものどうしが合わさって
+/// 本人の上端を大きく超え、今度は基準側の範囲が広がりすぎる（重なり ÷ 基準の範囲が
+/// 0.5 を割る）。実測で、一律 3 本にしたら本人側 70% / 基準側 42% になった。
+///
+/// <strong>小さいほうから積んで上端に届かせ、残りは単独で置く。</strong> こうすると単独の分が
+/// 下から中ほどを埋め、束ねた分が上端に届く。
+fn bundle_plan(person: &[usize], pool: &[usize]) -> Vec<Vec<usize>> {
+    let single = || (0..pool.len()).map(|i| vec![i]).collect();
+    let (Some(&p_hi), Some(&b_hi)) = (person.iter().max(), pool.iter().max()) else {
+        return single();
+    };
+    if b_hi == 0 || p_hi <= b_hi {
+        return single();
+    }
+    let mut order: Vec<usize> = (0..pool.len()).collect();
+    order.sort_by_key(|&i| pool[i]);
+
+    let mut plan: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut sum = 0usize;
+    // <strong>束ねるのは池の 3 分の 1 まで。</strong> 全部を束ねると単位の本数が下限を割る。
+    let budget = pool.len() / 3;
+    for (used, &i) in order.iter().enumerate() {
+        if used >= budget {
+            break;
+        }
+        cur.push(i);
+        sum += pool[i];
+        if sum >= p_hi {
+            plan.push(std::mem::take(&mut cur));
+            sum = 0;
+        }
+    }
+    // <strong>作りかけを捨てない。</strong> 上端に届かなくても、単独より近いところまでは伸びる。
+    if cur.len() > 1 {
+        plan.push(cur);
+    }
+    let bundled: std::collections::BTreeSet<usize> = plan.iter().flatten().copied().collect();
+    plan.extend(
+        order
+            .iter()
+            .filter(|i| !bundled.contains(i))
+            .map(|&i| vec![i]),
+    );
+    plan
 }
 
 /// 目盛りを作る。
@@ -3227,6 +3557,38 @@ mod tests {
             .map(|(_, m)| m)
             .collect();
         assert_eq!(without, vec![Measured::ToolMissing]);
+    }
+
+    #[test]
+    fn 池が本人の長さに届かなければ束ねる() {
+        // <strong>池の 1 本は地の文 4,500 字あたりで頭打ちになる。</strong> 本人に長い記事が
+        // あると長さの範囲の防護柵に当たり、目盛りが作れない。実測では、池を
+        // 題材でも長さでも広げたのに本人の範囲との重なりが 28% から 43% までしか
+        // 伸びず、束ねて初めて通った。
+        let pool = vec![2200, 2900, 3000, 4400, 2400, 2600, 3200, 3800, 2300];
+        let plan = bundle_plan(&[1500, 3000, 4000], &pool);
+        assert!(
+            plan.iter().all(|g| g.len() == 1),
+            "届くなら束ねない: {plan:?}"
+        );
+
+        let plan = bundle_plan(&[1500, 7000], &pool);
+        assert!(
+            plan.iter().any(|g| g.len() > 1),
+            "届かないなら束ねる: {plan:?}"
+        );
+        assert!(
+            plan.iter().filter(|g| g.len() == 1).count() >= pool.len() / 2,
+            "単独の分を残す——全部束ねると単位の本数が下限を割る: {plan:?}"
+        );
+        let used: Vec<usize> = plan.iter().flatten().copied().collect();
+        assert_eq!(used.len(), pool.len(), "池を余さず使う");
+    }
+
+    #[test]
+    fn 池が空でも落ちない() {
+        assert!(bundle_plan(&[1500], &[]).is_empty());
+        assert_eq!(bundle_plan(&[], &[2000]).len(), 1);
     }
 
     #[test]
