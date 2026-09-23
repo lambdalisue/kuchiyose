@@ -198,6 +198,7 @@ const ENVIRONMENT: &str = "\
   KAKIBURI_UNIDIC          UniDic の展開先。指すと全系統を測れる
   KAKIBURI_UNIDIC_VERSION  指紋に入る版の申告（既定: 版の申告なし）
   KAKIBURI_MECAB           MeCab の実行ファイル（既定: mecab）
+  KAKIBURI_BASELINES       quick が使う基準の池（既定: 作業ディレクトリの baselines）
 
   <strong>UniDic は nixpkgs に無い。</strong> 国語研が配布している:
   https://clrd.ninjal.ac.jp/unidic_archive/cwj/2.1.2/unidic-mecab-2.1.2_bin.zip
@@ -206,12 +207,17 @@ const ENVIRONMENT: &str = "\
 fn print_help() {
     println!("kakiburi — どこがその人と違うかを、言えるようにする");
     println!();
+    println!("{QUICK}");
+    println!();
     println!("{MEASURE}");
     println!();
     println!("作る——たまに動かす");
     println!();
     println!("  <strong>1 カセットが 1 人である。</strong> 場面ごとの束（トラック）を中に持ち、");
     println!("  語彙も重みも帯も場面ごとに作る。");
+    println!(
+        "  <strong>quick がまとめているのはこの段である。</strong> 場面を分けるなら順に打つ。"
+    );
     for s in [NEW, SCENE, ADD, REPLACE, DECIDE, BUILD] {
         println!();
         println!("{s}");
