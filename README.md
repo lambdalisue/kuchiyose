@@ -31,93 +31,39 @@ UniDic は nixpkgs に無い。[国語研が配布しているもの](https://cl
 export KAKIBURI_UNIDIC=/path/to/unidic-mecab-2.1.2_bin
 export KAKIBURI_UNIDIC_VERSION=2.1.2   # 指紋に入る。省くと「版の申告なし」
 export KAKIBURI_MECAB=/path/to/mecab   # 省くと PATH の mecab
+export KAKIBURI_BASELINES=/path/to/kakiburi/baselines  # 省くと作業ディレクトリの baselines
 ```
 
 `KAKIBURI_UNIDIC_VERSION` を省いても動くが、<strong>指紋が変わると過去の値と比べられない</strong>ので、
 続けて使うなら最初から入れておく。
 
-## 手間の配分
-
-<strong>準備が重く、使うのは軽い。</strong> 先に知っておくと計画が立つ。
-
-| | どれくらい | 何回 |
-| --- | --- | --- |
-| 素材を集める・基準を作る | <strong>数時間</strong> | 1 人につき 1 回 |
-| `build` | 数十秒 | 素材を足したときだけ |
-| `review` | 数秒 | 毎回 |
-
-重いのは<strong>基準を作るところ</strong>である。ここを飛ばすと目盛りが題材を測ってしまうので、
-急いでも報われない。
-
 ## 素材をそろえる
 
-素材は 2 種類が要る。<strong>本人</strong>が実際に書いた文章と、同じ題材を LLM に書かせた
-<strong>基準</strong>である。
-
-### 本人
-
+用意するのは <strong>本人が実際に書いた文章</strong> だけである。1 つのフォルダに入れて、
 同じ場面のものを 10 単位以上。ブログでも社内文書でもよいが、<strong>場面は混ぜない</strong>
 ——技術記事と議事録では書きぶりが違う。
 
-### 基準——ここがいちばん効く
-
-<strong>本人が実際に書いた題材を、そのまま LLM に書かせる。</strong> 題材を揃えないと、
-目盛りは書きぶりではなく<strong>題材</strong>を測る。統制しないで訓練した文体表現は、
-題材を揃えたテストで AUC が .79 から <strong>.58</strong> へ落ちるという実測がある
-（[Wegmann](docs/references/wegmann-2022.md)）。
-
-<strong>題名だけを渡すと足りない。</strong>「Vim のファイラー系プラグインについて書け」と言われた
-LLM は、プラグイン名もコマンド名も版番号もほとんど書かない。本人の記事はそれらで
-埋まっている。<strong>記事が名指ししている物まで渡す。</strong>
-
-依頼文の形はこうなる。
-
-```
-次の題材で技術記事を書いてください。
-
-題材: Vim のファイラー系プラグインの比較
-登場するもの: vim-filer、NERDTree、netrw、:Explore、Vim 8.2
-長さ: 3,000 字程度
-```
-
-<strong>版と推論設定は必ず控える。</strong> `--model` と `--version` は指紋に入るので、
-記録の無い基準で作った値は次に比べられない。
-
-```sh
-$K add alisue.kb baseline/*.md \
-  --as baseline --scene 技術記事 --source directive-markdown \
-  --model claude --version 2026-08
-```
+比べる相手——<strong>基準</strong>——は用意しなくてよい。<strong>基準は機械がどう書くかであって、
+書き手ごとに変わらない</strong>ので、題材を広く取った池が `baselines/` に同梱してある。
+本人の題材に近い分は `quick` が選ぶ。
 
 ## 使ってみる
 
 ```sh
 K=./target/release/kakiburi
 
-# 1 人分の入れ物を作る
-$K new alisue.kb
-
-# 場面を作る。場面ごとに語彙も重みも帯も別に作る
-$K scene alisue.kb 技術記事
-
-# 本人の文章を入れる
-$K add alisue.kb articles/*.md \
-  --as person --scene 技術記事 --source directive-markdown
-
-# 基準を入れる。版と推論設定は指紋に入るので必ず申告する
-$K add alisue.kb baseline/*.md \
-  --as baseline --scene 技術記事 --source directive-markdown \
-  --model claude --version 2026-08
-
-# 目盛りを作る
-$K build alisue.kb
+# フォルダを指すだけで目盛りまで作る
+$K quick ~/articles
 
 # 草稿を検める
-$K review draft.md --cassette alisue.kb --scene 技術記事 --source directive-markdown
+$K review draft.md --cassette ~/articles.kb --scene 既定 --source directive-markdown
 ```
+
+カセットは `<フォルダ名>.kb` にできる。`--cassette` と `--scene` で変えられる。
 
 `--source` に既定は無い。<strong>取り違えてもエラーにならず、数だけが変わる。</strong>
 `github-markdown` / `directive-markdown` / `html` / `plain-markdown` から選ぶ。
+`quick` の中だけは拡張子から判別する——`.html` は html、ほかは directive-markdown。
 
 ### 返ってくるもの
 
@@ -151,11 +97,68 @@ $K review draft.md --cassette alisue.kb --scene 技術記事 --source directive-
 ### 目盛りが壊れていないか確かめる
 
 ```sh
-$K doctor alisue.kb
+$K doctor ~/articles.kb
 ```
 
 <strong>本人がいちばん高く出ることが、目盛りが壊れていないことの最低条件である。</strong>
 場面ごとに検める。
+
+### 手間の配分
+
+| | どれくらい | 何回 |
+| --- | --- | --- |
+| 記事を 1 つのフォルダに集める | 数分 | 1 人につき 1 回 |
+| `quick`（`build` を含む） | 数十秒 | 素材を足したときだけ |
+| `review` | 数秒 | 毎回 |
+
+### 1 段ずつ組む
+
+場面を分けたいときや、基準を自分で用意したいときは、`quick` がまとめている段を
+そのまま順に打てる。
+
+```sh
+$K new alisue.kb
+$K scene alisue.kb 技術記事
+
+$K add alisue.kb articles/*.md \
+  --as person --scene 技術記事 --source directive-markdown
+
+# 基準を入れる。版と推論設定は指紋に入るので必ず申告する
+$K add alisue.kb baseline/*.md \
+  --as baseline --scene 技術記事 --source directive-markdown \
+  --model claude --version 2026-08
+
+$K build alisue.kb
+```
+
+### 基準を自分で作るなら
+
+同梱の池で足りないとき——場面が技術記事でないときなど——は自分で作ることになる。
+<strong>そのときは本人が実際に書いた題材を、そのまま LLM に書かせる。</strong> 題材を揃えないと、
+目盛りは書きぶりではなく<strong>題材</strong>を測る。統制しないで訓練した文体表現は、
+題材を揃えたテストで AUC が .79 から <strong>.58</strong> へ落ちるという実測がある
+（[Wegmann](docs/references/wegmann-2022.md)）。
+
+<strong>題名だけを渡すと足りない。</strong>「Vim のファイラー系プラグインについて書け」と言われた
+LLM は、プラグイン名もコマンド名も版番号もほとんど書かない。本人の記事はそれらで
+埋まっている。<strong>記事が名指ししている物まで渡す。</strong>
+
+```
+次の題材で技術記事を書いてください。
+
+題材: Vim のファイラー系プラグインの比較
+登場するもの: vim-filer、NERDTree、netrw、:Explore、Vim 8.2
+長さ: 3,000 字程度
+```
+
+<strong>長さは散らす。</strong> 同じ長さを頼むと LLM は同じ長さを返し、本人の記事と長さの範囲が
+重ならなくなって目盛りが作れない。使えるのは地の文 2,000 字あたりから上で、
+6,000 字を頼んでも 4,000 字あたりで頭打ちになる。
+
+<strong>コードブロックは書かせない。</strong> 地の文だけが計測の対象なので、字数を満たしていても
+測れる語数が下限を割る。
+
+同梱の池を作り直すなら `tools/gen-baseline.sh` と `tools/baseline-topics.txt` がある。
 
 ## 判定は 3 段ある
 
@@ -193,6 +196,7 @@ $K doctor alisue.kb
 | 言われたこと | どうするか |
 | --- | --- |
 | `--source を渡す` | 既定を置いていない。取り違えても数が変わるだけなので選ばせている |
+| `基準の池が見つからない` | `quick` は作業ディレクトリの `baselines` を見る。リポジトリの外から呼ぶなら `KAKIBURI_BASELINES` か `--baseline` で渡す |
 | `知らない場面` | `scene` で先に作る。いまある場面も一緒に出る |
 | `目盛りを作らない: 測れた単位が N 本で、10 本に届かない` | 素材を足す。<strong>どの単位がどの指標で落ちたかまで出る</strong> |
 | `目盛りが無い。素材が足りずに作れなかった` | `build` がまだ通っていない。`show` で足りない側を見る |
@@ -204,6 +208,7 @@ $K doctor alisue.kb
 ## コマンド
 
 ```
+quick     フォルダを指すだけで目盛りまで作る
 measure   1 本を測る。カセットが無くても動く
 compare   3 本以上を並べて比べる
 new       1 人分の入れ物を作る
