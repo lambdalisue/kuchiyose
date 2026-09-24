@@ -645,6 +645,17 @@ fn doctor(args: &[String]) -> Exit {
         println!("効く指標: {works} / {} 本", effective.len());
     }
 
+    // 一人称は本数ではなく中身を出す。 閉じた集合なので全部並べても数行にしかならず、
+    // 「この書き手はどれを選んでいるか」はそのまま読めるほうが早い。
+    if !scale.first_person.is_empty() {
+        let shown: Vec<String> = scale
+            .first_person
+            .iter()
+            .map(|(name, rate)| format!("{name} {:.0}%", rate * 100.0))
+            .collect();
+        println!("一人称: {}", shown.join("、"));
+    }
+
     // 5. 相手集合のベクトルが噛み合っているか。本数だけでは足りない。
     if scale.partner_vectors_ok() {
         println!("相手集合のベクトル: {} 本", scale.partner_vectors.len());
@@ -2762,6 +2773,12 @@ fn review(args: &[String]) -> Exit {
             theirs: g.theirs.clone(),
         })
         .collect();
+    // 一人称は語彙素で畳んでから数える。 `わたし` と `私` は同じ一人称だが、
+    // UniDic は同綴りを分ける札を付けるので、そのままだと 2 つに割れる。
+    let draft_first_person: Vec<(String, usize)> =
+        kakiburi_metrics::word::first_person(analyzed_now.as_ref())
+            .into_iter()
+            .collect();
     let result = kakiburi_review::review(
         &kakiburi_review::Observations {
             inspections: &inspections,
@@ -2775,6 +2792,8 @@ fn review(args: &[String]) -> Exit {
             machine_katas: &machine_katas,
             machine_gois: &machine_gois,
             phrases: &phrases,
+            first_person: &scale.first_person,
+            draft_first_person: &draft_first_person,
         },
         &defs,
     );
@@ -2847,6 +2866,10 @@ fn review(args: &[String]) -> Exit {
                 (
                     "machine_gois".to_owned(),
                     Value::Array(result.machine_gois.iter().map(Value::s).collect()),
+                ),
+                (
+                    "first_person".to_owned(),
+                    Value::Array(result.first_person.iter().map(Value::s).collect()),
                 ),
                 (
                     // 指摘は結果であって断り書きではない。 ここに入れる。
@@ -2945,6 +2968,16 @@ fn review(args: &[String]) -> Exit {
             println!("  - {h}");
         }
     }
+    // ここから下は判定に使っていない。
+    //
+    // 同じ画面に並べると矛盾して見える。 「前に出す指標がすべて幅の中にある」
+    // と書いた真下に「鉤括弧が幅の外にある」が並ぶ——読む側には、どちらが
+    // 判定を決めたのか分からない。 見出しを 1 本入れて、止める指摘と
+    // 止めない知らせを分ける。
+    if result.has_aside() {
+        println!();
+        println!("ここから下は判定に使っていない。直すかどうかは書き手が決める。");
+    }
     if !result.habits.is_empty() {
         println!();
         println!("本人の癖から外れているところ {} 本", result.habits.len());
@@ -2978,6 +3011,13 @@ fn review(args: &[String]) -> Exit {
         println!("使いすぎている言い回し {} 本", result.overused_katas.len());
         for k in &result.overused_katas {
             println!("  - {k}");
+        }
+    }
+    if !result.first_person.is_empty() {
+        println!();
+        println!("本人と違う一人称 {} 本", result.first_person.len());
+        for f in &result.first_person {
+            println!("  - {f}");
         }
     }
     Exit::from_verdict(result.outcome.verdict)

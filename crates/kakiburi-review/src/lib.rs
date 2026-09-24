@@ -71,6 +71,32 @@ pub struct Review {
     ///
     /// 判定には使わない。 その人がたまたま多く使う 1 本はありうる。
     pub overused_katas: Vec<String>,
+    /// 本人と違う一人称を選んでいる箇所。書きぶりの枠を奪わない。
+    ///
+    /// [型](Self::katas)にも[機械の語](Self::machine_gois)にも載らない。
+    /// 型は枠の数だけ採るので、実測で `僕は` は割合 0.35 で枠から落ちた。
+    /// 機械の語は基準の側から選ぶので、基準がほとんど使わない一人称は挙がらない
+    /// ——実測で、基準 44 本のうち `私` は 3 本（7%）で床を割っていた。
+    ///
+    /// 判定には使わない。 その題材でだけ別の一人称を選ぶことはありうる。
+    pub first_person: Vec<String>,
+}
+
+impl Review {
+    /// 判定に使っていない知らせが 1 つでもあるか。
+    ///
+    /// 見せる側が数え直さないために置く。 数え直すと、判定に使わない口を
+    /// 足したときに一覧が片方だけ古くなり、止めない知らせが止める指摘の顔で
+    /// 並ぶ。
+    #[must_use]
+    pub fn has_aside(&self) -> bool {
+        !self.habits.is_empty()
+            || !self.katas.is_empty()
+            || !self.machine_katas.is_empty()
+            || !self.machine_gois.is_empty()
+            || !self.overused_katas.is_empty()
+            || !self.first_person.is_empty()
+    }
 }
 
 /// 機械の語 1 つ。この文章に出ているものだけを渡す。
@@ -421,6 +447,65 @@ pub struct Observations<'a> {
     /// 名指しした言い回しであって、型ではない——型は本人にしか出ないものなので、
     /// そもそも受け取った側が知らない。
     pub phrases: &'a [Kata],
+    /// 本人の一人称と、それが現れた単位の割合。多い順。
+    pub first_person: &'a [(String, f64)],
+    /// この文章に出てきた一人称と、その回数。
+    pub draft_first_person: &'a [(String, usize)],
+}
+
+/// 本人がその一人称を選んでいると言える、単位の割合。暫定値である。
+///
+/// 選ばれた側にだけ掛ける。 1 本で使っただけの一人称を「本人はこう書く」と
+/// 言えば、書き手は自分が一度しか書かなかった語に寄せることになる。
+pub const FIRST_PERSON_MIN: f64 = 0.10;
+
+/// 本人が選んでいないと言える、いちばん多い一人称に対する割合。暫定値である。
+///
+/// 本人が使わない一人称だけを言うのでは狭すぎる。 実測で、本人は `僕` を
+/// 49 本中 28 本、`私` を 5 本で使っていた——`私` を使うことはあるが、
+/// 選んでいるのは `僕` である。
+pub const FIRST_PERSON_SHARE: f64 = 0.5;
+
+/// 本人と違う一人称を選んでいることを言う。
+///
+/// この文章が選んだものだけを見る。 一人称が 1 つも出てこない文章に
+/// 「本人は `僕` と書く」と言わない——主語を置かない文章はふつうにあり、
+/// 実測で本人自身が 49 本中 21 本でどの一人称も使っていない。
+fn first_person_remedies(person: &[(String, f64)], draft: &[(String, usize)]) -> Vec<String> {
+    let Some((top, top_rate)) = person.first() else {
+        return Vec::new();
+    };
+    if *top_rate < FIRST_PERSON_MIN {
+        return Vec::new();
+    }
+    let rate_of = |name: &str| -> f64 {
+        person
+            .iter()
+            .find(|(n, _)| n == name)
+            .map_or(0.0, |(_, r)| *r)
+    };
+    let mut used: Vec<&(String, usize)> = draft
+        .iter()
+        .filter(|(name, times)| {
+            *times > 0 && name != top && rate_of(name) < top_rate * FIRST_PERSON_SHARE
+        })
+        .collect();
+    // 多く出ている順。同じなら名前の順。 決めておかないと並びが実装で変わる。
+    used.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    used.into_iter()
+        .map(|(name, times)| {
+            let mine = rate_of(name);
+            let theirs = if mine <= 0.0 {
+                "本人は使わない".to_owned()
+            } else {
+                format!("本人は {:.0}% の記事でしか使わない", mine * 100.0)
+            };
+            format!(
+                "「{name}」をこの文章に {times} 回。{theirs}。本人は「{top}」と書く（{:.0}% の記事で使っている）。",
+                top_rate * 100.0
+            )
+        })
+        .collect()
 }
 
 /// 検める。
@@ -508,6 +593,8 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
         machine_katas,
         machine_gois,
         overused_katas,
+        // どの一人称を選ぶかは、型にも語にも載らない。
+        first_person: first_person_remedies(o.first_person, o.draft_first_person),
     }
 }
 
@@ -685,11 +772,80 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
         assert_eq!(r.outcome.verdict, Verdict::Pass);
         assert!(r.points.is_empty());
+        assert!(!r.has_aside(), "知らせが無ければ見出しも要らない");
+    }
+
+    #[test]
+    fn 通っても幅の外の知らせは残る() {
+        // 判定を止めない軸が幅の外にあるとき、「すべて幅の中にある」と
+        // 「幅の外にある」が同じ画面に並ぶ。見せる側が分けられるように、
+        // 知らせがあることを言えなければならない。
+        let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
+        let h = [observed("鉤括弧", 8.110, 0.0, 6.697)];
+        let r = review(
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Human),
+                directives: &d,
+                habits: &h,
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+                machine_katas: &[],
+                machine_gois: &[],
+                phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
+            },
+            &All,
+        );
+        assert_eq!(r.outcome.verdict, Verdict::Pass);
+        assert_eq!(r.outcome.reason, "前に出す指標がすべて幅の中にある");
+        assert!(!r.habits.is_empty(), "幅の外なので知らせは出る");
+        assert!(r.has_aside());
+    }
+
+    #[test]
+    fn 本人と違う一人称を名指しする() {
+        // 本人が `私` をまったく使わないわけではない。選んでいるのが `僕` である。
+        let person = [("僕".to_owned(), 0.571), ("私".to_owned(), 0.102)];
+        let draft = [("私".to_owned(), 3)];
+        let got = first_person_remedies(&person, &draft);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].contains("「私」をこの文章に 3 回"), "{got:?}");
+        assert!(got[0].contains("本人は「僕」と書く"), "{got:?}");
+    }
+
+    #[test]
+    fn 本人と同じ一人称なら何も言わない() {
+        let person = [("僕".to_owned(), 0.571), ("私".to_owned(), 0.102)];
+        assert!(first_person_remedies(&person, &[("僕".to_owned(), 5)]).is_empty());
+    }
+
+    #[test]
+    fn 一人称が出てこない文章には言わない() {
+        // 主語を置かない文章はふつうにある。 実測で本人自身が 49 本中 21 本で
+        // どの一人称も使っていない。
+        let person = [("僕".to_owned(), 0.571)];
+        assert!(first_person_remedies(&person, &[]).is_empty());
+        assert!(first_person_remedies(&person, &[("私".to_owned(), 0)]).is_empty());
+    }
+
+    #[test]
+    fn 本人が一人称を選んでいなければ言わない() {
+        // 1 本で使っただけのものを「本人はこう書く」と言えば、書き手は
+        // 自分が一度しか書かなかった語に寄せることになる。
+        let person = [("僕".to_owned(), 0.05)];
+        assert!(first_person_remedies(&person, &[("私".to_owned(), 3)]).is_empty());
+        assert!(first_person_remedies(&[], &[("私".to_owned(), 3)]).is_empty());
     }
 
     fn human(name: &str, value: f64) -> HumannessObserved {
@@ -736,6 +892,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -764,6 +922,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -791,6 +951,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -814,6 +976,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -841,6 +1005,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -871,6 +1037,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -897,6 +1065,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -932,6 +1102,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[dense("しています。", 10, 4.4, 2.8)],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -974,6 +1146,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1003,6 +1177,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1035,6 +1211,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1059,6 +1237,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1085,6 +1265,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1109,6 +1291,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1137,6 +1321,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1156,6 +1342,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1190,6 +1378,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &UpperOnly,
         );
@@ -1214,6 +1404,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &None_,
         );
@@ -1237,6 +1429,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1260,6 +1454,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1286,6 +1482,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1312,6 +1510,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );
@@ -1341,6 +1541,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &None_,
         );
@@ -1366,6 +1568,8 @@ mod tests {
                 machine_katas: &[],
                 machine_gois: &[],
                 phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
             },
             &All,
         );

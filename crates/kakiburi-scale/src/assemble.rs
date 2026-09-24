@@ -51,6 +51,8 @@ struct Measurements {
     /// その単位に現れる[語](kakiburi_metrics::word::goi)の語彙素と、品詞と回数。
     /// 語形が散っても 1 つに合流する。
     goi: BTreeMap<String, (String, usize)>,
+    /// その単位に現れる[一人称](kakiburi_metrics::word::FIRST_PERSON)と、その回数。
+    first_person: BTreeMap<String, usize>,
     /// 人らしさの次元。
     humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
@@ -116,6 +118,8 @@ impl Measurements {
             once_only: kakiburi_metrics::humanness::once_only(analyzed.as_ref(), ONCE_ONLY),
             grams: kakiburi_metrics::word::grams_with_position(analyzed.as_ref(), &KATA_N),
             goi: kakiburi_metrics::word::goi(analyzed.as_ref()),
+            // どの一人称を選ぶかは、題材が変わっても動かない。
+            first_person: kakiburi_metrics::word::first_person(analyzed.as_ref()),
             humanness: Humanness::measure(&prose, analyzed.as_ref()),
             chars: sample.document.japanese_chars(),
             text: kakiburi_metrics::humanness::joined(&prose),
@@ -528,6 +532,9 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         machine_katas: katas_of(&machine_units, &person_units, &measured, MACHINE_KATAS),
         // 並びで割れた癖を、語彙素で拾い直す。
         machine_gois: gois_of(&machine_units, &person_units, &measured, MACHINE_GOIS),
+        // 一人称はどちらを選ぶかだけが問われる。 相手側は要らない——
+        // 本人が何を選ぶかが分かれば、草稿が別のものを選んだことが言える。
+        first_person: first_person_of(&person_units, &measured),
     })
 }
 
@@ -747,6 +754,39 @@ pub const GOI_THEIRS: usize = 5;
 /// 条件は[型](katas_of)と同じものを、語彙素に当てる——
 /// 基準の[一定割合以上](KATA_PERSON_MIN)に現れ、本人には[ほとんど現れない](KATA_BASE_MAX)。
 /// 新しい暫定値を増やさない。 同じ規則を別の単位に当てているだけである。
+/// 本人の一人称と、それが現れた単位の割合。多い順。
+///
+/// 回数ではなく単位の割合で見る。 1 本で何度も書く人と、毎回 1 度だけ書く人の
+/// どちらも「その一人称を使う人」である。
+fn first_person_of(person: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<(String, f64)> {
+    let mut df: BTreeMap<&str, usize> = BTreeMap::new();
+    for u in person {
+        let Some(m) = measured.get(&u.name) else {
+            continue;
+        };
+        for name in m.first_person.keys() {
+            *df.entry(name.as_str()).or_insert(0) += 1;
+        }
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let n = person.len().max(1) as f64;
+    let mut out: Vec<(String, f64)> = df
+        .into_iter()
+        .map(|(name, k)| {
+            #[allow(clippy::cast_precision_loss)]
+            let rate = k as f64 / n;
+            (name.to_owned(), rate)
+        })
+        .collect();
+    // 多い順。同じなら名前の順。 決めておかないと並びが実装で変わる。
+    out.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    out
+}
+
 fn gois_of(
     baseline: &[Unit],
     person: &[Unit],

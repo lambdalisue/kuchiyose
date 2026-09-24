@@ -189,6 +189,59 @@ pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(St
     out
 }
 
+/// 一人称の代名詞。語彙素で並べる。暫定値である。
+///
+/// 閉じた集合なので数え上げられる。 開いた品詞と違い、書き手が選ぶのは
+/// この中のどれかであって、使うか使わないかではない——だから
+/// [語](GOI_POS)と違い、本人が使わないことがそのまま指摘になる。
+///
+/// 題材で変わらない。 名詞と動詞を語から外したのは題材が決めるからだが、
+/// 一人称はどの題材でも同じものを選ぶ。実測で、本人 49 本では `僕` が 28 本
+/// （57%）、基準 44 本では 1 度も出てこない。
+///
+/// UniDic の札で見る。 `自分` `うち` `当方` は `名詞` なので入らない——
+/// 一人称として読めることはあるが、`自分の意見` のように再帰でも使う。
+/// 実測でも本人 46% 対 基準 47% で分かれない。
+pub const FIRST_PERSON: [&str; 8] = [
+    "私-代名詞",
+    "私",
+    "僕",
+    "俺",
+    "わし",
+    "我々",
+    "我ら",
+    "あたい",
+];
+
+/// 語彙素を、見せる形に畳む。
+///
+/// `私-代名詞` の後ろは同綴りを分けるための札であって、別の語ではない。
+/// `わたし` の語彙素は `私`、`私` の語彙素は `私-代名詞` になるので、
+/// 畳まなければ同じ一人称が 2 つに割れる。
+#[must_use]
+pub fn first_person_name(lemma: &str) -> &str {
+    lemma.split_once('-').map_or(lemma, |(head, _)| head)
+}
+
+/// その単位に現れる[一人称](FIRST_PERSON)と、その回数。
+///
+/// 札が `代名詞` のものだけを取る。 `私` は `名詞` の `し` と同じ綴りである。
+#[must_use]
+pub fn first_person(analyzed: Option<&Analyzed>) -> BTreeMap<String, usize> {
+    let mut out: BTreeMap<String, usize> = BTreeMap::new();
+    let Some(a) = analyzed else {
+        return out;
+    };
+    for m in a.all() {
+        if m.pos1 != "代名詞" || !FIRST_PERSON.contains(&m.lemma.as_str()) {
+            continue;
+        }
+        *out.entry(first_person_name(&m.lemma).to_owned())
+            .or_insert(0) += 1;
+    }
+    out
+}
+
 /// 語として数える品詞。評価と程度を言う語だけを取る。
 ///
 /// 名詞と動詞を入れない。あれは題材が決める——`Terraform` を使ったことが
@@ -582,6 +635,25 @@ mod tests {
         assert_eq!(g.get("とても").map(|x| x.0.as_str()), Some("副詞"));
         assert_eq!(g.get("速い").map(|x| x.0.as_str()), Some("形容詞"));
         assert!(!g.contains_key("機能"), "名詞は取らない: {g:?}");
+    }
+
+    #[test]
+    fn 一人称は代名詞だけを取る() {
+        // 閉じた集合なので、使わないことがそのまま指摘になる。
+        let a = analyzed(&["僕 は 自分 の 機能 を 作っ た 。 僕 も 私 も 居る 。"]);
+        let f = first_person(Some(&a));
+        assert_eq!(f.get("僕"), Some(&2));
+        assert_eq!(f.get("私"), Some(&1));
+        // 自分 は 名詞 である。 再帰でも使うので、一人称として数えない。
+        assert!(!f.contains_key("自分"), "{f:?}");
+    }
+
+    #[test]
+    fn 一人称は同綴りを分ける札で割れない() {
+        // `わたし` の語彙素は `私`、`私` の語彙素は `私-代名詞` になる。
+        // 畳まなければ同じ一人称が 2 つに割れる。
+        assert_eq!(first_person_name("私-代名詞"), "私");
+        assert_eq!(first_person_name("僕"), "僕");
     }
 
     #[test]

@@ -240,6 +240,18 @@ pub fn write(s: &Scale) -> String {
             Value::Array(s.phrases.iter().map(Value::s).collect()),
         ),
         (
+            // 一人称は閉じた集合なので、選ばれなかったことがそのまま癖になる。
+            "一人称".to_owned(),
+            Value::Array(
+                s.first_person
+                    .iter()
+                    .map(|(name, rate)| {
+                        Value::Array(vec![Value::s(name), Value::Number(*rate)])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
             // 繰り返せと言うなら、上限も渡す。
             "言い回しの上限".to_owned(),
             Value::Array(
@@ -518,6 +530,19 @@ pub fn read(text: &str) -> Option<Scale> {
             .map(|a| {
                 a.iter()
                     .filter_map(|x| x.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        // 無くてもよい。 一人称を持たない版のカセットは、指摘が 1 本減るだけである。
+        first_person: v
+            .get("一人称")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| {
+                        let p = x.as_array()?;
+                        Some((p.first()?.as_str()?.to_owned(), p.get(1)?.as_f64()?))
+                    })
                     .collect()
             })
             .unwrap_or_default(),
