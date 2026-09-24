@@ -1,10 +1,10 @@
 //! どの対を何に使うかを決める。
 //!
-//! <strong>較正に使った対から天井と床を作らない。</strong> 較正は 2 つの対集合を分離するように
-//! 重みを決める手続きである。同じ対で目盛りを作れば、<strong>分離するように合わせたものの
-//! 分離具合を測る</strong>ことになり、いちばん危ない検査がそこで無効になる。
+//! 較正に使った対から天井と床を作らない。 較正は 2 つの対集合を分離するように
+//! 重みを決める手続きである。同じ対で目盛りを作れば、分離するように合わせたものの
+//! 分離具合を測ることになり、いちばん危ない検査がそこで無効になる。
 //!
-//! <strong>単位は共有する。対は共有しない。</strong>
+//! 単位は共有する。対は共有しない。
 
 use crate::split::{Split, Unit};
 
@@ -18,7 +18,7 @@ pub struct Pair {
 }
 
 impl Pair {
-    /// 作る。<strong>名前で並べ替える</strong>ので、渡す順に依らず同じ対になる。
+    /// 作る。名前で並べ替えるので、渡す順に依らず同じ対になる。
     #[must_use]
     pub fn new(a: impl Into<String>, b: impl Into<String>) -> Self {
         let (a, b) = (a.into(), b.into());
@@ -30,12 +30,12 @@ impl Pair {
     }
 }
 
-/// 対の割り当て。<strong>ここが唯一の作り手である。</strong>
+/// 対の割り当て。ここが唯一の作り手である。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pairing {
-    /// 較正・同じ人の側。<strong>相手集合の中の対。</strong>
+    /// 較正・同じ人の側。相手集合の中の対。
     pub calibration_same: Vec<Pair>,
-    /// 較正・違う人の側。<strong>基準の較正分 × 相手集合</strong>と、<strong>他人 × 相手集合</strong>。
+    /// 較正・違う人の側。基準の較正分 × 相手集合と、他人 × 相手集合。
     pub calibration_different: Vec<Pair>,
     /// 天井。測る分の本人の単位 1 本 × 相手集合。1 本につき 1 点。
     pub ceiling: Vec<(String, Vec<Pair>)>,
@@ -45,7 +45,7 @@ pub struct Pairing {
 
 /// 割り当てを作る。
 ///
-/// <strong>相手集合は較正にも天井にも現れるが、同じ対は 2 度使わない。</strong>
+/// 相手集合は較正にも天井にも現れるが、同じ対は 2 度使わない。
 #[must_use]
 pub fn pair(person: &Split, baseline: &Split, others: &[Unit]) -> Pairing {
     // 較正・同じ人の側は相手集合の中だけで閉じる。
@@ -66,10 +66,10 @@ pub fn pair(person: &Split, baseline: &Split, others: &[Unit]) -> Pairing {
             calibration_different.push(Pair::new(&b.name, &p.name));
         }
     }
-    // <strong>他人が手に入るなら、違う人の側に足す。</strong>
+    // 他人が手に入るなら、違う人の側に足す。
     //
-    // <strong>基準だけで学習すると、測っているのは「その人らしさ」ではなく
-    // 「この基準との違い」になる。</strong> 基準と本人が共有している癖——同じ敬体で書く、
+    // 基準だけで学習すると、測っているのは「その人らしさ」ではなく
+    // 「この基準との違い」になる。 基準と本人が共有している癖——同じ敬体で書く、
     // といったこと——は、その系統の距離が動かないので重みが 0 に落ちる。
     //
     // 実測でそれが起きた。ですます体を丸ごとである体に変えても照合値は中央 +0.002 しか
@@ -126,10 +126,10 @@ impl Pairing {
             .collect()
     }
 
-    /// <strong>較正と目盛りが対を共有していないか。</strong>
+    /// 較正と目盛りが対を共有していないか。
     ///
     /// 共有していれば、分離するように合わせたものの分離具合を測ることになる。
-    /// <strong>作り手を 1 つにしたうえで、それでも確かめる</strong>——ここが壊れると、
+    /// 作り手を 1 つにしたうえで、それでも確かめる——ここが壊れると、
     /// 骨格の検査そのものが無効になる。
     #[must_use]
     pub fn shares_pairs(&self) -> bool {

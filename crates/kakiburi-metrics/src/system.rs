@@ -1,12 +1,12 @@
 //! 系統と層。
 //!
-//! <strong>層は系統の属性である。</strong> 指標は自分の系統を名指しし、層はそこから引く。
+//! 層は系統の属性である。 指標は自分の系統を名指しし、層はそこから引く。
 //! 50 を超える定義ファイルに層を書き写せば、系統の層が変わったときに直し忘れた
 //! ものが古い層のまま残る。
 
 /// 照合の系統。
 ///
-/// <strong>層はここで決まる。</strong> 表を 1 つにするために、層を返す関数もここに置く。
+/// 層はここで決まる。 表を 1 つにするために、層を返す関数もここに置く。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum System {
     /// 文字 bigram。
@@ -19,9 +19,9 @@ pub enum System {
     Comma,
     /// 文字種。
     CharType,
-    /// 文節パターン。<strong>保留中。</strong>
+    /// 文節パターン。保留中。
     BunsetsuPattern,
-    /// 埋め込み。<strong>定義が無く、当面使わない。</strong>
+    /// 埋め込み。定義が無く、当面使わない。
     Embedding,
     /// 文末表現。
     SentenceEnding,
@@ -35,7 +35,7 @@ pub enum System {
     Length,
 }
 
-/// 層。<strong>裏付けの強さの段である。</strong>
+/// 層。裏付けの強さの段である。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Layer {
     /// 日本語の書き手識別で確かめられているもの。
@@ -90,7 +90,7 @@ impl System {
         .find(|s| s.name() == n)
     }
 
-    /// この系統の層。<strong>ここが唯一の出どころである。</strong>
+    /// この系統の層。ここが唯一の出どころである。
     #[must_use]
     pub fn layer(self) -> Layer {
         match self {

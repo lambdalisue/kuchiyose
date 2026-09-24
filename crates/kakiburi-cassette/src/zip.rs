@@ -1,9 +1,9 @@
 //! zip の読み書き。
 //!
-//! <strong>索引があることが、tar ではなく zip を選んだ理由である。</strong> 中の 1 つだけを
+//! 索引があることが、tar ではなく zip を選んだ理由である。 中の 1 つだけを
 //! 読めるので、派生物を差し替えるたびに全体を舐めない。
 //!
-//! <strong>無圧縮で持つ。</strong> 圧縮は[圧縮率](../../../docs/spec/metrics/圧縮率.md)の指標が
+//! 無圧縮で持つ。 圧縮は[圧縮率](../../../docs/spec/metrics/圧縮率.md)の指標が
 //! 使うものであって、容器の役目ではない——容器が圧縮すると、圧縮器と設定が
 //! 指紋に 2 度出てくる。
 
@@ -35,23 +35,23 @@ impl std::fmt::Display for ZipError {
 
 impl std::error::Error for ZipError {}
 
-/// 中身。<strong>名前の昇順で持つ</strong>ので、書き出しが決定的になる。
+/// 中身。名前の昇順で持つので、書き出しが決定的になる。
 pub type Entries = BTreeMap<String, Vec<u8>>;
 
-/// 旗の 11 番目。<strong>entry の名前が UTF-8 であると名乗る。</strong>
+/// 旗の 11 番目。entry の名前が UTF-8 であると名乗る。
 ///
-/// <strong>立てなければ、読む側は CP437 として解釈してよい。</strong> zip の規格がそう決めて
+/// 立てなければ、読む側は CP437 として解釈してよい。 zip の規格がそう決めて
 /// いる。名前が ASCII だけのあいだは差が出ないが、
 /// [場面が階層の名前になった](../../../docs/design/100-cassette.md#中身)ので、
-/// <strong>ふつうの `unzip` で中身の名前が化ける。</strong>
+/// ふつうの `unzip` で中身の名前が化ける。
 ///
-/// 自分で読み書きするぶんには困らないが、<strong>1 ファイルで持ち運べることが容器を
-/// zip にした理由</strong>である以上、外の道具で開けないのは選んだ理由を損なう。
+/// 自分で読み書きするぶんには困らないが、1 ファイルで持ち運べることが容器を
+/// zip にした理由である以上、外の道具で開けないのは選んだ理由を損なう。
 const UTF8_NAME: u16 = 0x0800;
 
 /// 書き出す。
 ///
-/// <strong>時刻を入れない。</strong> 入れると、同じ中身から違うバイトが出て
+/// 時刻を入れない。 入れると、同じ中身から違うバイトが出て
 /// [作り直しても同じものが出る](../../../docs/design/300-test.md#作り直せることを試験する)が
 /// 成り立たない。
 #[must_use]
@@ -65,7 +65,7 @@ pub fn write(entries: &Entries) -> Vec<u8> {
         out.extend_from_slice(&20u16.to_le_bytes()); // 要る版
         out.extend_from_slice(&UTF8_NAME.to_le_bytes()); // 旗
         out.extend_from_slice(&0u16.to_le_bytes()); // 無圧縮
-        out.extend_from_slice(&0u16.to_le_bytes()); // 時刻。<strong>0 で固定する</strong>
+        out.extend_from_slice(&0u16.to_le_bytes()); // 時刻。0 で固定する
         out.extend_from_slice(&0u16.to_le_bytes()); // 日付。同じ
         out.extend_from_slice(&crc.to_le_bytes());
         let size = u32::try_from(body.len()).unwrap_or(u32::MAX);
@@ -116,7 +116,7 @@ pub fn write(entries: &Entries) -> Vec<u8> {
     out
 }
 
-/// 索引だけを読む。<strong>中身を読まない。</strong>
+/// 索引だけを読む。中身を読まない。
 ///
 /// これが zip を選んだ理由である——1 つだけ読むために全部を舐めない。
 pub fn index(bytes: &[u8]) -> Result<Vec<String>, ZipError> {
@@ -265,14 +265,14 @@ mod tests {
 
     #[test]
     fn 名前が_utf8_であると名乗る() {
-        // <strong>立てなければ、読む側は CP437 として解釈してよい。</strong> 場面が階層の
+        // 立てなければ、読む側は CP437 として解釈してよい。 場面が階層の
         // 名前になったので、ふつうの `unzip` で名前が化ける。
         let mut e = Entries::new();
         e.insert("decided/技術記事/baseline.json".into(), b"{}".to_vec());
         let bytes = write(&e);
         // 局所札の旗は 6 バイト目から。
         assert_eq!(u16::from_le_bytes([bytes[6], bytes[7]]), UTF8_NAME);
-        // 索引の旗も同じ。<strong>片方だけでは読む側が選ぶ。</strong>
+        // 索引の旗も同じ。片方だけでは読む側が選ぶ。
         let at = bytes
             .windows(4)
             .position(|w| w == 0x0201_4b50u32.to_le_bytes())
@@ -350,9 +350,9 @@ mod tests {
     #[test]
     fn 検査値が合わなければ断る() {
         let mut bytes = write(&entries());
-        // <strong>中身を 1 バイト壊す。</strong> 位置を割合で決めると、中身が短くなった
-        // ときに検査値の掛かっていない欄を壊すだけになり、<strong>試験が黙って
-        // 何も確かめなくなる</strong>——実際に書いた中身を探して、そこを壊す。
+        // 中身を 1 バイト壊す。 位置を割合で決めると、中身が短くなった
+        // ときに検査値の掛かっていない欄を壊すだけになり、試験が黙って
+        // 何も確かめなくなる——実際に書いた中身を探して、そこを壊す。
         let body = b"{\"model\":\"m\"}";
         let at = bytes
             .windows(body.len())

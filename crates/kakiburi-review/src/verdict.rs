@@ -1,8 +1,8 @@
 //! 3 段の判定。
 //!
-//! <strong>順に当てる。返す値が決まったら、そこで終わる。</strong>
+//! 順に当てる。返す値が決まったら、そこで終わる。
 //!
-//! <strong>止まった段を必ず返す。</strong> 言わなければ、受け取った側は照合値を上げようとして
+//! 止まった段を必ず返す。 言わなければ、受け取った側は照合値を上げようとして
 //! 人らしさを下げる、という逆向きの直しをする。
 
 use crate::range::{Lower, Outside, Range};
@@ -33,7 +33,7 @@ impl Stage {
     }
 }
 
-/// 段ごとの入力。<strong>測れていなければ `None` である。</strong>
+/// 段ごとの入力。測れていなければ `None` である。
 ///
 /// `None` と「0 が出た」は別である——0 は「使わなかった」という値である。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +53,7 @@ pub struct Outcome {
     pub verdict: Verdict,
     /// どの段で決まったか。
     pub stage: Stage,
-    /// なぜそうなったか。<strong>止めた理由を返す。</strong>
+    /// なぜそうなったか。止めた理由を返す。
     pub reason: String,
 }
 
@@ -71,7 +71,7 @@ pub enum Verdict {
 impl Verdict {
     /// 終了コード。
     ///
-    /// <strong>判定できないを 1 と分けるのが要点である。</strong> 一緒にすれば、分からないと
+    /// 判定できないを 1 と分けるのが要点である。 一緒にすれば、分からないと
     /// 言えることが呼ぶ側から消える。
     #[must_use]
     pub fn exit_code(self) -> i32 {
@@ -88,11 +88,11 @@ impl Verdict {
 pub struct Observed {
     /// 指標の名前。
     pub name: String,
-    /// 値。<strong>測れていなければ `None`。</strong>
+    /// 値。測れていなければ `None`。
     pub value: Option<f64>,
     /// その人の幅。
     pub range: Range,
-    /// 下端の見方。<strong>単位で決まる。</strong>
+    /// 下端の見方。単位で決まる。
     pub lower: Lower,
 }
 
@@ -129,7 +129,7 @@ impl Inspected {
 
 /// 判定する。
 ///
-/// <strong>1 を先に当てるのは、条件が独立だからである。</strong> 文体がどれだけ寄っても、機械が
+/// 1 を先に当てるのは、条件が独立だからである。 文体がどれだけ寄っても、機械が
 /// 書いたと分かる文章は別の条件で落ちる。照合値が天井側にあることは、そこを何も
 /// 保証しない。
 #[must_use]
@@ -206,7 +206,7 @@ pub fn judge(
 
     // 3 段目。指示できる指標。
     //
-    // <strong>飛ばすのは個々の指標だけである。</strong> 測れていない指標を幅の中とも外とも
+    // 飛ばすのは個々の指標だけである。 測れていない指標を幅の中とも外とも
     // 扱わない、という意味であって、段を飛ばすことではない。
     let mut outside: Vec<(&Observed, Outside)> = directives
         .iter()
@@ -225,7 +225,7 @@ pub fn judge(
         };
     }
 
-    // <strong>外れの大きさの降順。同じなら指標名の昇順。</strong>
+    // 外れの大きさの降順。同じなら指標名の昇順。
     // 決めておかないと、上位 3〜4 本が実装ごとに変わる。
     outside.sort_by(|a, b| {
         b.1.size()
@@ -234,9 +234,9 @@ pub fn judge(
             .then_with(|| a.0.name.cmp(&b.0.name))
     });
 
-    // <strong>「通らない」ではなく「判定できない」を返す。</strong> 照合値は既に天井側にある——
+    // 「通らない」ではなく「判定できない」を返す。 照合値は既に天井側にある——
     // 系統で見るかぎり本人の範囲に入っている。それを覆して「通らない」と言えるだけの
-    // 根拠は、細く切った 1 つの指標には無い。<strong>だが黙って通すこともしない。</strong>
+    // 根拠は、細く切った 1 つの指標には無い。だが黙って通すこともしない。
     Outcome {
         verdict: Verdict::Unknown,
         stage: Stage::Directive,
@@ -250,10 +250,10 @@ pub fn judge(
 
 /// 指摘に出す本数の上限。
 ///
-/// <strong>上限であって、独立な指示の本数ではない。</strong> 1 本直したら別の 1 本も動く。
+/// 上限であって、独立な指示の本数ではない。 1 本直したら別の 1 本も動く。
 pub const MAX_POINTS: usize = 4;
 
-/// 指摘を選ぶ。<strong>外れの大きさの降順、同じなら指標名の昇順。</strong>
+/// 指摘を選ぶ。外れの大きさの降順、同じなら指標名の昇順。
 #[must_use]
 pub fn pick_points(directives: &[Observed]) -> Vec<(&Observed, Outside)> {
     let mut outside: Vec<(&Observed, Outside)> = directives

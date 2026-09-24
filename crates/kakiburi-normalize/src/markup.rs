@@ -1,8 +1,8 @@
 //! 記法から意味への対応表。
 //!
-//! <strong>ここがいちばん危ない。</strong> GitHub の Alert 記法は引用の記法の上に建っている。
+//! ここがいちばん危ない。 GitHub の Alert 記法は引用の記法の上に建っている。
 //! 素朴に CommonMark として解釈すると引用になり、引用の密度が実際より高く出て、
-//! 補足の密度に 0 が並ぶ。<strong>エラーにならない。</strong> 値が出て、判定が回り、結果だけが違う。
+//! 補足の密度に 0 が並ぶ。エラーにならない。 値が出て、判定が回り、結果だけが違う。
 
 use kakiburi_doc::node::Kind;
 
@@ -24,7 +24,7 @@ pub fn alert_kind(name: impl AsRef<str>) -> Option<Kind> {
 /// directive の名前から node を引く。
 ///
 /// 名前は修飾を伴うことがある——Zenn の `:::message alert` は警告で、修飾の無い
-/// `:::message` は補足である。<strong>だから名前だけでは決まらない。</strong>
+/// `:::message` は補足である。だから名前だけでは決まらない。
 #[must_use]
 pub fn directive_kind(name: impl AsRef<str>) -> Option<Kind> {
     let raw = name.as_ref().trim();
@@ -56,7 +56,7 @@ pub fn html_kind(tag: impl AsRef<str>) -> Option<Kind> {
         "ul" => Some(Kind::Bullet),
         "ol" => Some(Kind::Ordered),
         "li" => Some(Kind::Item),
-        // <strong>`<pre>` だけがコードブロックである。</strong> 段落の中の `<code>` まで
+        // `<pre>` だけがコードブロックである。 段落の中の ``` まで
         // コードブロックにすると、インラインコードが永久に 0 になり、
         // コードブロックの密度は地の文に混ざらない記号のぶんだけ跳ね上がる。
         "pre" => Some(Kind::CodeBlock),
@@ -72,11 +72,11 @@ pub fn html_kind(tag: impl AsRef<str>) -> Option<Kind> {
 
 /// node を作らず、中身を親へ透かす要素か。
 ///
-/// <strong>行と区分は node ではない</strong>——[文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
+/// 行と区分は node ではない——[文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
 /// 表がセルを持つと定めており、あいだに段を置かない。node にすると、`<table>` と
-/// `<tr>` の両方が表として数えられ、<strong>ふつうの表 1 つで表の密度が何倍にもなる</strong>。
+/// `<tr>` の両方が表として数えられ、ふつうの表 1 つで表の密度が何倍にもなる。
 ///
-/// `<code>` も `<pre>` の直下では透かす（[`html_kind`] を参照）が、そちらは
+/// ``` も `<pre>` の直下では透かす（[`html_kind`] を参照）が、そちらは
 /// 文脈で決まるのでここには入らない。
 #[must_use]
 pub fn is_transparent(tag: impl AsRef<str>) -> bool {
@@ -85,7 +85,7 @@ pub fn is_transparent(tag: impl AsRef<str>) -> bool {
 
 /// この取り込み元が Alert 記法を持つか。
 ///
-/// 持つなら、<strong>引用より先に</strong> Alert を認識する。
+/// 持つなら、引用より先に Alert を認識する。
 #[must_use]
 pub fn has_alerts(source: Source) -> bool {
     source == Source::GithubMarkdown

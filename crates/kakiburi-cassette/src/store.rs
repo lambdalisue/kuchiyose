@@ -1,6 +1,6 @@
 //! カセットを zip に落とし、読み戻す。
 //!
-//! <strong>2 つのディレクトリが、そのまま 2 つの層である。</strong>`derived/` を丸ごと消しても、
+//! 2 つのディレクトリが、そのまま 2 つの層である。`derived/` を丸ごと消しても、
 //! `decided/` と素材のフォルダがあれば同じものが作り直せる。
 
 use std::collections::BTreeMap;
@@ -14,12 +14,12 @@ use crate::{
 
 /// いま書く版。
 ///
-/// <strong>版は、形か意味が非互換に変わったときに上げる。</strong>
+/// 版は、形か意味が非互換に変わったときに上げる。
 /// 版 4 では[1 カセット 1 場面](../../../docs/design/100-cassette.md#1-カセット-1-場面)に
 /// なって場面ごとの階層が消え、[本文を持たなくなった](../../../docs/spec/200-extract.md#素材を正本にする)
-/// ——<strong>版 3 のカセットとは形が違う。</strong>
+/// ——版 3 のカセットとは形が違う。
 ///
-/// <strong>古い版を読む道は持たない。</strong> 原本は素材のフォルダなので作り直せる
+/// 古い版を読む道は持たない。 原本は素材のフォルダなので作り直せる
 /// ——移し替える道を持つと、作り直せないものが増える。
 pub const VERSION: u32 = 4;
 
@@ -30,7 +30,7 @@ pub enum StoreError {
     Zip(ZipError),
     /// 知らない版である。
     ///
-    /// <strong>壊れているとは別の理由で返す。</strong> まとめると、壊れたカセットと新しすぎる
+    /// 壊れているとは別の理由で返す。 まとめると、壊れたカセットと新しすぎる
     /// カセットが同じ顔になる——前者は作り直しで、後者は道具の更新である。
     UnknownVersion {
         /// カセットが名乗った版。
@@ -58,7 +58,7 @@ impl std::fmt::Display for StoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StoreError::Zip(e) => write!(f, "{e}"),
-            // <strong>古いのか新しいのかで、やることが逆である。</strong> まとめて「道具の更新」と
+            // 古いのか新しいのかで、やることが逆である。 まとめて「道具の更新」と
             // 言うと、古いカセットを持っている人が更新を待ち続ける。
             StoreError::UnknownVersion { found, known } if found < known => write!(
                 f,
@@ -123,14 +123,14 @@ pub fn write(c: &Cassette) -> Vec<u8> {
 pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
     let e = zip::read(bytes)?;
     let manifest = read_json(&e, "manifest.json")?;
-    // <strong>版を確かめる。</strong> 知らない版を「たぶん読める」と読んではいけない——
+    // 版を確かめる。 知らない版を「たぶん読める」と読んではいけない——
     // 欠けた項目は空として通り、空と欠けの区別がそこで崩れる。
-    // <strong>そして崩れたことはエラーにならない。</strong>
+    // そして崩れたことはエラーにならない。
     let raw = manifest
         .get("version")
         .and_then(Value::as_f64)
         .ok_or_else(|| missing("manifest.json", "version"))?;
-    // 整数として厳密に読む。<strong>丸めて通さない</strong>——`1.5` を版 1 として読めば、
+    // 整数として厳密に読む。丸めて通さない——`1.5` を版 1 として読めば、
     // 名乗っていない形を名乗った形として扱うことになる。
     if raw.fract() != 0.0 || raw < 0.0 || raw > f64::from(u32::MAX) {
         return Err(StoreError::Json {
@@ -146,7 +146,7 @@ pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
             known: VERSION,
         });
     }
-    // <strong>世代は欠けていてもよい。</strong> 世代を持たない頃のカセットは 0 から数え直す
+    // 世代は欠けていてもよい。 世代を持たない頃のカセットは 0 から数え直す
     // ——止めるほどのことではない。次に書いた時点で 1 になる。
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let generation = manifest
@@ -163,9 +163,9 @@ pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
         })
         .unwrap_or_default();
 
-    // <strong>場面は名乗りが正本である。</strong> 保存の中の階層ではなくなったので、
+    // 場面は名乗りが正本である。 保存の中の階層ではなくなったので、
     // 突き合わせる相手が無い——欠けていたら断る。空に丸めれば、どの場面の目盛りか
-    // <strong>分からないまま検めが通る。</strong>
+    // 分からないまま検めが通る。
     let scene = manifest
         .get("scene")
         .and_then(Value::as_str)
@@ -178,9 +178,9 @@ pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
         });
     }
 
-    // <strong>`decided/` の欠損を既定で埋めない。</strong> 書き出しは 3 つとも必ず出すので、
-    // <strong>欠けていること自体が壊れている印である。</strong> 空で通せば、次に書いたときに
-    // <strong>作り直せない判断が空として確定する</strong>——落ちるより悪い。
+    // `decided/` の欠損を既定で埋めない。 書き出しは 3 つとも必ず出すので、
+    // 欠けていること自体が壊れている印である。 空で通せば、次に書いたときに
+    // 作り直せない判断が空として確定する——落ちるより悪い。
     //
     // 埋めてよいのは `derived/` だけである。あちらは作り直せる。
     let baseline = read_decided_baseline(&read_json(&e, "decided/baseline.json")?, "decided/baseline.json")?;
@@ -199,7 +199,7 @@ pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
         let Value::Object(m) = read_json(&e, name)? else {
             return Err(missing(name, "対象"));
         };
-        // <strong>知らない値を捨てない。</strong> 捨てれば、`stuck` にしたはずの指標が
+        // 知らない値を捨てない。 捨てれば、`stuck` にしたはずの指標が
         // 「未知」に戻って指摘に出続ける——書き換えたつもりのものが黙って戻る。
         m.into_iter()
             .map(|(k, v)| match v.as_str() {
@@ -258,14 +258,14 @@ fn manifest(c: &Cassette) -> Value {
     Value::obj([
         ("version".into(), Value::Number(f64::from(c.version))),
         ("generation".into(), Value::Number(generation)),
-        // <strong>場面はここにしか無い。</strong> 保存の中の階層ではなくなったので、
+        // 場面はここにしか無い。 保存の中の階層ではなくなったので、
         // 突き合わせる相手も無い——ここが原本である。
         ("scene".into(), Value::s(&c.scene)),
         (
             "provisional".into(),
             Value::Array(c.provisional.iter().map(Value::s).collect()),
         ),
-        // <strong>材料を平文で残す。</strong> ハッシュだけでは、何が変わったかが分からない。
+        // 材料を平文で残す。 ハッシュだけでは、何が変わったかが分からない。
         (
             "fingerprint_inputs".into(),
             inputs_json(&c.fingerprint.inputs),
@@ -275,7 +275,7 @@ fn manifest(c: &Cassette) -> Value {
 
 fn inputs_json(i: &Inputs) -> Value {
     let c = &i.common;
-    // <strong>共通部分と場面の部分を、構造で分けて残す。</strong> 平文で並べるだけでは、
+    // 共通部分と場面の部分を、構造で分けて残す。 平文で並べるだけでは、
     // 道具が変わったのか語彙が変わったのかを読み手が数えることになる。
     Value::obj([
         (
@@ -371,7 +371,7 @@ fn baseline_json(b: &Baseline) -> Value {
             "params".into(),
             Value::obj(b.params.iter().map(|(k, v)| (k.clone(), Value::s(v)))),
         ),
-        // <strong>題材は指紋に入る。</strong> 言葉づかいだけで帯が動く。
+        // 題材は指紋に入る。 言葉づかいだけで帯が動く。
         (
             "topics".into(),
             Value::Array(b.topics.iter().map(Value::s).collect()),
@@ -404,14 +404,14 @@ fn read_baseline(v: &Value) -> Result<Baseline, StoreError> {
     })
 }
 
-/// 人が決めた基準の作り方を読む。<strong>欄が欠けていたら断る。</strong>
+/// 人が決めた基準の作り方を読む。欄が欠けていたら断る。
 ///
-/// <strong>[指紋に写したほう](read_baseline)とは扱いが違う。</strong> あちらは診断のための控えで、
-/// 欠けても作り直せる。こちらは<strong>作り直せない原本</strong>なので、空に丸めれば
+/// [指紋に写したほう](read_baseline)とは扱いが違う。 あちらは診断のための控えで、
+/// 欠けても作り直せる。こちらは作り直せない原本なので、空に丸めれば
 /// 次に書いたときにそこで確定する。
 ///
-/// <strong>空の値は正しい状態である。</strong> 場面を作っただけで基準をまだ入れていなければ、
-/// 4 つとも空で書かれる。<strong>断るのは欄そのものが無いときと、型が違うときである。</strong>
+/// 空の値は正しい状態である。 場面を作っただけで基準をまだ入れていなければ、
+/// 4 つとも空で書かれる。断るのは欄そのものが無いときと、型が違うときである。
 fn read_decided_baseline(v: &Value, file: &str) -> Result<Baseline, StoreError> {
     let text = |key: &str| -> Result<String, StoreError> {
         v.get(key)
@@ -678,7 +678,7 @@ mod tests {
 
     #[test]
     fn 場面で割る階層を持たない() {
-        // <strong>1 カセットが 1 場面である。</strong> 割る相手が無い。
+        // 1 カセットが 1 場面である。 割る相手が無い。
         let bytes = write(&cassette());
         let names = zip::index(&bytes).unwrap();
         assert!(names.iter().any(|n| n == "decided/baseline.json"));
@@ -691,7 +691,7 @@ mod tests {
 
     #[test]
     fn 派生物を捨てて作り直すと同じものが出る() {
-        // <strong>これが通らなければ、派生物のどこかに原本が混ざっている。</strong>
+        // これが通らなければ、派生物のどこかに原本が混ざっている。
         // 気付かないまま運用すると、測り直した瞬間に人が決めたことが消える。
         let c = cassette();
         let full = write(&c);
@@ -720,14 +720,14 @@ mod tests {
 
     #[test]
     fn 言い回しの表が往復する() {
-        // <strong>本文の代わりである。</strong> 落ちれば、繰り返しの上限を言えなくなる。
+        // 本文の代わりである。 落ちれば、繰り返しの上限を言えなくなる。
         let back = read(&write(&cassette())).unwrap();
         assert_eq!(back.derived.phrases, cassette().derived.phrases);
     }
 
     #[test]
     fn 知らない版は壊れているとは別の理由で断る() {
-        // <strong>まとめると、壊れたカセットと新しすぎるカセットが同じ顔になる。</strong>
+        // まとめると、壊れたカセットと新しすぎるカセットが同じ顔になる。
         // 前者は作り直しで、後者は道具の更新である。
         let mut e = zip::read(&write(&cassette())).unwrap();
         let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
@@ -775,7 +775,7 @@ mod tests {
 
     #[test]
     fn 決めたことが欠けていたら断る() {
-        // <strong>書き出しは 3 つとも必ず出す。</strong> 欠けていること自体が壊れている印
+        // 書き出しは 3 つとも必ず出す。 欠けていること自体が壊れている印
         // である——空で通せば、次に書いたときに作り直せない判断が空として確定する。
         for name in [
             "decided/baseline.json",
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn 場面を名乗らないカセットは読めない() {
-        // <strong>保存の中の階層ではなくなったので、突き合わせる相手が無い。</strong>
+        // 保存の中の階層ではなくなったので、突き合わせる相手が無い。
         // 空に丸めれば、どの場面の目盛りか分からないまま検めが通る。
         for broken in ["\"scene\"", "\"scene\":\"技術記事\""] {
             let mut e = zip::read(&write(&cassette())).unwrap();
@@ -807,8 +807,8 @@ mod tests {
 
     #[test]
     fn 決めた基準の欄が欠けていたら断る() {
-        // <strong>空の値は正しい状態である</strong>——作っただけなら 4 つとも空で書かれる。
-        // <strong>断るのは欄そのものが無いときである</strong>：空に丸めれば、次に書いたときに
+        // 空の値は正しい状態である——作っただけなら 4 つとも空で書かれる。
+        // 断るのは欄そのものが無いときである：空に丸めれば、次に書いたときに
         // 作り直せない設定がそこで確定する。
         for key in ["model", "version", "params", "topics"] {
             let mut e = zip::read(&write(&cassette())).unwrap();

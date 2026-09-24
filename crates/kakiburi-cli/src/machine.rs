@@ -1,21 +1,21 @@
-//! 道具向けの出口。<strong>人向けの表示は変えない。</strong>
+//! 道具向けの出口。人向けの表示は変えない。
 //!
-//! この道具は素材を集めて回す性質上、<strong>スクリプトや LLM から叩かれる回数のほうが
-//! 多くなる。</strong> 人向けの出力は整形されているが、そこから値を取ろうとすると
-//! ラベルの文言と桁揃えに依存した切り出しになる——<strong>文言を変えた瞬間に黙って
-//! 壊れる。</strong>
+//! この道具は素材を集めて回す性質上、スクリプトや LLM から叩かれる回数のほうが
+//! 多くなる。 人向けの出力は整形されているが、そこから値を取ろうとすると
+//! ラベルの文言と桁揃えに依存した切り出しになる——文言を変えた瞬間に黙って
+//! 壊れる。
 //!
-//! <strong>`null` と `0` を分ける。</strong> 人向け出力の `—` と `0.000` の区別を、そのまま
-//! 写すだけである。<strong>`why` を落とさない</strong>——落とせば、JSON にしたとたんに
+//! `null` と `0` を分ける。 人向け出力の `—` と `0.000` の区別を、そのまま
+//! 写すだけである。`why` を落とさない——落とせば、JSON にしたとたんに
 //! 「測っていない」が消える。
 //!
-//! <strong>依存は増やさない。</strong> 書き出しだけなら
+//! 依存は増やさない。 書き出しだけなら
 //! [`kakiburi_cassette::json`] にある。
 
 use kakiburi_cassette::json::Value;
 use kakiburi_metrics::Measured;
 
-/// 1 指標の値。<strong>測れなかったら `null` と理由。</strong>
+/// 1 指標の値。測れなかったら `null` と理由。
 #[must_use]
 pub fn metric(name: &str, m: Measured) -> Value {
     let mut pairs = vec![("name".to_owned(), Value::s(name))];
@@ -25,7 +25,7 @@ pub fn metric(name: &str, m: Measured) -> Value {
             Value::Number(m.value().unwrap_or_default()),
         )),
         Some(u) => {
-            // <strong>0 を入れない。</strong> 測っていないことと 0 だったことは違う。
+            // 0 を入れない。 測っていないことと 0 だったことは違う。
             pairs.push(("value".to_owned(), Value::Null));
             pairs.push(("why".to_owned(), Value::s(u.name())));
         }
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn 測れた指標は生の値が出る() {
-        // <strong>人向けの表示は 3 桁に丸めるが、道具向けは丸めない。</strong> 丸めた値を
+        // 人向けの表示は 3 桁に丸めるが、道具向けは丸めない。 丸めた値を
         // 読み戻して比べれば、直したのに動いていないことが見えなくなる。
         let v = metric("全角括弧", Measured::Value(3.944_123));
         let text = v.write();

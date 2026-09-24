@@ -1,18 +1,18 @@
-//! 人らしさの指標。<strong>その人らしさではない。</strong>
+//! 人らしさの指標。その人らしさではない。
 //!
 //! 人が書いたものに見えるかを測る（[通るための 2 つ目の条件](../../../docs/spec/010-strategy.md#通るには-2-つ要る)）。
 //!
-//! <strong>語彙の狭さを見る 5 つを、独立した 5 つの証拠として数えない。</strong> 圧縮率・短い繰り返し・
-//! 長い繰り返し・語彙の豊富さ・エントロピーは<strong>同じ現象を別の角度から見ている</strong>。
+//! 語彙の狭さを見る 5 つを、独立した 5 つの証拠として数えない。 圧縮率・短い繰り返し・
+//! 長い繰り返し・語彙の豊富さ・エントロピーは同じ現象を別の角度から見ている。
 //!
-//! <strong>句読点の密度だけは、その 5 つと現象が違う。</strong> 語を数えないので、題材の広い文章が
+//! 句読点の密度だけは、その 5 つと現象が違う。 語を数えないので、題材の広い文章が
 //! 誰の手でも機械の側へ出る交絡を受けない（[Przystalski ほか 2025](../../../docs/references/przystalski-2025.md)
 //! は句点・句読点・読点を重要度の上位 10 に挙げている）。
 //!
-//! <strong>ただし寄せる向きは同じとはかぎらない。</strong> 短い言い回しの反復と長い言い回しの
+//! ただし寄せる向きは同じとはかぎらない。 短い言い回しの反復と長い言い回しの
 //! 再来は逆に出ることがあるので、[別の指標として持つ](Metric::RepetitionShort)。
 //!
-//! <strong>語は表層形で数える。</strong> 語彙素に畳むと、活用の使い分けが消えて値が下がる
+//! 語は表層形で数える。 語彙素に畳むと、活用の使い分けが消えて値が下がる
 //! （[数え方](../../../docs/spec/100-metrics.md#語を数えるときは表層形である)）。
 
 use std::collections::BTreeMap;
@@ -23,15 +23,15 @@ use kakiburi_doc::prose::Segment;
 use crate::morph::Analyzed;
 use crate::{floor, Measured};
 
-/// 圧縮の水準。<strong>固定する。</strong> 変えれば値が変わり、過去の値と比べられなくなる。
+/// 圧縮の水準。固定する。 変えれば値が変わり、過去の値と比べられなくなる。
 pub const COMPRESSION_LEVEL: u32 = 6;
 
-/// 圧縮器の名前と版。<strong>指紋に入る。</strong>
+/// 圧縮器の名前と版。指紋に入る。
 ///
-/// <strong>「zlib」だけでは値が決まらない。</strong> zlib 形式（RFC 1950）が決めているのは容器で
-/// あって、同じ水準 6 でも実装ごとに符号化の選び方が違う。<strong>だから実装と版まで名乗る。</strong>
+/// 「zlib」だけでは値が決まらない。 zlib 形式（RFC 1950）が決めているのは容器で
+/// あって、同じ水準 6 でも実装ごとに符号化の選び方が違う。だから実装と版まで名乗る。
 ///
-/// <strong>版は丸めない。</strong> `0.8` と書くと `0.8.9` と `0.8.10` が同じ指紋になり、符号化が
+/// 版は丸めない。 `0.8` と書くと `0.8.9` と `0.8.10` が同じ指紋になり、符号化が
 /// 変わっても[圧縮率](../../../docs/spec/metrics/圧縮率.md)の古い値が使い回される。
 pub const COMPRESSOR: (&str, &str) = ("miniz_oxide (flate2, zlib 形式 水準 6)", "0.8.9");
 
@@ -41,10 +41,10 @@ pub const SHORT_N: [usize; 2] = [2, 3];
 /// 長い繰り返しで見る n の並び。
 pub const LONG_N: [usize; 2] = [4, 5];
 
-/// 繰り返しで見る n の並び。<strong>短いほうが先である。</strong>
+/// 繰り返しで見る n の並び。短いほうが先である。
 ///
-/// <strong>公開しない。</strong> 本番は[短い](SHORT_N)と[長い](LONG_N)を別々に測る——
-/// まとめた並びを外に出すと、<strong>混ぜてよいものとして読まれる</strong>。
+/// 公開しない。 本番は[短い](SHORT_N)と[長い](LONG_N)を別々に測る——
+/// まとめた並びを外に出すと、混ぜてよいものとして読まれる。
 #[cfg(test)]
 const REPETITION_N: [usize; 4] = [2, 3, 4, 5];
 
@@ -66,7 +66,7 @@ pub const WINDOW_BYTES: usize = floor::PROSE_BYTES;
 
 /// 人らしさの指標。
 ///
-/// 繰り返しは<strong>短いと長いに割れている</strong>——2〜3 語の反復と 4〜5 語の再来は別の
+/// 繰り返しは短いと長いに割れている——2〜3 語の反復と 4〜5 語の再来は別の
 /// 現象で、まとめると向きが指標の中で割れる。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Metric {
@@ -74,10 +74,10 @@ pub enum Metric {
     Compression,
     /// 短い繰り返し。4 次元。
     ///
-    /// <strong>長いほうと分ける。</strong> 2〜3 語の言い回しの反復と、4〜5 語の言い回しの
-    /// 再来は<strong>別の現象である</strong>——実測では、生成文は短いほうを人より多く
+    /// 長いほうと分ける。 2〜3 語の言い回しの反復と、4〜5 語の言い回しの
+    /// 再来は別の現象である——実測では、生成文は短いほうを人より多く
     /// 繰り返し、長いほうを人より少なく再来させる。まとめると
-    /// <strong>向きが指標の中で割れ、どちらへ動かせばよいかを言えなくなる。</strong>
+    /// 向きが指標の中で割れ、どちらへ動かせばよいかを言えなくなる。
     ///
     /// [粗い括りに丸めない](../../../docs/spec/100-metrics.md#粗い括りに丸めない)を、
     /// 人らしさの側で実行したものである。
@@ -90,15 +90,15 @@ pub enum Metric {
     Entropy,
     /// 句読点の密度。2 次元。
     ///
-    /// <strong>ほかの指標と現象が違う。</strong> ほかの 5 つは語彙の狭さを見ているので、
-    /// <strong>題材の広い文章は誰が書いても機械の側に出る</strong>。この指標は語を数えない。
+    /// ほかの指標と現象が違う。 ほかの 5 つは語彙の狭さを見ているので、
+    /// 題材の広い文章は誰が書いても機械の側に出る。この指標は語を数えない。
     ///
     /// 形態素解析を要らない——[圧縮率](Metric::Compression)と 2 つだけである。
     Punctuation,
 }
 
 impl Metric {
-    /// 全部。<strong>合算の入力の並びはこの順である。</strong>
+    /// 全部。合算の入力の並びはこの順である。
     pub const ALL: [Metric; 6] = [
         Metric::Compression,
         Metric::RepetitionShort,
@@ -140,12 +140,12 @@ impl Metric {
         }
     }
 
-    /// 定義が名乗る「機械の側」。<strong>`true` なら機械が高い。</strong>
+    /// 定義が名乗る「機械の側」。`true` なら機械が高い。
     ///
-    /// 繰り返しは<strong>下限</strong>——先行研究は生成文が足りない側に出ると言う。ほかは上限で、
+    /// 繰り返しは下限——先行研究は生成文が足りない側に出ると言う。ほかは上限で、
     /// 機械の側が高く出る。
     ///
-    /// <strong>寄せる向きそのものではない。</strong> どちらへ寄せるかは
+    /// 寄せる向きそのものではない。 どちらへ寄せるかは
     /// [カセットごとの較正](../../../docs/spec/200-extract.md#人らしさの境目は同じ材料から出る)
     /// が決める——素材がこの向きを支えていないことは実際に起きる。
     #[must_use]
@@ -154,7 +154,7 @@ impl Metric {
     }
 }
 
-/// 人らしさの次元の全体。<strong>指標ごとにまとめたまま持つ</strong>——3 段目で指標ごとに平均するからである。
+/// 人らしさの次元の全体。指標ごとにまとめたまま持つ——3 段目で指標ごとに平均するからである。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Humanness {
     values: Vec<(Metric, Vec<(String, Measured)>)>,
@@ -164,7 +164,7 @@ impl Humanness {
     /// 測る。
     ///
     /// `analyzed` が `None` なら、形態素を要る 3 指標は「測っていない」になる——
-    /// <strong>0 を返さない。</strong> 0 は「測って 0 だった」という値である。
+    /// 0 を返さない。 0 は「測って 0 だった」という値である。
     #[must_use]
     pub fn measure(prose: &[Segment], analyzed: Option<&Analyzed>) -> Self {
         let mut values = Vec::with_capacity(Metric::ALL.len());
@@ -198,7 +198,7 @@ impl Humanness {
             .collect()
     }
 
-    /// <strong>指標が全部測れたか。</strong>
+    /// 指標が全部測れたか。
     ///
     /// 1 つでも欠ければ人らしさ値を出さない——[欠けた分を抜いて合算しない](crate::morph)。
     #[must_use]
@@ -220,10 +220,10 @@ impl Humanness {
     }
 }
 
-/// 地の文を <strong>node の順に改行 1 つで繋ぐ。</strong>
+/// 地の文を node の順に改行 1 つで繋ぐ。
 ///
-/// <strong>繋ぎ方が定義の一部である。</strong> node ごとに圧縮して足すのと、繋いでから圧縮するのと
-/// では値が大きく変わる——繋げば node をまたぐ反復が拾える。<strong>拾いたいのはそちらである。</strong>
+/// 繋ぎ方が定義の一部である。 node ごとに圧縮して足すのと、繋いでから圧縮するのと
+/// では値が大きく変わる——繋げば node をまたぐ反復が拾える。拾いたいのはそちらである。
 #[must_use]
 pub fn joined(prose: &[Segment]) -> String {
     prose
@@ -233,13 +233,13 @@ pub fn joined(prose: &[Segment]) -> String {
         .join("\n")
 }
 
-/// 圧縮率。<strong>可逆圧縮したあとのバイト数 ÷ 元のバイト数。</strong>
+/// 圧縮率。可逆圧縮したあとのバイト数 ÷ 元のバイト数。
 ///
 /// 形態素解析を要らない、数少ない指標である。
 #[must_use]
 pub fn compression_ratio(prose: &[Segment]) -> Measured {
     let text = joined(prose);
-    // <strong>窓ごとに圧縮して、比の平均を取る。</strong> 通しで圧縮すると、長い文書ほど
+    // 窓ごとに圧縮して、比の平均を取る。 通しで圧縮すると、長い文書ほど
     // 辞書が育って比が下がる——測っているのは書きぶりではなく長さになる。
     //
     // 地の文が短いと、圧縮器のヘッダが結果を支配する。窓が 1 つも取れなければ下限未満。
@@ -251,7 +251,7 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
             continue;
         }
         let Some(r) = deflated(&window) else {
-            // <strong>圧縮器が返さないのは環境の壊れである。</strong> 素材が短いのと混ぜない
+            // 圧縮器が返さないのは環境の壊れである。 素材が短いのと混ぜない
             // ——混ぜれば、壊れた道具が「素材が足りない」という顔で回り続ける。
             return Measured::ToolFailed;
         };
@@ -265,9 +265,9 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
     Measured::Value(ratios.iter().sum::<f64>() / ratios.len() as f64)
 }
 
-/// 句読点の密度。<strong>句点と読点を別々に、1,000 字あたりで数える。</strong>
+/// 句読点の密度。句点と読点を別々に、1,000 字あたりで数える。
 ///
-/// <strong>ほかの人らしさの指標と現象が違う。</strong> 語を数えないので、題材の広い文章が
+/// ほかの人らしさの指標と現象が違う。 語を数えないので、題材の広い文章が
 /// 誰の手でも機械の側へ出る交絡を受けない。
 ///
 /// 形態素解析を要らないので、[圧縮率](compression_ratio)と同じくバイトの窓で切る。
@@ -286,7 +286,7 @@ pub fn punctuation(prose: &[Segment]) -> Vec<Measured> {
         window.clear();
     }
     if periods.is_empty() {
-        // 窓が 1 つも取れない。<strong>0 を返さない</strong>——0 は「測って 0 だった」である。
+        // 窓が 1 つも取れない。0 を返さない——0 は「測って 0 だった」である。
         return vec![Measured::BelowFloor, Measured::BelowFloor];
     }
     vec![mean(&periods), mean(&commas)]
@@ -298,7 +298,7 @@ fn push_rates(window: &str, periods: &mut Vec<f64>, commas: &mut Vec<f64>) {
     if chars == 0 {
         return;
     }
-    // <strong>全角のみを数える。</strong> 和文の句読点と `.` `,` は用途が違う。
+    // 全角のみを数える。 和文の句読点と `.` `,` は用途が違う。
     let count = |target: char| window.chars().filter(|c| *c == target).count();
     #[allow(clippy::cast_precision_loss)]
     let per_thousand = |n: usize| n as f64 / chars as f64 * 1000.0;
@@ -312,7 +312,7 @@ fn mean(values: &[f64]) -> Measured {
     Measured::Value(values.iter().sum::<f64>() / values.len() as f64)
 }
 
-/// 1 つの窓を圧縮して、比を返す。<strong>圧縮器が返さなければ `None`。</strong>
+/// 1 つの窓を圧縮して、比を返す。圧縮器が返さなければ `None`。
 fn deflated(window: &str) -> Option<f64> {
     let raw = window.as_bytes();
     let mut z =
@@ -323,34 +323,34 @@ fn deflated(window: &str) -> Option<f64> {
     Some(out.len() as f64 / raw.len() as f64)
 }
 
-/// 繰り返し。<strong>n ごとに 2 つ。</strong>
+/// 繰り返し。n ごとに 2 つ。
 ///
 /// | | 何を出すか |
 /// | --- | --- |
-/// | 再来率 | 2 回以上現れた n-gram の数 ÷ <strong>異なり n-gram の数</strong> |
-/// | 最多率 | 最も多く現れた n-gram の出現回数 ÷ <strong>延べ語数</strong> |
+/// | 再来率 | 2 回以上現れた n-gram の数 ÷ 異なり n-gram の数 |
+/// | 最多率 | 最も多く現れた n-gram の出現回数 ÷ 延べ語数 |
 ///
-/// <strong>n-gram は node を跨がない。</strong> 跨げば、構造が作った隣接を繰り返しとして数える。
+/// n-gram は node を跨がない。 跨げば、構造が作った隣接を繰り返しとして数える。
 ///
-/// 伏せ字の跡か。<strong>1 文字でも触れていれば渡さない。</strong>
+/// 伏せ字の跡か。1 文字でも触れていれば渡さない。
 ///
 /// 識別子を畳んだ跡であって、書き手が選んだ言い回しではない。渡せば
 /// 「ゐゑと書け」と言うことになる。
 ///
-/// <strong>並び全体で照らしてはいけない。</strong> 伏せ字が隣り合うと、境目を跨いだ並びが
+/// 並び全体で照らしてはいけない。 伏せ字が隣り合うと、境目を跨いだ並びが
 /// 伏せ字を逆順に並べた形（`ゑゐ`）になる——伏せ字そのものを含まないので素通りし、
 /// 本人の記事の指摘に「この文章が繰り返しているのは『ゑゐ』」として出た。
 fn is_sentinel_debris(s: &str) -> bool {
     s.chars().any(|c| kakiburi_doc::prose::SENTINEL.contains(c))
 }
 
-/// その単位で<strong>一度しか出てこない語</strong>を挙げる。
+/// その単位で一度しか出てこない語を挙げる。
 ///
-/// <strong>「語を散らすな」と言うなら、どれが散らしているのかを言わなければ直せない。</strong>
-/// 実測では、この指示を受けた側が<strong>散らす方向へ直してしまった</strong>——どの語を
+/// 「語を散らすな」と言うなら、どれが散らしているのかを言わなければ直せない。
+/// 実測では、この指示を受けた側が散らす方向へ直してしまった——どの語を
 /// 潰せばよいかが分からず、言い換えを別の言い換えに置き換えたためである。
 ///
-/// <strong>自立語だけを挙げる。</strong> 助詞や助動詞が一度きりでも、それは言い換えでは
+/// 自立語だけを挙げる。 助詞や助動詞が一度きりでも、それは言い換えでは
 /// なく文の形である。
 #[must_use]
 pub fn once_only(analyzed: Option<&Analyzed>, top: usize) -> Vec<String> {
@@ -366,12 +366,12 @@ pub fn once_only(analyzed: Option<&Analyzed>, top: usize) -> Vec<String> {
     let mut out: Vec<&str> = counts
         .iter()
         .filter(|(w, k)| **k == 1 && content.get(*w).copied().unwrap_or(false))
-        // <strong>1 文字の語は挙げない。</strong> 潰しようがない。
+        // 1 文字の語は挙げない。 潰しようがない。
         .filter(|(w, _)| w.chars().count() >= 2)
         .filter(|(w, _)| !is_sentinel_debris(w))
         .map(|(w, _)| *w)
         .collect();
-    // <strong>長い順。</strong> 長い語ほど言い換えである見込みが高い。
+    // 長い順。 長い語ほど言い換えである見込みが高い。
     out.sort_by(|a, b| {
         b.chars()
             .count()
@@ -382,11 +382,11 @@ pub fn once_only(analyzed: Option<&Analyzed>, top: usize) -> Vec<String> {
     out.into_iter().map(str::to_owned).collect()
 }
 
-/// その単位が<strong>繰り返しすぎている言い回し</strong>を、多い順に挙げる。
+/// その単位が繰り返しすぎている言い回しを、多い順に挙げる。
 ///
-/// <strong>「減らせ」と言うなら、どれを減らすのかを言わなければ直せない。</strong> 実測では、
+/// 「減らせ」と言うなら、どれを減らすのかを言わなければ直せない。 実測では、
 /// 生成文の最多は「ます。」が延べ語の 3.4% を占めていた——本人の 1.3% の 2.7 倍で、
-/// <strong>文末がほぼ 1 種類に潰れている</strong>ことを意味する。
+/// 文末がほぼ 1 種類に潰れていることを意味する。
 #[must_use]
 pub fn overused(analyzed: Option<&Analyzed>, ns: &[usize], top: usize) -> Vec<String> {
     let Some(a) = analyzed else {
@@ -406,19 +406,19 @@ pub fn overused(analyzed: Option<&Analyzed>, ns: &[usize], top: usize) -> Vec<St
         .filter(|(g, _)| !is_sentinel_debris(g))
         .map(|(g, k)| (k, g))
         .collect();
-    // <strong>多い順。同じなら文字の順。</strong> 決めておかないと並びが実装で変わる。
+    // 多い順。同じなら文字の順。 決めておかないと並びが実装で変わる。
     out.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     out.truncate(top);
     out.into_iter().map(|(_, g)| g).collect()
 }
 
-/// その単位の中で<strong>実際に再来した言い回し</strong>を挙げる。
+/// その単位の中で実際に再来した言い回しを挙げる。
 ///
-/// <strong>直し方が「その人が現に繰り返している言い回しを繰り返す」と言うなら、その
-/// 言い回しを渡さなければ直せない。</strong> 数値と向きだけでは、受け取った側は自分で
+/// 直し方が「その人が現に繰り返している言い回しを繰り返す」と言うなら、その
+/// 言い回しを渡さなければ直せない。 数値と向きだけでは、受け取った側は自分で
 /// でっち上げた定型句を挿し込むことになる。
 ///
-/// <strong>1 本の中で 2 回以上出たものだけを取る。</strong> 1 回きりの並びは、その文書の題材が
+/// 1 本の中で 2 回以上出たものだけを取る。 1 回きりの並びは、その文書の題材が
 /// 作ったものであって癖ではない。
 #[must_use]
 pub fn recurring(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<String> {
@@ -434,7 +434,7 @@ pub fn recurring(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<String> {
                 *counts.entry(w.concat()).or_default() += 1;
             }
         }
-        // <strong>1 本の中で 2 回以上出たものだけを、その人の癖として数える。</strong>
+        // 1 本の中で 2 回以上出たものだけを、その人の癖として数える。
         // 1 回きりの並びは、その文書の題材が作ったものである。
         //
         out.extend(
@@ -447,12 +447,12 @@ pub fn recurring(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<String> {
     out
 }
 
-/// 窓ごとに切った語の並び。<strong>窓の中では node の切れ目を保つ。</strong>
+/// 窓ごとに切った語の並び。窓の中では node の切れ目を保つ。
 ///
 /// n-gram は node を跨がないので、切れ目を落とすと構造が作った隣接を繰り返しとして
 /// 数えることになる。
 ///
-/// <strong>端の半端は捨てる。</strong> 大きさの揃わない窓を混ぜれば、平均が長さで動く。
+/// 端の半端は捨てる。 大きさの揃わない窓を混ぜれば、平均が長さで動く。
 fn token_windows(a: &Analyzed) -> Vec<Vec<Vec<&str>>> {
     let mut out: Vec<Vec<Vec<&str>>> = Vec::new();
     let mut cur: Vec<Vec<&str>> = Vec::new();
@@ -477,7 +477,7 @@ fn token_windows(a: &Analyzed) -> Vec<Vec<Vec<&str>>> {
 
 /// 窓ごとの値をならす。
 ///
-/// <strong>値を返さない窓は平均から外す。</strong> 分母が 0 の窓を 0 として混ぜれば、
+/// 値を返さない窓は平均から外す。 分母が 0 の窓を 0 として混ぜれば、
 /// 測れなかったことが値になる。1 つも残らなければ分母が無い。
 fn averaged(windows: &[Vec<Vec<&str>>], f: impl Fn(&[Vec<&str>]) -> Option<f64>) -> Measured {
     let vals: Vec<f64> = windows.iter().filter_map(|w| f(w)).collect();
@@ -492,7 +492,7 @@ fn averaged(windows: &[Vec<Vec<&str>>], f: impl Fn(&[Vec<&str>]) -> Option<f64>)
 #[must_use]
 pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
     let n_dims = ns.len() * 2;
-    // <strong>解析器が無いのと、語が足りないのを分ける。</strong> 前者は環境の壊れで、素材を
+    // 解析器が無いのと、語が足りないのを分ける。 前者は環境の壊れで、素材を
     // いくら足しても直らない。
     let Some(a) = analyzed else {
         return vec![Measured::ToolMissing; n_dims];
@@ -512,9 +512,9 @@ pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
     };
     let mut out = Vec::with_capacity(n_dims);
     for &n in ns {
-        // <strong>再来率。</strong> 2 回以上現れた n-gram の数 ÷ 異なり n-gram の数。
+        // 再来率。 2 回以上現れた n-gram の数 ÷ 異なり n-gram の数。
         //
-        // <strong>n-gram が 1 つも取れない窓は平均から外す。分母が 0 である。</strong>
+        // n-gram が 1 つも取れない窓は平均から外す。分母が 0 である。
         out.push(averaged(&ws, |w| {
             let counts = count(w, n);
             if counts.is_empty() {
@@ -523,7 +523,7 @@ pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
             #[allow(clippy::cast_precision_loss)]
             Some(counts.values().filter(|&&c| c >= 2).count() as f64 / counts.len() as f64)
         }));
-        // <strong>最多率。</strong> 最も多く現れた n-gram の出現回数 ÷ 窓の語数。
+        // 最多率。 最も多く現れた n-gram の出現回数 ÷ 窓の語数。
         out.push(averaged(&ws, |w| {
             let counts = count(w, n);
             #[allow(clippy::cast_precision_loss)]
@@ -537,12 +537,12 @@ pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
     out
 }
 
-/// 語彙の豊富さ。<strong>固定長の窓で測り、窓ごとの値の平均を取る。</strong>
+/// 語彙の豊富さ。固定長の窓で測り、窓ごとの値の平均を取る。
 ///
-/// <strong>正規化しないと、測っているのは長さである</strong>——Type-Token 比は文書が長いほど下がる。
+/// 正規化しないと、測っているのは長さである——Type-Token 比は文書が長いほど下がる。
 ///
-/// <strong>node を跨いで 1 つの列にする。</strong> 跨がなければ、記事 1 本でも窓が 1 つも取れない。
-/// <strong>窓は重ねず、順に切る。</strong> 端の 1,000 語に満たない分は捨てる。
+/// node を跨いで 1 つの列にする。 跨がなければ、記事 1 本でも窓が 1 つも取れない。
+/// 窓は重ねず、順に切る。 端の 1,000 語に満たない分は捨てる。
 #[must_use]
 pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
     let Some(a) = analyzed else {
@@ -560,14 +560,14 @@ pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
     })
 }
 
-/// エントロピー。<strong>語と文字の 2 次元。</strong>
+/// エントロピー。語と文字の 2 次元。
 ///
-/// <strong>対数の底は 2 とする。</strong> 単位がビットになり、圧縮率と同じ向きで読める。
+/// 対数の底は 2 とする。 単位がビットになり、圧縮率と同じ向きで読める。
 ///
-/// <strong>node を跨いで 1 つの分布にまとめる</strong>——分布であって並びではないので、隣接の
+/// node を跨いで 1 つの分布にまとめる——分布であって並びではないので、隣接の
 /// 産物が入りこまない。
 ///
-/// <strong>文字の側も延べ語数の下限で外す。</strong> 除外は指標に掛かるものであって、次元ごとに
+/// 文字の側も延べ語数の下限で外す。 除外は指標に掛かるものであって、次元ごとに
 /// 違う下限を持たない。
 #[must_use]
 pub fn entropy(analyzed: Option<&Analyzed>) -> Vec<Measured> {
@@ -581,7 +581,7 @@ pub fn entropy(analyzed: Option<&Analyzed>) -> Vec<Measured> {
     let words = averaged(&ws, |w| Some(shannon(w.iter().flatten().copied())));
     // 文字は日本語の文字に限らない全文字である。
     //
-    // <strong>語の窓から取る。</strong> 地の文をそのまま数えると、語の側と文字の側で
+    // 語の窓から取る。 地の文をそのまま数えると、語の側と文字の側で
     // 窓が揃わない——[除外は指標に掛かる](../../../docs/spec/100-metrics.md#除外の既定)
     // ものであって、次元ごとに違う切り方を持たない。
     let chars = averaged(&ws, |w| {
@@ -596,7 +596,7 @@ pub fn entropy(analyzed: Option<&Analyzed>) -> Vec<Measured> {
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct CharKey(char);
 
-/// シャノンエントロピー。<strong>底は 2。</strong>
+/// シャノンエントロピー。底は 2。
 fn shannon<K: Ord>(items: impl Iterator<Item = K>) -> f64 {
     let mut counts: BTreeMap<K, usize> = BTreeMap::new();
     let mut total = 0usize;
@@ -646,7 +646,7 @@ mod tests {
         (0..times).map(|_| seg(unit)).collect()
     }
 
-    /// 延べ 1,000 語を越える形態素列。<strong>Stub は空白で切る。</strong>
+    /// 延べ 1,000 語を越える形態素列。Stub は空白で切る。
     fn tokens(unit: &str, times: usize) -> (Vec<Segment>, Analyzed) {
         let prose: Vec<Segment> = (0..times).map(|_| seg(unit)).collect();
         let a = Analyzed::of(&prose, &Stub::unidic()).unwrap();
@@ -664,7 +664,7 @@ mod tests {
 
     #[test]
     fn 再来した言い回しだけを挙げる() {
-        // <strong>1 回きりの並びは癖ではない。</strong> その文書の題材が作ったものである。
+        // 1 回きりの並びは癖ではない。 その文書の題材が作ったものである。
         // Stub は空白で切る。
         let a = Analyzed::of(
             &[seg("あとで 書く よ あとで 書く よ いま は 書か ない")],
@@ -684,7 +684,7 @@ mod tests {
 
     #[test]
     fn 伏せ字を含む並びは渡さない() {
-        // <strong>識別子を畳んだ跡であって、書き手が選んだ言い回しではない。</strong>
+        // 識別子を畳んだ跡であって、書き手が選んだ言い回しではない。
         // 渡せば「ゐゑゐゑと書け」と言うことになる。
         let t = format!("{0} を使う {0} を使う", kakiburi_doc::prose::SENTINEL);
         let a = Analyzed::of(&[seg(t.replace("", " ").trim())], &Stub::unidic()).ok();
@@ -698,8 +698,8 @@ mod tests {
 
     #[test]
     fn 伏せ字の欠片も渡さない() {
-        // <strong>伏せ字が隣り合うと、境目を跨いだ並びが伏せ字を逆順に並べた形になる。</strong>
-        // 「ゐゑ ゐゑ」からは「ゑゐ」が取れる——<strong>これは伏せ字そのものを含まない</strong>ので、
+        // 伏せ字が隣り合うと、境目を跨いだ並びが伏せ字を逆順に並べた形になる。
+        // 「ゐゑ ゐゑ」からは「ゑゐ」が取れる——これは伏せ字そのものを含まないので、
         // 並び全体で照らす除け方では素通りする。実際に本人の記事の指摘へ出た。
         //
         // 落とすのは 1 文字ずつ照らしたときである。
@@ -717,7 +717,7 @@ mod tests {
     #[test]
     fn 繰り返しすぎにも伏せ字の欠片を渡さない() {
         // 本人の記事の指摘に「この文章が繰り返しているのは『ゑゐ』」と出た。
-        // <strong>原文に 1 度も無い並びである。</strong>
+        // 原文に 1 度も無い並びである。
         let t = format!("{0} {0} {0}", kakiburi_doc::prose::SENTINEL);
         let a = Analyzed::of(&[seg(t.replace("", " ").trim())], &Stub::unidic()).ok();
         let got = overused(a.as_ref(), &[2, 3], 5);
@@ -759,7 +759,7 @@ mod tests {
 
     #[test]
     fn 短い繰り返しと長い繰り返しは別の次元を持つ() {
-        // <strong>まとめると向きが指標の中で割れ、どちらへ動かせばよいかを言えなくなる。</strong>
+        // まとめると向きが指標の中で割れ、どちらへ動かせばよいかを言えなくなる。
         let short = Metric::RepetitionShort.dims();
         let long = Metric::RepetitionLong.dims();
         assert_eq!(short.len(), 4);
@@ -850,15 +850,15 @@ mod tests {
         assert!((a - b).abs() < 1e-9, "長さに依らない: {a} vs {b}");
     }
 
-    // <strong>ここから 6 本は、定義ファイルの `上` と実装の向きを結ぶ見張りである。</strong>
+    // ここから 6 本は、定義ファイルの `上` と実装の向きを結ぶ見張りである。
     //
-    // 定義の `上` は<strong>「値が高すぎるときの直し方」</strong>である。取り違えると、道具は
-    // 較正が「減らせ」と言った場面で「増やせ」と指示する——<strong>従うほど人らしさが
-    // 下がる。</strong> 実際に 1 度そう書いた（句読点の密度）。
+    // 定義の `上` は「値が高すぎるときの直し方」である。取り違えると、道具は
+    // 較正が「減らせ」と言った場面で「増やせ」と指示する——従うほど人らしさが
+    // 下がる。 実際に 1 度そう書いた（句読点の密度）。
     //
-    // <strong>文言の意味は機械で読めない。</strong> だから<strong>上の直し方を当てた前後の文</strong>を置いて、
+    // 文言の意味は機械で読めない。 だから上の直し方を当てた前後の文を置いて、
     // 値が実際に下がることを見る。定義を書き換えただけでは、この見張りは動かない
-    // ——<strong>指標ごとに 1 本ずつ要る。</strong>
+    // ——指標ごとに 1 本ずつ要る。
     //
     // | 指標 | 見張り |
     // | --- | --- |
@@ -986,9 +986,9 @@ mod tests {
 
     #[test]
     fn 上の直し方を当てると句読点の密度は下がる() {
-        // <strong>定義ファイルの `上` は「値が高すぎるときの直し方」である。</strong>
+        // 定義ファイルの `上` は「値が高すぎるときの直し方」である。
         // 逆に書くと、較正が「減らせ」と言った場面で道具は「増やせ」と指示する
-        // ——<strong>直し方に従うほど人らしさが下がる。</strong> 実際に 1 度そう書いた。
+        // ——直し方に従うほど人らしさが下がる。 実際に 1 度そう書いた。
         //
         // 上の直し方は「文を繋いで長くし、読点を減らす」。当てて下がることを見る。
         let before = punctuation(&long("あい、うえお。"));

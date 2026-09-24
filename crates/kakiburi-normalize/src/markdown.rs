@@ -23,7 +23,7 @@ pub fn parse(input: impl AsRef<str>, source: Source) -> Result<Document, Refusal
     while p.at < p.lines.len() {
         let before = p.at;
         let node = p.block()?;
-        // <strong>block は必ず入力を進める。</strong> 進まなければ無限に回り、node を積み続けて
+        // block は必ず入力を進める。 進まなければ無限に回り、node を積み続けて
         // メモリを食い潰す。エラーにならないので、走らせるまで気付けない。
         if p.at == before {
             return Err(Refusal::Broken {
@@ -66,8 +66,8 @@ impl<'a> Parser<'a> {
 
     /// 中身を block として解釈し直す。
     ///
-    /// <strong>子を持つ node の中身を 1 本の文字列に畳まない。</strong> 畳めば内側の段落・リスト・
-    /// 表・コードブロックがまるごと消え、<strong>コードブロックの中身が地の文に混ざる</strong>。
+    /// 子を持つ node の中身を 1 本の文字列に畳まない。 畳めば内側の段落・リスト・
+    /// 表・コードブロックがまるごと消え、コードブロックの中身が地の文に混ざる。
     /// [文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
     /// 引用・補足・警告・折りたたみ・脚注が子を持つと定めている。
     fn blocks_of(&self, body: &[&'a str]) -> Result<Vec<Node>, Refusal> {
@@ -96,7 +96,7 @@ impl<'a> Parser<'a> {
         Ok(nodes)
     }
 
-    /// 中身を持つ node を組む。<strong>文字は子が持つ。</strong>
+    /// 中身を持つ node を組む。文字は子が持つ。
     fn container(&self, kind: Kind, body: &[&'a str]) -> Result<Node, Refusal> {
         Ok(Node::branch(kind, self.blocks_of(body)?))
     }
@@ -130,12 +130,12 @@ impl<'a> Parser<'a> {
             if markup::has_directives(self.source) {
                 return self.directive(name).map(Some);
             }
-            // <strong>対応表に無い記法である。断る。</strong>
+            // 対応表に無い記法である。断る。
             //
             // 地の文に流すと `:::` が記号として数えられ、しかも補足と警告に
             // 0 が並ぶ。実測では、Zenn の記事を github-markdown として読むと
             // 補足 18 箇所と警告 2 箇所が消え、段落の数まで変わった。
-            // <strong>エラーにならないので、取り込み元の申告違いに気付けない。</strong>
+            // エラーにならないので、取り込み元の申告違いに気付けない。
             return Err(Refusal::UnknownMarkup {
                 markup: format!(":::{name}"),
             });
@@ -171,7 +171,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// 引用か Alert か。<strong>Alert を先に見る。</strong>
+    /// 引用か Alert か。Alert を先に見る。
     ///
     /// 素朴に引用として解釈すると、引用の密度が実際より高く出て、補足の密度に
     /// 0 が並ぶ。エラーにならないので、ここを間違えても気付けない。
@@ -215,12 +215,12 @@ impl<'a> Parser<'a> {
         let mut body = Vec::new();
         while let Some(l) = self.peek() {
             self.at += 1;
-            // <strong>開きと同じ規則で閉じる。</strong> 開きは字下げを許すので、閉じだけを
-            // 行頭に縛ると<strong>字下げして開いた directive は決して閉じられない。</strong>
+            // 開きと同じ規則で閉じる。 開きは字下げを許すので、閉じだけを
+            // 行頭に縛ると字下げして開いた directive は決して閉じられない。
             //
             // 実素材で踏んだ。箇条書きの直後の `:::` が 2 字下がっていると、
             // そこで閉じずに次の `:::` まで飲み込み、飲み込んだ中の `:::message` が
-            // 「閉じていない」として出てくる——<strong>本当の原因から遠い場所で断る。</strong>
+            // 「閉じていない」として出てくる——本当の原因から遠い場所で断る。
             if l.trim() == ":::" {
                 return self.container(kind, &body);
             }
@@ -243,7 +243,7 @@ impl<'a> Parser<'a> {
         Ok(Node::leaf(Kind::Footnote, inline_checked(body)?))
     }
 
-    /// 表。<strong>セル 1 つが 1 つの node である。</strong>
+    /// 表。セル 1 つが 1 つの node である。
     ///
     /// 行のままにすると桁揃えの空白が地の文に入り、隣のセルの先頭が前のセルの
     /// 末尾と隣り合う。その隣接は書き手が選んだものではない。
@@ -295,7 +295,7 @@ impl<'a> Parser<'a> {
             self.at += 1;
             {
                 let (text, mut kids) = inline_with_children(m.text)?;
-                // <strong>強調で始まる項目は、強調を先頭の子に置く。</strong>
+                // 強調で始まる項目は、強調を先頭の子に置く。
                 // 畳んだ子は順序を持たないので、[太字始まりの項目](../../../docs/spec/metrics/太字始まりの項目.md)が
                 // 先頭かどうかを読めなくなる。
                 if starts_with_emphasis(m.text) {
@@ -315,7 +315,7 @@ impl<'a> Parser<'a> {
     fn paragraph(&mut self) -> Result<Node, Refusal> {
         let mut body = Vec::new();
         while let Some(l) = self.peek() {
-            // <strong>切れ目は block の振り分けと同じでなければならない。</strong> ずれると、
+            // 切れ目は block の振り分けと同じでなければならない。 ずれると、
             // block が拾わない行で paragraph も切れ、何も消費せず無限に回る。
             if body.is_empty() {
                 // 1 行目は必ず取る。block が「段落だ」と判断した行である。
@@ -335,7 +335,7 @@ impl<'a> Parser<'a> {
         Ok(n)
     }
 
-    /// この行から別の block が始まるか。<strong>block の振り分けと 1 対 1 に対応する。</strong>
+    /// この行から別の block が始まるか。block の振り分けと 1 対 1 に対応する。
     fn starts_block(&self, line: &str) -> bool {
         let t = line.trim_start();
         t.is_empty()
@@ -351,14 +351,14 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// 行の中の記法を落とし、<strong>数えるための子を作る。</strong>
+/// 行の中の記法を落とし、数えるための子を作る。
 ///
 /// インラインコードの中身とリンクの参照先は地の文に入らない。画像の代替文字も
 /// 入らない。強調の `**` と `__` は記法なので潰す——中身は残る。
 ///
-/// <strong>子は数を数えるためにある。</strong>[強調](kakiburi_doc::node::Kind::Emphasis)は node なので、
+/// 子は数を数えるためにある。[強調](kakiburi_doc::node::Kind::Emphasis)は node なので、
 /// 落とすだけだと[強調の指標](../../../docs/spec/metrics/強調.md)が永久に 0 になる。
-/// エラーにならないので気付けない。<strong>子のテキストは地の文に足さない</strong>——
+/// エラーにならないので気付けない。子のテキストは地の文に足さない——
 /// 親の文字列にすでに 1 度入っている。
 ///
 /// 対応表に無い記法があれば断る。落として通せば、落ちた分だけ値が狂った文書が
@@ -469,7 +469,7 @@ fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refus
                 kids.push(Node::leaf(Kind::Link, text.clone()));
                 kids.extend(inner);
             }
-            // 強調の記法だけを落とす。<strong>開くときだけ数える。</strong>
+            // 強調の記法だけを落とす。開くときだけ数える。
             //
             // `**` は開きと閉じで 2 度通る。数を 2 で割って畳むと、1 度しか
             // 通らない HTML の `<em>` が消える。切り替えで数える。
@@ -574,7 +574,7 @@ fn alert_marker(line: &str) -> Option<&str> {
     t.strip_prefix("[!")?.strip_suffix(']')
 }
 
-/// `:::` に続く名前を、<strong>修飾を含めて</strong>返す。
+/// `:::` に続く名前を、修飾を含めて返す。
 ///
 /// `message alert` の `alert` を落とすと、警告が補足に化ける。
 fn directive_open(line: &str) -> Option<&str> {
@@ -734,7 +734,7 @@ mod tests {
     #[test]
     fn block_が拾わない行で回り続けない() {
         // block の振り分けと paragraph の切れ目がずれると、何も消費せず無限に
-        // 回り、node を積み続けてメモリを食い潰す。<strong>止まることを試す。</strong>
+        // 回り、node を積み続けてメモリを食い潰す。止まることを試す。
         //
         // 一度これで 5.7 GB まで膨らんだ。エラーにならないので走らせるまで
         // 気付けなかった。
@@ -773,7 +773,7 @@ mod tests {
 
     #[test]
     fn 字下げした閉じでも閉じる() {
-        // <strong>開きは字下げを許す。</strong> 閉じだけを行頭に縛れば、字下げして開いた
+        // 開きは字下げを許す。 閉じだけを行頭に縛れば、字下げして開いた
         // directive は決して閉じられない。整形器が箇条書きの直後の `:::` を
         // 下げることは実素材で普通に起きる。
         let md = ":::message\n- あ\n- い\n  :::\n";

@@ -1,9 +1,9 @@
 //! 登録簿と定義ファイルが一致することを確かめる。
 //!
-//! <strong>仕様にあって実装に無い指標を見つける。</strong> 逆も見つける。名前を 2 か所に書けば、
+//! 仕様にあって実装に無い指標を見つける。 逆も見つける。名前を 2 か所に書けば、
 //! 片方を直したときにもう片方が古いまま残り、エラーにならない。
 //!
-//! <strong>読む道は[定義ファイルの読み手](kakiburi_metrics::definitions)と同じものである。</strong>
+//! 読む道は[定義ファイルの読み手](kakiburi_metrics::definitions)と同じものである。
 //! 試験だけが別の読み方をすると、通っているのは試験の読み方でしかない。
 
 use std::path::PathBuf;
@@ -25,7 +25,7 @@ fn registry_from_definitions() -> Registry {
     definitions::registry(&read_definitions()).expect("札が読める")
 }
 
-/// 名前を揃える。<strong>ASCII と和文のあいだの空白は組み方であって名前の一部ではない。</strong>
+/// 名前を揃える。ASCII と和文のあいだの空白は組み方であって名前の一部ではない。
 ///
 /// `1 文だけの段落の割合` と `1文だけの段落の割合`、`文字 bigram` と `文字bigram` は
 /// 同じ名前である。リンクはファイル名を指すので、揃えないと引けなくなる。
@@ -154,10 +154,10 @@ fn 両側の指標は直し方を_2_つ書いている() {
             "{}.md: 両側なのに直し方が空である",
             def_.file
         );
-        // <strong>上と下の両方に印が要る。</strong> 片方だけだと、直す側は指摘を消すために
+        // 上と下の両方に印が要る。 片方だけだと、直す側は指摘を消すために
         // 削る方へ向かう。印は構造で見る——語で当てると「足す」を取りこぼす。
         //
-        // <strong>読み手が実際に両方を返せることで確かめる。</strong> 印の有無を文字列で見ると、
+        // 読み手が実際に両方を返せることで確かめる。 印の有無を文字列で見ると、
         // 印はあるが読み手が引けない形（並びが違う、印だけで本文が無い）を見逃す。
         let up = def_.remedy(kakiburi_metrics::tag::Direction::Upper);
         let down = def_.remedy(kakiburi_metrics::tag::Direction::Lower);
@@ -174,6 +174,7 @@ fn directions(remedy: &str) -> (Option<String>, Option<String>) {
     let pick = |label: &str| -> Option<String> {
         remedy.lines().find_map(|l| {
             let l = l.trim();
+            // 印は定義ファイルの書式である。 飾りではないので外さない。
             for open in ["<strong>", "**"] {
                 let close = if open == "**" { "**" } else { "</strong>" };
                 let head = format!("{open}{label}{close}");
@@ -189,8 +190,8 @@ fn directions(remedy: &str) -> (Option<String>, Option<String>) {
 
 #[test]
 fn 両側の指標は上と下の両方を書く() {
-    // <strong>片方しか書かなければ、直す側はもう片方を自分で考えることになる。</strong>
-    // 人らしさは向きを較正が決めるので、<strong>両方が要る</strong>——決め打つと、較正が
+    // 片方しか書かなければ、直す側はもう片方を自分で考えることになる。
+    // 人らしさは向きを較正が決めるので、両方が要る——決め打つと、較正が
     // 「減らせ」と言った場面でも「増やせ」と指示することになる。
     let defs = read_definitions();
     if defs.is_empty() {
@@ -211,15 +212,15 @@ fn 両側の指標は上と下の両方を書く() {
     }
 }
 
-/// <strong>この試験は「入れ替わり」を捕まえない。</strong>
+/// この試験は「入れ替わり」を捕まえない。
 ///
 /// 上下を取り違えると、道具は自分の判定を悪くする方向へ指示する。実際に 1 度そう書いた
 /// ——較正が「句読点の密度を下げろ」と言うのに、直し方は「文を短く切り、読点を増やす」
-/// と出ていた。<strong>入れ替えたまま、この試験は通る。</strong> 実際に戻して確かめた。
+/// と出ていた。入れ替えたまま、この試験は通る。 実際に戻して確かめた。
 ///
-/// 捕まえるのは<strong>上下が同じ向きを言っている</strong>ときだけである。入れ替わりを捕まえるには、
+/// 捕まえるのは上下が同じ向きを言っているときだけである。入れ替わりを捕まえるには、
 /// 定義ごとに「上の直し方を当てた前後の文」を持たせて実際に測るしかない
-/// （[句読点の密度でやっている形](kakiburi_metrics::humanness)）。<strong>まだ 1 本しかない。</strong>
+/// （[句読点の密度でやっている形](kakiburi_metrics::humanness)）。まだ 1 本しかない。
 #[test]
 fn 上と下が同じ向きを言っていない() {
     let defs = read_definitions();

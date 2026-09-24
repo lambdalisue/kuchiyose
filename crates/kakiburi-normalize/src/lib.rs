@@ -3,7 +3,7 @@
 //! 取り込み元ごとの実装を持つ唯一の場所である。GitHub の Alert を引用より先に
 //! 認識する、といった取り込み元固有の知識をここに閉じこめる。
 //!
-//! <strong>決定的である。</strong> 推測しない。落ちない入力は断る。
+//! 決定的である。 推測しない。落ちない入力は断る。
 
 pub mod html;
 pub mod markdown;
@@ -19,7 +19,7 @@ pub use source::{Source, Writable};
 
 /// 取り込む。読んで、断るかを決める。
 ///
-/// <strong>取り込み元は内容から判定しない。</strong> 呼ぶ側が指定する——推測を混ぜれば
+/// 取り込み元は内容から判定しない。 呼ぶ側が指定する——推測を混ぜれば
 /// 決定的でなくなる。
 pub fn normalize(input: impl AsRef<str>, source: Source) -> Result<Document, Refusal> {
     let doc = match source {

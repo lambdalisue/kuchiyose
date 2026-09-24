@@ -1,4 +1,4 @@
-//! 語彙と z 得点。<strong>先に決めて固定する。</strong>
+//! 語彙と z 得点。先に決めて固定する。
 //!
 //! 検めが選び直せば、比べたものに意味が無い——違う軸のベクトルどうしの距離になる。
 //! だから型で `Frozen` にして、作り直す道を検め側に渡さない。
@@ -8,13 +8,13 @@ use std::collections::BTreeMap;
 /// 数え上げ。識別子ごとの生の回数。
 pub type Counts = BTreeMap<String, usize>;
 
-/// 固定した語彙と z 得点。<strong>派生物として保存する。</strong>
+/// 固定した語彙と z 得点。派生物として保存する。
 ///
-/// <strong>作り方はここにしかない。</strong>[`Frozen::fit`]は全体を要求するので、検める 1 本から
+/// 作り方はここにしかない。[`Frozen::fit`]は全体を要求するので、検める 1 本から
 /// 作り直せない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frozen {
-    /// 次元の並び。<strong>頻度の降順、同順位は識別子の昇順。</strong>
+    /// 次元の並び。頻度の降順、同順位は識別子の昇順。
     dims: Vec<String>,
     /// 次元ごとの平均。
     mean: Vec<f64>,
@@ -25,7 +25,7 @@ pub struct Frozen {
 impl Frozen {
     /// 全体から 1 度だけ作る。
     ///
-    /// <strong>割る前に行う。</strong> 相手集合と測る分に分ける前に、全体から選ぶ——側ごとに違う
+    /// 割る前に行う。 相手集合と測る分に分ける前に、全体から選ぶ——側ごとに違う
     /// 語彙を使えば、側ごとに次元の意味が変わる。
     ///
     /// `limit` が `None` なら次元を絞らない（文字種・品詞 bigram・語の文体値のように
@@ -35,17 +35,17 @@ impl Frozen {
         Self::fit_against(all, all, limit)
     }
 
-    /// 次元は `all` から選び、<strong>平均と標準偏差は `reference` から取る。</strong>
+    /// 次元は `all` から選び、平均と標準偏差は `reference` から取る。
     ///
-    /// <strong>本人を含む素材で標準化してはいけない。</strong> 本人の単位が過半を占めるなら、
-    /// 平均は本人のところに来る——<strong>本人の記事は原点に置かれ、z 得点に残るのは
-    /// 1 本ごとの雑音だけ</strong>になる。雑音どうしの向きは揃わないので、
-    /// <strong>同じ人が書いた 2 本がほぼ直交する。</strong>
+    /// 本人を含む素材で標準化してはいけない。 本人の単位が過半を占めるなら、
+    /// 平均は本人のところに来る——本人の記事は原点に置かれ、z 得点に残るのは
+    /// 1 本ごとの雑音だけになる。雑音どうしの向きは揃わないので、
+    /// 同じ人が書いた 2 本がほぼ直交する。
     ///
     /// 実測で、本人どうしの機能語の距離は 0.997 だった——コサインにして 0.003 である。
     /// 次元を 300 から 20 まで削っても 0.90 までしか下がらなかった。
     ///
-    /// <strong>基準を物差しにする。</strong> そうすれば本人の単位はどれも「ふつうの書きぶりから
+    /// 基準を物差しにする。 そうすれば本人の単位はどれも「ふつうの書きぶりから
     /// どちらへ外れているか」を表し、その向きが揃う。
     pub fn fit_against(all: &[Counts], reference: &[Counts], limit: Option<usize>) -> Self {
         let dims = pick_dims(all, limit);
@@ -98,7 +98,7 @@ impl Frozen {
 
     /// 保存した派生物から組み立てる。
     ///
-    /// <strong>作り直しではない。</strong>[`Frozen::fit`]が全体から作ったものを読み戻す道である——
+    /// 作り直しではない。[`Frozen::fit`]が全体から作ったものを読み戻す道である——
     /// 長さが揃わなければ組み立てない。
     #[must_use]
     pub fn restore(dims: Vec<String>, mean: Vec<f64>, sd: Vec<f64>) -> Option<Self> {
@@ -110,7 +110,7 @@ impl Frozen {
 
     /// 数え上げを、固定した軸に投影する。
     ///
-    /// <strong>語彙も平均も標準偏差も作り直さない。</strong> 検めが呼ぶのはこれだけである。
+    /// 語彙も平均も標準偏差も作り直さない。 検めが呼ぶのはこれだけである。
     #[must_use]
     pub fn project(&self, counts: &Counts) -> Vec<f64> {
         let raw = relative(counts, &self.dims);
@@ -129,12 +129,12 @@ impl Frozen {
 impl Frozen {
     /// その次元の相対頻度が `want` になるよう、数え上げを動かす。
     ///
-    /// <strong>1 次元だけを動かす直しは、実際には書けない。</strong> 系統の次元はどれも
-    /// 相対頻度なので、<strong>1 つを減らせば残りの割合が上がる</strong>——読点を 1 つ外せば、
+    /// 1 次元だけを動かす直しは、実際には書けない。 系統の次元はどれも
+    /// 相対頻度なので、1 つを減らせば残りの割合が上がる——読点を 1 つ外せば、
     /// 外さなかった読点の取り分が増える。
     ///
-    /// <strong>だから数え上げの側で動かす。</strong> 投影し直せば、正規化が自然に起きて
-    /// ほかの次元も動く。<strong>それが実際に起きることである。</strong>
+    /// だから数え上げの側で動かす。 投影し直せば、正規化が自然に起きて
+    /// ほかの次元も動く。それが実際に起きることである。
     #[must_use]
     pub fn shifted(&self, counts: &Counts, dim: usize, want: f64) -> Counts {
         let Some(name) = self.dims.get(dim) else {
@@ -145,7 +145,7 @@ impl Frozen {
         #[allow(clippy::cast_precision_loss)]
         let here: f64 = counts.get(name).copied().unwrap_or(0) as f64;
         let rest = total - here;
-        // <strong>割合を戻して数え上げを解く。</strong> c' = want * rest / (1 - want)
+        // 割合を戻して数え上げを解く。 c' = want * rest / (1 - want)
         let want = want.clamp(0.0, 0.99);
         if rest <= 0.0 {
             return counts.clone();
@@ -168,10 +168,10 @@ impl Frozen {
     }
 }
 
-/// 部分ベクトルの束。<strong>1 系統ぶんである。</strong>
+/// 部分ベクトルの束。1 系統ぶんである。
 ///
 /// [読点の打ち方](kakiburi_metrics::matching::comma_position)のように、系統が 3 つの
-/// 部分ベクトルを持つことがある。<strong>連結する前に、それぞれの中で相対頻度に直す</strong>——
+/// 部分ベクトルを持つことがある。連結する前に、それぞれの中で相対頻度に直す——
 /// 1 つにまとめて割れば、間隔の分布が文字の分布の分母に混ざる。
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrozenSet {
@@ -181,8 +181,8 @@ pub struct FrozenSet {
 impl FrozenSet {
     /// 全体から 1 度だけ作る。
     ///
-    /// `all` は 1 要素が 1 単位ぶんの部分ベクトルの並び。<strong>部分の数が `limits` と違う
-    /// 単位は落とす</strong>——数が揃わなければ、絞る先を 1 つずれて当てる。
+    /// `all` は 1 要素が 1 単位ぶんの部分ベクトルの並び。部分の数が `limits` と違う
+    /// 単位は落とす——数が揃わなければ、絞る先を 1 つずれて当てる。
     #[must_use]
     pub fn fit(all: &[Vec<Counts>], limits: &[Option<usize>]) -> Self {
         Self::fit_against(all, all, limits)
@@ -214,7 +214,7 @@ impl FrozenSet {
 
     /// 部分ごとに投影して連結する。
     ///
-    /// <strong>部分の数が合わなければ投影しない。</strong> 合わないまま連結すれば、次元の意味が
+    /// 部分の数が合わなければ投影しない。 合わないまま連結すれば、次元の意味が
     /// ずれたベクトルが出る。
     #[must_use]
     pub fn project(&self, parts: &[Counts]) -> Option<Vec<f64>> {
@@ -248,14 +248,14 @@ impl FrozenSet {
         &self.parts
     }
 
-    /// 部分から組み立てる。<strong>保存した派生物を読み戻す道である。</strong>
+    /// 部分から組み立てる。保存した派生物を読み戻す道である。
     #[must_use]
     pub fn from_parts(parts: Vec<Frozen>) -> Self {
         Self { parts }
     }
 }
 
-/// 次元を選ぶ。<strong>頻度の降順、同順位は識別子の昇順。</strong>
+/// 次元を選ぶ。頻度の降順、同順位は識別子の昇順。
 fn pick_dims(all: &[Counts], limit: Option<usize>) -> Vec<String> {
     let mut total: BTreeMap<&str, usize> = BTreeMap::new();
     for c in all {
@@ -270,16 +270,16 @@ fn pick_dims(all: &[Counts], limit: Option<usize>) -> Vec<String> {
     keys[..take].iter().map(|(k, _)| (*k).to_owned()).collect()
 }
 
-/// 歩幅の下限。<strong>その系統の平均の歩幅に対する割合。</strong> 暫定値である。
+/// 歩幅の下限。その系統の平均の歩幅に対する割合。 暫定値である。
 ///
-/// <strong>まれな次元は歩幅が 0 に近い。</strong> そのまま割れば z 得点が爆発し、
-/// <strong>1 つの次元がベクトル全体を支配する</strong>——実測で、文字種の「半角数字」が
+/// まれな次元は歩幅が 0 に近い。 そのまま割れば z 得点が爆発し、
+/// 1 つの次元がベクトル全体を支配する——実測で、文字種の「半角数字」が
 /// 246 まで飛び、いちばん外れている次元がどの文書でもそれになった。
 pub const MIN_SD_RATIO: f64 = 0.1;
 
 /// 歩幅に下限を敷く。
 ///
-/// <strong>0 の次元は 0 のまま残す。</strong> 全部の文書で同じ値なら、そこに情報は無い
+/// 0 の次元は 0 のまま残す。 全部の文書で同じ値なら、そこに情報は無い
 /// ——投影の側が 0 を返す。
 fn floor_sd(sd: &mut [f64]) {
     let live: Vec<f64> = sd.iter().copied().filter(|x| *x > 0.0).collect();
@@ -295,7 +295,7 @@ fn floor_sd(sd: &mut [f64]) {
     }
 }
 
-/// 相対頻度。<strong>分母は選ぶ前の全体である。</strong>
+/// 相対頻度。分母は選ぶ前の全体である。
 ///
 /// 上位 N の中で割り直すと、N をいくつにするかが値そのものを動かす。
 /// 割り直さなければ、N は「どこまで見るか」だけの話になる。
@@ -312,10 +312,10 @@ fn relative(counts: &Counts, dims: &[String]) -> Vec<f64> {
         .collect()
 }
 
-/// Cosine Delta。<strong>z 得点のうえでコサイン距離を取る。</strong>
+/// Cosine Delta。z 得点のうえでコサイン距離を取る。
 ///
 /// ベクトル正規化はコサイン距離そのものに含まれる。これが効いている要素で、
-/// <strong>語彙の大きさの選び方に対して頑健にする。</strong>
+/// 語彙の大きさの選び方に対して頑健にする。
 #[must_use]
 pub fn cosine_delta(a: &[f64], b: &[f64]) -> f64 {
     let dot: f64 = a.iter().zip(b).map(|(x, y)| x * y).sum();

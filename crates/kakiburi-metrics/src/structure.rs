@@ -1,6 +1,6 @@
 //! 構造と長さの指標。
 //!
-//! どれも node の数え方に依る。<strong>単位の意味は[文書の形](kakiburi_doc)が決める</strong>——
+//! どれも node の数え方に依る。単位の意味は[文書の形](kakiburi_doc)が決める——
 //! ここで決め直さない。
 
 use kakiburi_doc::node::{Kind, Node};
@@ -64,13 +64,13 @@ pub fn quotes(doc: &Document) -> Measured {
     nodes_per_1000(doc, Kind::Quote)
 }
 
-/// 補足の数。<strong>記法は問わない。</strong>
+/// 補足の数。記法は問わない。
 #[must_use]
 pub fn notes(doc: &Document) -> Measured {
     nodes_per_1000(doc, Kind::Note)
 }
 
-/// 警告の数。<strong>記法は問わない。</strong>
+/// 警告の数。記法は問わない。
 #[must_use]
 pub fn warnings(doc: &Document) -> Measured {
     nodes_per_1000(doc, Kind::Warning)
@@ -90,7 +90,7 @@ pub fn emphasis(doc: &Document) -> Measured {
 
 /// コードブロックの数。
 ///
-/// <strong>分母の文字数にコードブロックの中身を含めない。</strong> 含めると、長いコードを 1 つ
+/// 分母の文字数にコードブロックの中身を含めない。 含めると、長いコードを 1 つ
 /// 貼っただけで率が下がる。[地の文](kakiburi_doc::prose)がコードを含まないので、
 /// ここは分母をそのまま使えばよい。
 #[must_use]
@@ -129,16 +129,16 @@ pub fn single_sentence_paragraphs(doc: &Document) -> Measured {
     Measured::Value(one as f64 / paras.len() as f64)
 }
 
-/// 敬体で終わる文の割合。<strong>node の種類ごとに数える。</strong>
+/// 敬体で終わる文の割合。node の種類ごとに数える。
 ///
-/// <strong>同じ書き手が、場所によって文体を変える。</strong> 実測で、ある書き手は段落の 93% を
+/// 同じ書き手が、場所によって文体を変える。 実測で、ある書き手は段落の 93% を
 /// 敬体で書き、箇条書きの 85%・見出しの 99% を常体で書いていた。
 ///
-/// <strong>地の文を 1 つの袋にすると、この使い分けが混ざって消える</strong>
+/// 地の文を 1 つの袋にすると、この使い分けが混ざって消える
 /// （[文体は node の種類ごとに違う](../../../docs/spec/100-metrics.md#文体は-node-の種類ごとに違う)）。
-/// 「敬体 7 割の人」としか言えず、<strong>箇条書きを敬体で書いた草稿を見分けられない。</strong>
+/// 「敬体 7 割の人」としか言えず、箇条書きを敬体で書いた草稿を見分けられない。
 ///
-/// <strong>分母は敬体か常体で終わった文だけである。</strong> 体言止めと疑問符で終わる文はどちらでも
+/// 分母は敬体か常体で終わった文だけである。 体言止めと疑問符で終わる文はどちらでも
 /// ないので数えない——入れると、体言止めの多い書き手ほど敬体率が下がる。
 fn polite_rate(texts: &[String], floor: usize) -> Measured {
     let (mut polite, mut plain) = (0usize, 0usize);
@@ -158,7 +158,7 @@ fn polite_rate(texts: &[String], floor: usize) -> Measured {
     Measured::Value(polite as f64 / (polite + plain) as f64)
 }
 
-/// その文が敬体か。<strong>どちらでもなければ `None`。</strong>
+/// その文が敬体か。どちらでもなければ `None`。
 fn register_of(sentence: &str) -> Option<bool> {
     let t = sentence.trim_end_matches(['。', '！', '？', '.', '!', '?', ' ', '　']);
     const POLITE: [&str; 8] = [
@@ -192,19 +192,19 @@ fn register_of(sentence: &str) -> Option<bool> {
     None
 }
 
-/// 体言止めの割合。<strong>[敬体率](polite_rate)が見られないものを、こちらが見る。</strong>
+/// 体言止めの割合。[敬体率](polite_rate)が見られないものを、こちらが見る。
 ///
-/// <strong>敬体率は体言止めを分母から落とす。</strong> どちらでもないものを混ぜれば、
+/// 敬体率は体言止めを分母から落とす。 どちらでもないものを混ぜれば、
 /// 体言止めの多い書き手ほど敬体率が下がるからである。だが落とした結果、
-/// <strong>項目を体言止めで書く人の項目は、1 つも数えられない</strong>——実測で、ある書き手の
+/// 項目を体言止めで書く人の項目は、1 つも数えられない——実測で、ある書き手の
 /// 50 単位のうち箇条書きの敬体率が出たのは 4 単位だけだった。
 ///
-/// <strong>その人がいちばんしていることが、いちばん見えない。</strong> だからここで別に数える。
+/// その人がいちばんしていることが、いちばん見えない。 だからここで別に数える。
 ///
 /// [文末表現](../../../docs/spec/metrics/文末表現.md)の系統は「取れなかった文も 1 つの
 /// 次元として数える」と決めている。これはその次元を node の種類ごとに切り出したものである。
 ///
-/// <strong>解析器が要る。</strong> 体言止めは「文の最後の自立語が名詞で終わる」ことなので、
+/// 解析器が要る。 体言止めは「文の最後の自立語が名詞で終わる」ことなので、
 /// 語尾の文字列では決まらない——`できる` のように、語尾の一覧に載っていない
 /// 動詞の活用形と見分けが付かない。
 fn taigen_rate<'a>(segments: impl Iterator<Item = &'a Vec<Morpheme>>, floor: usize) -> Measured {
@@ -227,7 +227,7 @@ fn taigen_rate<'a>(segments: impl Iterator<Item = &'a Vec<Morpheme>>, floor: usi
     Measured::Value(taigen as f64 / total as f64)
 }
 
-/// 形態素列を文に割る。<strong>句点・感嘆符・疑問符で切る。</strong>
+/// 形態素列を文に割る。句点・感嘆符・疑問符で切る。
 fn split_sentences(seg: &[Morpheme]) -> Vec<&[Morpheme]> {
     let mut out = Vec::new();
     let mut start = 0usize;
@@ -243,18 +243,18 @@ fn split_sentences(seg: &[Morpheme]) -> Vec<&[Morpheme]> {
     out
 }
 
-/// 記号か。<strong>文の終わりを決めるのは、その手前の語である。</strong>
+/// 記号か。文の終わりを決めるのは、その手前の語である。
 fn is_punctuation(m: &Morpheme) -> bool {
     m.pos1.starts_with("補助記号") || m.pos1.starts_with("記号")
 }
 
-/// 文末の軸を、node の種類ごとに数えるときの下限。<strong>暫定値である。</strong>
+/// 文末の軸を、node の種類ごとに数えるときの下限。暫定値である。
 const REGISTER_FLOOR: usize = 5;
 
-/// 文末の軸の名前。<strong>1 つの定義が node の種類の数だけ軸を作る。</strong>
+/// 文末の軸の名前。1 つの定義が node の種類の数だけ軸を作る。
 ///
-/// <strong>種類ごとに書き足さない。</strong> 「段落の敬体率」「箇条書きの敬体率」と手で並べると、
-/// 指標を足すたびに種類の数だけ定義が要り、<strong>足し忘れた指標だけが混ぜたまま</strong>になる。
+/// 種類ごとに書き足さない。 「段落の敬体率」「箇条書きの敬体率」と手で並べると、
+/// 指標を足すたびに種類の数だけ定義が要り、足し忘れた指標だけが混ぜたままになる。
 /// [地の文に入る種類](kakiburi_doc::node::Kind::PROSE)を回して名前を作る。
 #[must_use]
 pub fn register_names() -> Vec<String> {
@@ -268,15 +268,15 @@ pub fn register_names() -> Vec<String> {
 
 /// 文末の軸を、node の種類ごとに測る。
 ///
-/// <strong>まとめて測らない。</strong> 同じ書き手が段落では敬体、項目では体言止めで書くので、
+/// まとめて測らない。 同じ書き手が段落では敬体、項目では体言止めで書くので、
 /// 地の文を 1 つの袋にすると使い分けが袋の中で消える
 /// （[文体は node の種類ごとに違う](../../../docs/spec/100-metrics.md#文体は-node-の種類ごとに違う)）。
 ///
-/// <strong>どれが効くかは選ばない。</strong> 種類ごとに軸を出しておき、
+/// どれが効くかは選ばない。 種類ごとに軸を出しておき、
 /// [効くかの判定](../../kakiburi-scale/src/effective.rs)に選ばせる——書き手によって
 /// 使い分ける場所が違うので、ここで決め打つと当たらない書き手が出る。
 ///
-/// <strong>敬体率は解析器を要らない。</strong> 体言止め率だけが要る——名詞で終わるかは
+/// 敬体率は解析器を要らない。 体言止め率だけが要る——名詞で終わるかは
 /// 語尾の文字列では決まらないためである。
 #[must_use]
 pub fn register_rates(
@@ -305,7 +305,7 @@ pub fn register_rates(
     out
 }
 
-/// 段落あたりの文数。<strong>段落に含まれる</strong>文を、段落の数で割る。
+/// 段落あたりの文数。段落に含まれる文を、段落の数で割る。
 ///
 /// 見出しや項目やセルの文を分子に入れない。
 #[must_use]
@@ -352,7 +352,7 @@ pub fn paragraph_length_cv(doc: &Document) -> Measured {
 
 /// 箇条書き項目長の変動係数。
 ///
-/// 文書内の全ての項目を <strong>1 つの分布</strong>として見る。箇条書きごとに分けない。
+/// 文書内の全ての項目を 1 つの分布として見る。箇条書きごとに分けない。
 #[must_use]
 pub fn item_length_cv(doc: &Document) -> Measured {
     let items = doc.items();

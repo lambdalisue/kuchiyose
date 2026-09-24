@@ -1,8 +1,8 @@
 //! HTML を正規形に落とす。
 //!
-//! <strong>対応表は[`crate::markup::html_kind`]が持つ。</strong> ここは木を組むだけである。
+//! 対応表は[`crate::markup::html_kind`]が持つ。 ここは木を組むだけである。
 //!
-//! <strong>HTML に警告の記法は無い</strong>——`<aside>` は補足に落ちる。だから警告は
+//! HTML に警告の記法は無い——`<aside>` は補足に落ちる。だから警告は
 //! 「書けない」升目になり、0 ではなく「測れない」を返す。
 
 use kakiburi_doc::node::{Kind, Node};
@@ -20,7 +20,7 @@ const SKIP: [&str; 5] = ["script", "style", "head", "title", "template"];
 
 /// HTML を読む。
 ///
-/// 対応表に無い要素を見つけたら断る。<strong>推測して段落に落とさない。</strong>
+/// 対応表に無い要素を見つけたら断る。推測して段落に落とさない。
 pub fn parse(input: impl AsRef<str>) -> Result<Document, Refusal> {
     let tokens = tokenize(input.as_ref())?;
     let mut p = Builder { tokens, at: 0 };
@@ -80,7 +80,7 @@ fn tokenize(s: &str) -> Result<Vec<Token>, Refusal> {
             i = end + 1;
             continue;
         }
-        // <strong>札になれない `<` は地の文である。</strong>`a < b` のような。
+        // 札になれない `<` は地の文である。`a < b` のような。
         // 直後が名前を始められる文字でなければ、札ではない。
         if !chars
             .get(i + 1)
@@ -109,7 +109,7 @@ fn tokenize(s: &str) -> Result<Vec<Token>, Refusal> {
             continue;
         }
         let name = element_name(trimmed);
-        // <strong>自分で閉じる札も、中身を持たない要素も、閉じ札を待たない。</strong>
+        // 自分で閉じる札も、中身を持たない要素も、閉じ札を待たない。
         let void = trimmed.ends_with('/') || VOID.contains(&name.as_str());
         out.push(Token::Open { name, void });
     }
@@ -127,10 +127,10 @@ fn find(chars: &[char], from: usize, needle: &[char]) -> Option<usize> {
 
 /// 実体参照を解く。
 ///
-/// <strong>解かなければ `&amp;` が地の文に 5 文字として入る。</strong> 記号の率が上がり、
+/// 解かなければ `&amp;` が地の文に 5 文字として入る。 記号の率が上がり、
 /// [書きぶりではなく記法を測る](../../../docs/spec/030-normalize.md#意味で認識する)。
 ///
-/// <strong>解いた結果は表記である。</strong>`&#x3042;` も `&#12354;` も `あ` になるが、
+/// 解いた結果は表記である。`&#x3042;` も `&#12354;` も `あ` になるが、
 /// それは記法の違いであって書きぶりではない。
 fn decode_entities(s: &str) -> String {
     let chars: Vec<char> = s.chars().collect();
@@ -160,7 +160,7 @@ fn decode_entities(s: &str) -> String {
             i = end + 1;
             continue;
         }
-        // 対応表に無い実体参照。<strong>そのまま残す</strong>——推測して当てない。
+        // 対応表に無い実体参照。そのまま残す——推測して当てない。
         out.push('&');
         i += 1;
     }
@@ -175,7 +175,7 @@ fn entity(name: &str) -> Option<char> {
         "amp" => Some('&'),
         "quot" => Some('"'),
         "apos" => Some('\''),
-        // <strong>不改行空白は空白である。</strong> 潰さずに空白として持つ。
+        // 不改行空白は空白である。 潰さずに空白として持つ。
         "nbsp" => Some('\u{00A0}'),
         "hellip" => Some('…'),
         "mdash" => Some('\u{2014}'),
@@ -208,10 +208,10 @@ struct Builder {
     at: usize,
 }
 
-/// 組んだ結果。<strong>node と、その場の文字を別に持つ。</strong>
+/// 組んだ結果。node と、その場の文字を別に持つ。
 ///
-/// 文字を node として持つと、親の `text` にも子にも同じ文字が入り、<strong>地の文で
-/// 二重に数える</strong>。
+/// 文字を node として持つと、親の `text` にも子にも同じ文字が入り、地の文で
+/// 二重に数える。
 struct Built {
     /// 子の node。
     nodes: Vec<Node>,
@@ -222,7 +222,7 @@ struct Built {
 impl Builder {
     /// `until` の閉じ札まで、子を組む。
     ///
-    /// `raw` は `<pre>` の中。<strong>そこの空白は表示されるので潰さない。</strong>
+    /// `raw` は `<pre>` の中。そこの空白は表示されるので潰さない。
     fn children(&mut self, until: Option<&str>, raw: bool) -> Result<Built, Refusal> {
         let mut nodes: Vec<Node> = Vec::new();
         let mut text = String::new();
@@ -236,7 +236,7 @@ impl Builder {
                             text: if raw { text } else { space::collapse(&text) },
                         });
                     }
-                    // 対応しない閉じ札。<strong>推測して直さない。</strong>
+                    // 対応しない閉じ札。推測して直さない。
                     return Err(Refusal::Broken {
                         detail: format!("</{name}> に対応する開き札が無い"),
                     });
@@ -244,7 +244,7 @@ impl Builder {
                 Token::Text(t) => {
                     self.at += 1;
                     let t = decode_entities(&t);
-                    // <strong>地の文の改行は、書き手の改行ではなく書き出し側の折り返しである。</strong>
+                    // 地の文の改行は、書き手の改行ではなく書き出し側の折り返しである。
                     // 印を付けて持ち回り、区分の端まで見える[始末](space::collapse)に任せる。
                     text.push_str(&if raw {
                         t
@@ -260,14 +260,14 @@ impl Builder {
                         }
                         continue;
                     }
-                    // <strong>`<br>` は改行である。</strong> 区切り線ではない——
+                    // `<br>` は改行である。 区切り線ではない——
                     // [改行の位置は潰さない](../../../docs/spec/030-normalize.md#表記を潰さない)。
                     if name == "br" {
                         text.push('\n');
                         continue;
                     }
-                    // <strong>node を作らず、中身を親へ透かす。</strong> 行と区分は node ではない。
-                    // `<pre>` の直下の `<code>` も同じ——そこはコードブロックの一部で
+                    // node を作らず、中身を親へ透かす。 行と区分は node ではない。
+                    // `<pre>` の直下の ``` も同じ——そこはコードブロックの一部で
                     // あって、インラインコードではない。
                     if markup::is_transparent(&name) || (name == "code" && until == Some("pre")) {
                         let inner = self.children(Some(&name), raw)?;
@@ -287,7 +287,7 @@ impl Builder {
                     }
                     let inner = self.children(Some(&name), raw || name == "pre")?;
                     if is_inline(kind) {
-                        // <strong>行に溶けこむ。</strong> 文字を親に畳み、数えるための子を残す。
+                        // 行に溶けこむ。 文字を親に畳み、数えるための子を残す。
                         if kind == Kind::InlineCode || kind == Kind::Image {
                             // 中身は地の文に入らない。**跡に空白を残さない**——
                             // 残すと行内コードの多い記事ほど空白が増える。
@@ -346,7 +346,7 @@ fn is_inline(kind: Kind) -> bool {
 
 /// node を組む。
 ///
-/// <strong>区分の端の空白は表示されない。</strong> `<p>` の直後と `</p>` の直前の折り返しが
+/// 区分の端の空白は表示されない。 `<p>` の直後と `</p>` の直前の折り返しが
 /// そのまま地の文に入ると、書き出し側の字下げが空白として数えられる。
 /// コードブロックだけは端も表示されるので、そのまま置く。
 fn build(kind: Kind, name: &str, inner: Built) -> Node {

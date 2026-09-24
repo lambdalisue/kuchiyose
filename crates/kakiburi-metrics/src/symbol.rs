@@ -8,7 +8,7 @@ use kakiburi_doc::text;
 
 use crate::{floor, Measured};
 
-/// 地の文の文字を、node の順に走る。<strong>node を跨ぐ隣接は作らない。</strong>
+/// 地の文の文字を、node の順に走る。node を跨ぐ隣接は作らない。
 fn chars_per_node(prose: &[Segment]) -> impl Iterator<Item = Vec<char>> + '_ {
     prose.iter().map(|s| s.text.chars().collect())
 }
@@ -50,7 +50,7 @@ pub fn corner_bracket(prose: &[Segment]) -> Measured {
     per_1000(prose, |c| c == '「')
 }
 
-/// 感嘆符。<strong>字幅を合算する。</strong>
+/// 感嘆符。字幅を合算する。
 ///
 /// 合算してよいのは、これが頻度の指標だからである。どちらを使うかの選択は
 /// [`exclamation_width`]が別に見る。
@@ -59,7 +59,7 @@ pub fn exclamation(prose: &[Segment]) -> Measured {
     per_1000(prose, |c| c == '!' || c == '！')
 }
 
-/// 疑問符。<strong>字幅を合算する。</strong>
+/// 疑問符。字幅を合算する。
 #[must_use]
 pub fn question(prose: &[Segment]) -> Measured {
     per_1000(prose, |c| c == '?' || c == '？')
@@ -71,13 +71,13 @@ pub fn em_dash(prose: &[Segment]) -> Measured {
     per_1000(prose, |c| c == '\u{2014}')
 }
 
-/// 絵文字。<strong>数える単位は書記素クラスタである。</strong>
+/// 絵文字。数える単位は書記素クラスタである。
 ///
 /// 見た目が 1 つだからである——ゼロ幅接合子で繋いだ列、国旗（地域指標符号の対）、
 /// 肌の色の指定、異体字セレクタ付きのものは、どれも 1 と数える。
 ///
-/// <strong>符号位置で数えてはいけない。</strong> 国旗は 2、家族の ZWJ 列は 5 以上になり、
-/// <strong>絵文字を 1 つ置いた書き手が 5 つ置いたことになる。</strong>
+/// 符号位置で数えてはいけない。 国旗は 2、家族の ZWJ 列は 5 以上になり、
+/// 絵文字を 1 つ置いた書き手が 5 つ置いたことになる。
 #[must_use]
 pub fn emoji(prose: &[Segment]) -> Measured {
     let ja = japanese(prose);
@@ -89,7 +89,7 @@ pub fn emoji(prose: &[Segment]) -> Measured {
     Measured::Value(1000.0 * n as f64 / ja as f64)
 }
 
-/// 絵文字の列を、書記素クラスタの数として数える。<strong>最長一致で取る。</strong>
+/// 絵文字の列を、書記素クラスタの数として数える。最長一致で取る。
 fn clusters(chars: &[char]) -> usize {
     let mut n = 0usize;
     let mut i = 0;
@@ -106,7 +106,7 @@ fn clusters(chars: &[char]) -> usize {
 
 /// `i` から始まる絵文字クラスタの終わり。絵文字で始まらなければ `None`。
 fn cluster_end(chars: &[char], i: usize) -> Option<usize> {
-    // 国旗。<strong>地域指標符号は 2 つで 1 つである。</strong>
+    // 国旗。地域指標符号は 2 つで 1 つである。
     if is_regional(chars[i]) {
         return Some(if chars.get(i + 1).is_some_and(|&c| is_regional(c)) {
             i + 2
@@ -154,13 +154,13 @@ fn is_regional(c: char) -> bool {
     ('\u{1F1E6}'..='\u{1F1FF}').contains(&c)
 }
 
-/// 絵文字として数える文字の範囲。<strong>暫定である。</strong>
+/// 絵文字として数える文字の範囲。暫定である。
 ///
 /// 本来は Unicode の `Emoji_Presentation` と推奨列の表で決める
-/// （[定義](../../../docs/spec/metrics/絵文字.md#数え方)）。<strong>その表をまだ持っていない</strong>ので、
+/// （[定義](../../../docs/spec/metrics/絵文字.md#数え方)）。その表をまだ持っていないので、
 /// 実務上使われる区画を挙げている。
 ///
-/// <strong>暫定であることを[指紋](EMOJI_RANGES_VERSION)に出す。</strong> 表を入れたら値が変わる。
+/// 暫定であることを[指紋](EMOJI_RANGES_VERSION)に出す。 表を入れたら値が変わる。
 fn is_emoji_presentation(c: char) -> bool {
     matches!(c,
         '\u{1F300}'..='\u{1F5FF}'   // 記号と絵文字
@@ -172,7 +172,7 @@ fn is_emoji_presentation(c: char) -> bool {
     )
 }
 
-/// 絵文字の範囲表の版。<strong>指紋に出す。</strong>
+/// 絵文字の範囲表の版。指紋に出す。
 ///
 /// 表を [`is_emoji_presentation`] から Unicode の正規の表へ替えたら上げる——
 /// 上げなければ、範囲が変わったのに古い値が使い回される。
@@ -180,7 +180,7 @@ pub const EMOJI_RANGES_VERSION: &str = "暫定の区画表 1";
 
 /// 中黒。`・` の数。
 ///
-/// <strong>カタカナ語の区切りに使われた `・` を除く。</strong> 前後がともにカタカナである `・` は
+/// カタカナ語の区切りに使われた `・` を除く。 前後がともにカタカナである `・` は
 /// 複合語の区切り（「アプリケーション・サーバ」）であって、並列の選択ではない。
 #[must_use]
 pub fn middle_dot(prose: &[Segment]) -> Measured {
@@ -209,8 +209,8 @@ pub fn middle_dot(prose: &[Segment]) -> Measured {
 
 /// 三点リーダの箇所。
 ///
-/// <strong>1 箇所とは、連続する `…` の並び全体、または連続する半角ピリオド 3 つ以上の
-/// 並び全体を指す。</strong>`……` は 1 箇所、`...` も 1 箇所、`......` も 1 箇所である。
+/// 1 箇所とは、連続する `…` の並び全体、または連続する半角ピリオド 3 つ以上の
+/// 並び全体を指す。`……` は 1 箇所、`...` も 1 箇所、`......` も 1 箇所である。
 #[must_use]
 pub fn ellipsis(prose: &[Segment]) -> Measured {
     let ja = japanese(prose);
@@ -221,7 +221,7 @@ pub fn ellipsis(prose: &[Segment]) -> Measured {
     Measured::Value(1000.0 * count_ellipsis(prose).0 as f64 / ja as f64)
 }
 
-/// 三点リーダの字数。箇所のうち<strong>重ねた箇所</strong>の割合。
+/// 三点リーダの字数。箇所のうち重ねた箇所の割合。
 #[must_use]
 pub fn ellipsis_doubled(prose: &[Segment]) -> Measured {
     let (total, doubled) = count_ellipsis(prose);
@@ -332,8 +332,8 @@ fn ratio(hit: usize, total: usize, min: usize) -> Measured {
 ///
 /// 日本語の文字と英数字が隣接する箇所を数え、そのうち空白を挟んでいないものの割合。
 ///
-/// <strong>分母は日本語の文字数ではない。</strong> 文字数で割ると、英数字を多く使う題材ほど値が
-/// 動く。<strong>約物を挟む場合は、機会にも欠落にも数えない</strong>——`Rust、` や `（Rust` は、
+/// 分母は日本語の文字数ではない。 文字数で割ると、英数字を多く使う題材ほど値が
+/// 動く。約物を挟む場合は、機会にも欠落にも数えない——`Rust、` や `（Rust` は、
 /// スペースを入れる習慣のある人でも入れない。
 #[must_use]
 pub fn missing_space(prose: &[Segment]) -> Measured {
@@ -346,7 +346,7 @@ pub fn missing_space(prose: &[Segment]) -> Measured {
                 i += 1;
                 continue;
             }
-            // 空白列を読み飛ばす。<strong>0 個でも機会である</strong>——「隣接」だけを機会に
+            // 空白列を読み飛ばす。0 個でも機会である——「隣接」だけを機会に
             // すると、空白を挟んだ側が分母から消えて値が必ず 1.0 になる。
             let mut j = i + 1;
             while chars.get(j).is_some_and(|&c| is_gap(c)) {
@@ -373,16 +373,16 @@ pub fn missing_space(prose: &[Segment]) -> Measured {
 ///
 /// 日本語の文字どうしが隣り合う箇所を数え、そのうち空白を挟んでいるものの割合。
 ///
-/// <strong>ふつうは 0 である。</strong> 日本語は分かち書きをしないので、`複数の リポジトリ を`
+/// ふつうは 0 である。 日本語は分かち書きをしないので、`複数の リポジトリ を`
 /// とは書かない。
 ///
-/// <strong>[和欧間スペース欠落](missing_space)の裏返しではない。</strong> あちらは入れるかどうかの
-/// 習慣で、入れる人も入れない人もいる。こちらは<strong>入れてはいけないところに入っているか</strong>
+/// [和欧間スペース欠落](missing_space)の裏返しではない。 あちらは入れるかどうかの
+/// 習慣で、入れる人も入れない人もいる。こちらは入れてはいけないところに入っているか
 /// を見る。
 ///
-/// <strong>書き手を分けるために置いたのではない。</strong> 実測で本人の記事 8 本すべてが 0 箇所
+/// 書き手を分けるために置いたのではない。 実測で本人の記事 8 本すべてが 0 箇所
 /// だったのに対し、和欧間の空白を機械的に入れて作った草稿が 103 箇所になり、
-/// <strong>それでも判定が通った。</strong> 通してはいけないものが通る穴を塞ぐために置いている。
+/// それでも判定が通った。 通してはいけないものが通る穴を塞ぐために置いている。
 #[must_use]
 pub fn wabun_space(prose: &[Segment]) -> Measured {
     let (mut chance, mut spaced) = (0usize, 0usize);
@@ -420,10 +420,10 @@ fn is_side(c: char) -> bool {
     text::is_japanese(c) || is_alnum(c)
 }
 
-/// 英数字。<strong>半角だけである。</strong>
+/// 英数字。半角だけである。
 ///
 /// 全角の `Ｒ` や `１` は和文と同じ字幅で組まれるので、`日本語Ａ` はベタ組みが
-/// 普通である——入れれば、<strong>全角を選んだというだけで欠落率が上がる</strong>。そして
+/// 普通である——入れれば、全角を選んだというだけで欠落率が上がる。そして
 /// 字幅は[数字の字幅](../../../docs/spec/metrics/数字の字幅.md)が別に測っている。
 fn is_alnum(c: char) -> bool {
     c.is_ascii_alphanumeric()
@@ -431,7 +431,7 @@ fn is_alnum(c: char) -> bool {
 
 /// 和欧のあいだに置かれた空白と認めるか。
 ///
-/// 半角スペースと全角スペースだけ。<strong>タブと改行は認めない</strong>——どちらも node の中の
+/// 半角スペースと全角スペースだけ。タブと改行は認めない——どちらも node の中の
 /// 折り返しとして現れるもので、桁揃えや自動折り返しで入る。機会に数えれば、
 /// 改行位置の癖がこの指標に化ける。
 fn is_gap(c: char) -> bool {
@@ -443,9 +443,9 @@ fn is_cross(a: char, b: char) -> bool {
     (text::is_japanese(a) && is_alnum(b)) || (is_alnum(a) && text::is_japanese(b))
 }
 
-/// 笑い。差し込んだ<strong>箇所</strong>の数。
+/// 笑い。差し込んだ箇所の数。
 ///
-/// 連続は 1 と数える。`www` は 3 ではなく 1。<strong>`w` 1 つも 1 と数える</strong>——回数ではなく、
+/// 連続は 1 と数える。`www` は 3 ではなく 1。`w` 1 つも 1 と数える——回数ではなく、
 /// 笑いを差し込んだ箇所の数を見たい。
 #[must_use]
 pub fn laughter(prose: &[Segment]) -> Measured {
@@ -478,7 +478,7 @@ pub fn laughter(prose: &[Segment]) -> Measured {
                 }
                 continue;
             }
-            // <strong>直後が日本語の文字でない</strong> `草`。「雑草」を拾わない。
+            // 直後が日本語の文字でない `草`。「雑草」を拾わない。
             if chars[i] == '草' {
                 let next_ok = chars.get(i + 1).is_none_or(|&c| !text::is_japanese(c));
                 if next_ok {
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn 和文間スペースは入った箇所を数える() {
-        // <strong>通してはいけないものが通る穴を塞ぐ。</strong>
+        // 通してはいけないものが通る穴を塞ぐ。
         let p = prose_with(&"複数の リポジトリ を扱う。".repeat(6));
         let Measured::Value(v) = wabun_space(&p) else {
             panic!("測れる");
@@ -684,7 +684,7 @@ mod tests {
         );
     }
 
-    /// 絵文字の数だけを取る。<strong>分母は同じなので、比べられる。</strong>
+    /// 絵文字の数だけを取る。分母は同じなので、比べられる。
     fn emoji_count(extra: &str) -> f64 {
         value(emoji(&prose_with(extra)))
     }

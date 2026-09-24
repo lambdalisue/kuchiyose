@@ -1,6 +1,6 @@
 //! kakiburi。人が触る面。
 //!
-//! <strong>`review` だけが周回に出てくる。</strong> ほかは素材が増えたときにしか動かさない。
+//! `review` だけが周回に出てくる。 ほかは素材が増えたときにしか動かさない。
 
 mod analyzer;
 mod effective_json;
@@ -28,8 +28,8 @@ fn main() {
 }
 
 fn run(args: &[String]) -> Exit {
-    // <strong>`--help` は引数解析の前に見る。</strong> 位置引数がファイルなので、そのまま渡すと
-    // `--help` がファイル名として解釈され、<strong>「読めない（65）」で終わる。</strong>
+    // `--help` は引数解析の前に見る。 位置引数がファイルなので、そのまま渡すと
+    // `--help` がファイル名として解釈され、「読めない（65）」で終わる。
     if let Some(name) = args.first() {
         if args[1..].iter().any(|a| a == "--help" || a == "-h") {
             return match section(name) {
@@ -64,7 +64,7 @@ fn run(args: &[String]) -> Exit {
     }
 }
 
-/// 1 つのコマンドの help。<strong>知らない名前なら `None`。</strong>
+/// 1 つのコマンドの help。知らない名前なら `None`。
 ///
 /// 全体の help と同じ文を使う——2 か所に書けば、片方だけが古くなる。
 fn section(name: &str) -> Option<&'static str> {
@@ -84,80 +84,80 @@ fn section(name: &str) -> Option<&'static str> {
 const MEASURE: &str = "\
 kakiburi measure <ファイル> --source <取り込み元> [--cassette <カセット>] [--json]
     1 本を測る。カセットが無くても動く。
-    <strong>カセットを渡すと、照合値・人らしさ値・系統の距離も出る。</strong>
+    カセットを渡すと、照合値・人らしさ値・系統の距離も出る。
     渡さなければ指示できる指標だけ——語彙が無いので、その場で選べば違う軸の
     ベクトルどうしの距離になる。
-    <strong>判定はしない。</strong> 3 段で判定するのは review である。";
+    判定はしない。 3 段で判定するのは review である。";
 
 const DECIDE: &str = "\
 kakiburi decide <カセット> boilerplate <文字列...>
 kakiburi decide <カセット> movement <指標> moves|stuck
-    <strong>素材から導けないものを書く。</strong> 落とす定型は人が決め、
+    素材から導けないものを書く。 落とす定型は人が決め、
     指示して動くかは直させてみて初めて分かる。
-    <strong>落とす定型は渡した一覧で置き換える</strong>——足していく形にしない。";
+    落とす定型は渡した一覧で置き換える——足していく形にしない。";
 
 const BUILD: &str = "\
 kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--scene <場面>]
                                       [--baseline <フォルダ>] [--other <フォルダ>]
                                       [--model <名前> --version <版>] [--json]
-    素材のフォルダから目盛りを作る。<strong>これを毎回打つ。</strong>
-    <strong>カセットが無ければ作り、在れば人が決めたことを引き継いで作り直す。</strong>
+    素材のフォルダから目盛りを作る。これを毎回打つ。
+    カセットが無ければ作り、在れば人が決めたことを引き継いで作り直す。
     カセットの経路の既定は <フォルダ>.kb、場面の既定は default。
 
-    <strong>カセットは本文を持たない</strong>ので、作り直すたびにフォルダを読む。
-    <strong>取り込み元は拡張子から決める</strong>——.html は html、ほかは directive-markdown。
-    <strong>作らずに終わる条件を持つ</strong>——止まっても失敗ではない。作れたら割りを出す。
+    カセットは本文を持たないので、作り直すたびにフォルダを読む。
+    取り込み元は拡張子から決める——.html は html、ほかは directive-markdown。
+    作らずに終わる条件を持つ——止まっても失敗ではない。作れたら割りを出す。
 
     フォルダは 3 つある。
       位置引数      本人の文書。照合の相手集合と天井になる
-      --baseline  基準。LLM の既定出力。床になる。<strong>省くと同梱の池</strong>
-      --other     <strong>他人の文書。</strong> 人らしさの人の側の較正にだけ効く
+      --baseline  基準。LLM の既定出力。床になる。省くと同梱の池
+      --other     他人の文書。 人らしさの人の側の較正にだけ効く
 
-    <strong>同梱でない基準には --model と --version が要る</strong>（--param / --topic も取る）。
+    同梱でない基準には --model と --version が要る（--param / --topic も取る）。
     記録の無い基準で作った値は、次に測ったときに比べられない。
 
-    <strong>基準の束ね方は build が決める。</strong> 池の 1 本は地の文 4,500 字あたりで
+    基準の束ね方は build が決める。 池の 1 本は地の文 4,500 字あたりで
     頭打ちになるので、本人に長い記事があると長さの範囲の防護柵に当たる。
-    届かない分は池の記事を束ねて 1 単位にし、<strong>断られたら束ね方を変えて作り直す。</strong>";
+    届かない分は池の記事を束ねて 1 単位にし、断られたら束ね方を変えて作り直す。";
 
 const REVIEW: &str = "\
 kakiburi review <ファイル> --cassette <カセット> --source <取り込み元> [--json]
     検める。3 値と指摘を返す。
-    <strong>どの場面として検めるかはカセットが言う</strong>——1 カセットが 1 場面なので、
+    どの場面として検めるかはカセットが言う——1 カセットが 1 場面なので、
     入れ物を選ぶことが場面を選ぶことである。
-    <strong>目盛りの無いカセットは判定できない（2）を返す</strong>——素材が足りずに作れな
+    目盛りの無いカセットは判定できない（2）を返す——素材が足りずに作れな
     かったのは正常な状態である。";
 
 const COMPARE: &str = "\
 kakiburi compare <ファイル>... --source <取り込み元> [--cassette <カセット>]
-    並べて比べる。<strong>3 本以上を取る</strong>——n 周した草稿を並べて散らばりを見る。
-    <strong>カセットを渡すと、照合値・人らしさ値・系統の距離と帯も出る。</strong>
-    渡さなければ指示できる指標だけ——<strong>それでは天井と比べられない。</strong>";
+    並べて比べる。3 本以上を取る——n 周した草稿を並べて散らばりを見る。
+    カセットを渡すと、照合値・人らしさ値・系統の距離と帯も出る。
+    渡さなければ指示できる指標だけ——それでは天井と比べられない。";
 
 const DOCTOR: &str = "\
 kakiburi doctor <カセット>
-    <strong>中身を出して、検める。</strong> 場面・世代・決めたこと・帯・語彙の大きさ・割り・
+    中身を出して、検める。 場面・世代・決めたこと・帯・語彙の大きさ・割り・
     効く指標・言い回しの表と、指紋が環境と合っているか、派生物が揃っているか、
     帯が全体を覆っていないか。
-    <strong>覗くことと検めることを分けない</strong>——中身の大半が両方に出るので、
+    覗くことと検めることを分けない——中身の大半が両方に出るので、
     分ければ打つほうを毎回選ばされる。
-    <strong>素材は要らない。</strong> 本人がいちばん高く出るかは build が測る——
+    素材は要らない。 本人がいちばん高く出るかは build が測る——
     そちらは素材を持っているときにしか言えない。
-    <strong>本文は持たないので、素材の分布は出ない</strong>——それは build が出す。";
+    本文は持たないので、素材の分布は出ない——それは build が出す。";
 
 const METRICS: &str = "\
 kakiburi metrics
     登録簿を回して一覧を出す。使う側が一覧を持たないことの裏返し。";
 
-/// 環境変数。<strong>help に出さなければ、仕様を読むまで進めない。</strong>
+/// 環境変数。help に出さなければ、仕様を読むまで進めない。
 const ENVIRONMENT: &str = "\
 環境
 
   KAKIBURI_BASELINES       基準の池（既定: 作業ディレクトリの baselines）
 
-  <strong>用意するものは無い。</strong> 形態素解析器も辞書も実行ファイルに同梱してある
+  用意するものは無い。 形態素解析器も辞書も実行ファイルに同梱してある
   ——Lindera と UniDic 2.1.2 である。
-  <strong>環境に置けば消える</strong>：指した先が消えていても道具は「解析器あり」と
+  環境に置けば消える：指した先が消えていても道具は「解析器あり」と
   名乗り、以後すべての計測が黙って 0 形態素になる。実際にそうなった。";
 
 fn print_help() {
@@ -165,9 +165,9 @@ fn print_help() {
     println!();
     println!("作る——素材が増えたとき");
     println!();
-    println!("  <strong>1 カセットが 1 場面である。</strong> 語彙も重みも帯も 1 場面ぶんで、");
+    println!("  1 カセットが 1 場面である。 語彙も重みも帯も 1 場面ぶんで、");
     println!("  場面を分けるならファイルを分ける。");
-    println!("  <strong>カセットは本文を持たない。</strong> 素材のフォルダが正本である。");
+    println!("  カセットは本文を持たない。 素材のフォルダが正本である。");
     for s in [BUILD, DECIDE] {
         println!();
         println!("{s}");
@@ -186,21 +186,21 @@ fn print_help() {
     }
     println!();
     println!("取り込み元: {}", source_names().join(" / "));
-    println!("  <strong>--source に既定は無い。</strong> 取り違えても数が変わるだけで、エラーにならない。");
+    println!("  --source に既定は無い。 取り違えても数が変わるだけで、エラーにならない。");
     println!();
     println!("{ENVIRONMENT}");
     println!();
-    println!("<strong>--json は道具向けである。</strong> 人向けの表示は変えない。但し書きは stderr に出る。");
+    println!("--json は道具向けである。 人向けの表示は変えない。但し書きは stderr に出る。");
     println!();
     println!("終了コード: 0 通る / 1 通らない / 2 判定できない / 64 以上 使う前の問題");
     println!();
     println!("<コマンド> --help でその節だけを出せる。");
 }
-/// カセットを読む。<strong>残った一時ファイルを片づけてから開く。</strong>
+/// カセットを読む。残った一時ファイルを片づけてから開く。
 ///
 /// 置き換えの途中まで進んだ zip を放っておくと、ディレクトリに溜まる。
 ///
-/// 読めた世代を一緒に返す——<strong>置き換える直前に、いまの世代と照らす</strong>ためである。
+/// 読めた世代を一緒に返す——置き換える直前に、いまの世代と照らすためである。
 fn open(path: &str) -> Result<(Cassette, u64), Exit> {
     save::sweep(path);
     let Ok(raw) = std::fs::read(path) else {
@@ -219,7 +219,7 @@ fn open(path: &str) -> Result<(Cassette, u64), Exit> {
     }
 }
 
-/// 置き換える。<strong>断られたら、元のカセットは無傷である。</strong>
+/// 置き換える。断られたら、元のカセットは無傷である。
 fn store_back(path: &str, c: &Cassette, generation: u64) -> Result<(), Exit> {
     match save::save(path, c, Some(generation)) {
         Ok(()) => Ok(()),
@@ -230,16 +230,16 @@ fn store_back(path: &str, c: &Cassette, generation: u64) -> Result<(), Exit> {
     }
 }
 
-/// 読んだ取り込み元を指紋に置く。<strong>足すのではなく、入れ替える。</strong>
+/// 読んだ取り込み元を指紋に置く。足すのではなく、入れ替える。
 ///
-/// 取り込み元が変われば値が変わるので、<strong>指紋が動かなければ照らしても違いが出ない</strong>
+/// 取り込み元が変われば値が変わるので、指紋が動かなければ照らしても違いが出ない
 /// ——[取り込み元を間違えると 0 が並ぶ](../../../docs/spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)
 /// のに、それを検出する唯一の手がかりが動かない。
 ///
-/// <strong>足すだけにしない。</strong> 本文をカセットに溜めていた頃は、最後の 1 本を差し替えた
-/// ことを知る手段が無かったので足すしかなかった。<strong>いまは毎回フォルダを全部読む</strong>
-/// ので、いま読んだものがそのまま正本である——足すだけにすると、<strong>HTML を外して
-/// 作り直しても指紋に HTML が残る。</strong>
+/// 足すだけにしない。 本文をカセットに溜めていた頃は、最後の 1 本を差し替えた
+/// ことを知る手段が無かったので足すしかなかった。いまは毎回フォルダを全部読む
+/// ので、いま読んだものがそのまま正本である——足すだけにすると、HTML を外して
+/// 作り直しても指紋に HTML が残る。
 fn set_sources(c: &mut Cassette, files: &[String]) {
     let mut sources: Vec<String> = files
         .iter()
@@ -252,9 +252,9 @@ fn set_sources(c: &mut Cassette, files: &[String]) {
     c.fingerprint = Fingerprint::build(inputs);
 }
 
-/// 指紋を組み直す。<strong>カセットを変えたら必ず通る。</strong>
+/// 指紋を組み直す。カセットを変えたら必ず通る。
 ///
-/// <strong>変えたのに組み直さなければ、次に検めたときに「合っている」と言われる。</strong>
+/// 変えたのに組み直さなければ、次に検めたときに「合っている」と言われる。
 fn refresh(c: &mut Cassette) {
     c.fingerprint = fingerprint_with(c);
 }
@@ -269,10 +269,10 @@ fn phrase_table_len(c: &Cassette) -> usize {
 
 /// 並べて比べる。
 ///
-/// <strong>周回ごとの散らばりを見るために、3 本以上を取る。</strong> n 周した A・B・C を並べて
+/// 周回ごとの散らばりを見るために、3 本以上を取る。 n 周した A・B・C を並べて
 /// 渡す（[周回のあいだの観測](../../../docs/design/100-cassette.md#周回のあいだの観測は外でやる)）。
 ///
-/// <strong>系統の距離は出さない。</strong> カセットが無ければ語彙が決まらず、渡された 2 本から
+/// 系統の距離は出さない。 カセットが無ければ語彙が決まらず、渡された 2 本から
 /// その場で選べば違う軸のベクトルどうしの距離になる。
 fn compare(args: &[String]) -> Exit {
     let mut files: Vec<String> = Vec::new();
@@ -309,9 +309,9 @@ fn compare(args: &[String]) -> Exit {
         return missing_source();
     };
 
-    // <strong>目盛りがあれば、目盛りに載せた値も出す。</strong> 指示できる指標だけでは
+    // 目盛りがあれば、目盛りに載せた値も出す。 指示できる指標だけでは
     // [周回ごとの散らばりを天井と比べる](../../../docs/design/100-cassette.md#周回のあいだの観測は外でやる)
-    // ことができない——<strong>何周しても、近づいているのかが読めない。</strong>
+    // ことができない——何周しても、近づいているのかが読めない。
     let scale = match &cassette {
         Some(p) => match open(p) {
             Ok((c, _)) => match c.derived.scale.as_deref().and_then(scale_json::read) {
@@ -366,17 +366,17 @@ fn compare(args: &[String]) -> Exit {
         println!();
     }
     println!("{}", "-".repeat(28 + 12 * columns.len()));
-    println!("`—` は測っていない。<strong>0 ではない。</strong>");
+    println!("`—` は測っていない。0 ではない。");
 
     let Some(scale) = scale else {
         println!(
-            "<strong>系統の距離は出していない。</strong> カセットが無いと語彙が決まらないためである"
+            "系統の距離は出していない。 カセットが無いと語彙が決まらないためである"
         );
         println!("  --cassette を渡すと、照合値・人らしさ値・系統の距離も出る");
         return Exit::Pass;
     };
 
-    // <strong>目盛りに載せた値を並べる。</strong> ここが「天井と比べる」の実体である。
+    // 目盛りに載せた値を並べる。 ここが「天井と比べる」の実体である。
     println!();
     print!("{:<28}", "目盛りに載せた値");
     for (name, _) in &columns {
@@ -409,7 +409,7 @@ fn compare(args: &[String]) -> Exit {
             rows.entry(format!("  {system}")).or_default().push(Some(d));
         }
     }
-    // <strong>照合値と人らしさ値を先に出す。</strong> 判定はその 2 つで決まり、
+    // 照合値と人らしさ値を先に出す。 判定はその 2 つで決まり、
     // 系統の距離はその内訳である。
     for key in ["照合値", "人らしさ値"] {
         print_row(key, rows.get(key).map_or(&[][..], Vec::as_slice));
@@ -431,11 +431,11 @@ fn compare(args: &[String]) -> Exit {
         scale.humanness_band.floor.low,
         scale.humanness_band.floor.high
     );
-    println!("<strong>系統の距離は小さいほど相手集合に近い。</strong> 照合値はその重み付き合算である");
+    println!("系統の距離は小さいほど相手集合に近い。 照合値はその重み付き合算である");
     Exit::Pass
 }
 
-/// 1 行を並べる。<strong>測れていないものは `—` である。</strong>
+/// 1 行を並べる。測れていないものは `—` である。
 fn print_row(name: &str, values: &[Option<f64>]) {
     print!("{name:<28}");
     for v in values {
@@ -454,13 +454,13 @@ fn cut(s: &str, n: usize) -> String {
 
 /// カセットを開いて、中身と検査を出す。
 ///
-/// <strong>覗くことと検めることを分けない。</strong> 分けていたときは、中身の大半が両方に
-/// 出ていて、<strong>利用者はどちらを打つかを毎回選ばされていた</strong>——選ばせるだけの
+/// 覗くことと検めることを分けない。 分けていたときは、中身の大半が両方に
+/// 出ていて、利用者はどちらを打つかを毎回選ばされていた——選ばせるだけの
 /// 違いしか無いなら、分ける理由が無い。
 ///
-/// <strong>素材は要らない。</strong> 本人がいちばん高く出るかは [`build`] が測る——
-/// そちらは素材を持っているときにしか言えない。ここで見るのは、<strong>カセット単体で
-/// 矛盾していないか</strong>である。
+/// 素材は要らない。 本人がいちばん高く出るかは [`build`] が測る——
+/// そちらは素材を持っているときにしか言えない。ここで見るのは、カセット単体で
+/// 矛盾していないかである。
 fn doctor(args: &[String]) -> Exit {
     let Some(path) = args.first() else {
         eprintln!("カセットの経路を渡す");
@@ -474,7 +474,7 @@ fn doctor(args: &[String]) -> Exit {
     println!("場面: {}", c.scene);
     println!("世代: {}", c.generation);
 
-    // <strong>人が決めたことを先に出す。</strong> 落とす定型は値を動かすので、
+    // 人が決めたことを先に出す。 落とす定型は値を動かすので、
     // 何が落ちているかを知らずに数字だけ見ても読めない。
     if !c.decided.boilerplate.is_empty() {
         println!("落とす定型: {}", c.decided.boilerplate.join("、"));
@@ -490,11 +490,11 @@ fn doctor(args: &[String]) -> Exit {
         println!("動かないと分かった指標: {}", stuck.join("、"));
     }
 
-    // 1. 指紋が現在の環境と合っているか。<strong>共通部分だけを見る。</strong>
+    // 1. 指紋が現在の環境と合っているか。共通部分だけを見る。
     match check_fingerprint(&c) {
         Ok(()) => println!("指紋: 環境と合っている"),
         Err(diff) => {
-            println!("指紋: <strong>合わない</strong>（{}）", diff.join("、"));
+            println!("指紋: 合わない（{}）", diff.join("、"));
             bad += 1;
         }
     }
@@ -507,7 +507,7 @@ fn doctor(args: &[String]) -> Exit {
         println!("  判定に但し書きが付く");
     }
 
-    // 3. 派生物が揃っているか。<strong>片方だけあるのは壊れている。</strong>
+    // 3. 派生物が揃っているか。片方だけあるのは壊れている。
     let has_scale = c.derived.scale.is_some();
     let has_effective = c.derived.effective.is_some() && c.derived.spread.is_some();
     println!(
@@ -516,7 +516,7 @@ fn doctor(args: &[String]) -> Exit {
         if has_effective { "あり" } else { "無し" }
     );
     if has_scale != has_effective {
-        println!("  <strong>片方だけある。</strong> build し直しが要る");
+        println!("  片方だけある。 build し直しが要る");
         bad += 1;
     }
 
@@ -525,13 +525,13 @@ fn doctor(args: &[String]) -> Exit {
         return if bad == 0 { Exit::Pass } else { Exit::Unknown };
     };
 
-    // <strong>語彙の大きさを出す。</strong> 次元の数が変われば値が変わるので、
+    // 語彙の大きさを出す。 次元の数が変われば値が変わるので、
     // 別のカセットと数字を見比べるときに要る。
     for (name, set) in &scale.frozen {
         println!("  {name:<12} {:>5} 次元", set.len());
     }
 
-    // 4. 帯が全体を覆っていないか。<strong>覆っていれば「判定できない」しか返らない。</strong>
+    // 4. 帯が全体を覆っていないか。覆っていれば「判定できない」しか返らない。
     //    仮説が成り立っていない書き手・場面では、それがここに出る。
     for (name, band) in [
         ("照合値", scale.band),
@@ -542,14 +542,14 @@ fn doctor(args: &[String]) -> Exit {
             band.ceiling.low, band.ceiling.high, band.floor.low, band.floor.high
         );
         if band.floor.high >= band.ceiling.low {
-            println!("  <strong>帯が重なっている。</strong> 本人と基準が分かれていない");
+            println!("  帯が重なっている。 本人と基準が分かれていない");
             bad += 1;
         }
     }
 
-    // <strong>割りを出す。</strong> 単位名の昇順で取るので、名前に年や媒体が入っていれば
-    // 割りがその境目で分かれる——<strong>出さなければ、帯が「ある時期 対 別の時期」に
-    // なっていることに気付けない。</strong>
+    // 割りを出す。 単位名の昇順で取るので、名前に年や媒体が入っていれば
+    // 割りがその境目で分かれる——出さなければ、帯が「ある時期 対 別の時期」に
+    // なっていることに気付けない。
     for line in selection_lines(&scale.selection) {
         println!("{line}");
     }
@@ -564,31 +564,31 @@ fn doctor(args: &[String]) -> Exit {
         println!("効く指標: {works} / {} 本", effective.len());
     }
 
-    // 5. 相手集合のベクトルが噛み合っているか。<strong>本数だけでは足りない。</strong>
+    // 5. 相手集合のベクトルが噛み合っているか。本数だけでは足りない。
     if scale.partner_vectors_ok() {
         println!("相手集合のベクトル: {} 本", scale.partner_vectors.len());
     } else {
-        println!("相手集合のベクトル: <strong>目盛りと噛み合わない</strong>");
+        println!("相手集合のベクトル: 目盛りと噛み合わない");
         println!("  照合値が出せない。build し直しが要る");
         bad += 1;
     }
 
-    // 6. 言い回しの表があるか。<strong>本文の代わりなので、無ければ上限を言えない。</strong>
+    // 6. 言い回しの表があるか。本文の代わりなので、無ければ上限を言えない。
     //
-    // <strong>空の表と、表が無いことを分ける。</strong> 2 つ以上の単位に現れる言い回しが
-    // 無ければ表は正しく空になる——<strong>それを壊れと言えば、build し直しても直らない
-    // ことを要求することになる。</strong>
+    // 空の表と、表が無いことを分ける。 2 つ以上の単位に現れる言い回しが
+    // 無ければ表は正しく空になる——それを壊れと言えば、build し直しても直らない
+    // ことを要求することになる。
     match c.derived.phrases.as_deref() {
         None => {
             println!("言い回しの表: 無い");
-            println!("  <strong>繰り返しの上限を言えない。</strong> build し直しが要る");
+            println!("  繰り返しの上限を言えない。 build し直しが要る");
             bad += 1;
         }
         Some(_) => {
             let phrases = phrase_table_len(&c);
             println!("言い回しの表: {phrases} 本");
             if phrases == 0 {
-                println!("  <strong>正常な状態である。</strong> 2 つ以上の単位に現れる言い回しが無い");
+                println!("  正常な状態である。 2 つ以上の単位に現れる言い回しが無い");
             }
         }
     }
@@ -600,22 +600,22 @@ fn doctor(args: &[String]) -> Exit {
     }
 }
 
-/// 本人が基準より高く出た対の、通ると言える割合の下限。<strong>暫定値である。</strong>
+/// 本人が基準より高く出た対の、通ると言える割合の下限。暫定値である。
 ///
-/// <strong>1.0 を求めない。</strong> それは「1 対でも逆に出たら落とす」ということで、
+/// 1.0 を求めない。 それは「1 対でも逆に出たら落とす」ということで、
 /// [端で見るのと同じく n で漂う](higher_rate)——素材を足すほど落ちやすくなる。
 ///
-/// <strong>導き直していない。</strong> 目盛りが壊れていれば 0.5 付近に落ちるので、そこから
+/// 導き直していない。 目盛りが壊れていれば 0.5 付近に落ちるので、そこから
 /// 十分に離れた値を置いてある。どこまで緩めてよいかは、複数の書き手で測るまで決まらない。
 const HIGHER_RATE_FLOOR: f64 = 0.95;
 
 /// 逆に出た対を、いくつまで名指しするか。
 const INVERTED_SHOWN: usize = 5;
 
-/// 本人がいちばん高く出るかを検める。<strong>おかしかった数を返す。</strong>
+/// 本人がいちばん高く出るかを検める。おかしかった数を返す。
 ///
-/// <strong>素材を持っている `build` の側でやる。</strong> カセットは本文を持たないので、
-/// 作り終えたあとにこれを測り直す道が無い——<strong>測れる唯一の瞬間がここである。</strong>
+/// 素材を持っている `build` の側でやる。 カセットは本文を持たないので、
+/// 作り終えたあとにこれを測り直す道が無い——測れる唯一の瞬間がここである。
 fn check_person_higher(
     scale: &Scale,
     person: &[Sample<'_>],
@@ -623,7 +623,7 @@ fn check_person_higher(
     a: Option<&dyn kakiburi_metrics::morph::Analyzer>,
     say: &dyn Fn(String),
 ) -> usize {
-    // <strong>相手集合そのものは測らない。</strong> 自分との距離を測ることになる。
+    // 相手集合そのものは測らない。 自分との距離を測ることになる。
     let side = |samples: &[Sample<'_>]| -> Vec<(String, f64)> {
         samples
             .iter()
@@ -647,7 +647,7 @@ fn check_person_higher(
         mine.len() * theirs.len(),
         inverted.len()
     ));
-    // <strong>逆に出た対を名指しする。</strong> 割合だけでは、目盛り全体が緩んでいるのか
+    // 逆に出た対を名指しする。 割合だけでは、目盛り全体が緩んでいるのか
     // 1 本の単位が外れているのかが分からない。
     for (p, pv, b, bv) in inverted.iter().take(INVERTED_SHOWN) {
         say(format!("  {p} ({pv:.3}) ≦ {b} ({bv:.3})"));
@@ -658,20 +658,20 @@ fn check_person_higher(
     if rate >= HIGHER_RATE_FLOOR {
         0
     } else {
-        say("  <strong>基準のほうが高く出る対が多すぎる。</strong> 目盛りを疑う".to_owned());
+        say("  基準のほうが高く出る対が多すぎる。 目盛りを疑う".to_owned());
         say("  測っているのは著者性ではなく指示追従かもしれない".to_owned());
         1
     }
 }
 
 
-/// 本人が基準より高く出た対の割合。<strong>逆に出た対も返す。</strong>
+/// 本人が基準より高く出た対の割合。逆に出た対も返す。
 ///
-/// <strong>最小と最大では見ない。</strong> 端は n とともに外へ広がるので、素材を足すほど
-/// 本人の最小は下がり基準の最大は上がる——<strong>目盛りが良くなっても検査が落ちやすくなる</strong>。
+/// 最小と最大では見ない。 端は n とともに外へ広がるので、素材を足すほど
+/// 本人の最小は下がり基準の最大は上がる——目盛りが良くなっても検査が落ちやすくなる。
 /// [帯の端を各側で数を決めて取る](kakiburi_scale::assemble)のと同じ理由である。
 ///
-/// <strong>対ごとの比較は漂わない。</strong> 全部の対で本人が高ければ 1.0 で、これが
+/// 対ごとの比較は漂わない。 全部の対で本人が高ければ 1.0 で、これが
 /// 「本人がいちばん高く出る」の言い換えになる。
 fn higher_rate(
     mine: &[(String, f64)],
@@ -684,7 +684,7 @@ fn higher_rate(
             if pv > bv {
                 win += 1.0;
             } else {
-                // <strong>並んだ対も逆として数える。</strong> 高く出ていないことに変わりはない。
+                // 並んだ対も逆として数える。 高く出ていないことに変わりはない。
                 if pv == bv {
                     win += 0.5;
                 }
@@ -692,7 +692,7 @@ fn higher_rate(
             }
         }
     }
-    // <strong>差の小さい順に並べる。</strong> いちばん惜しい対から見せる。
+    // 差の小さい順に並べる。 いちばん惜しい対から見せる。
     inverted.sort_by(|a, b| (b.1 - b.3).total_cmp(&(a.1 - a.3)));
     #[allow(clippy::cast_precision_loss)]
     let n = (mine.len() * theirs.len()) as f64;
@@ -701,10 +701,10 @@ fn higher_rate(
 
 /// 人が決めたことを書く。
 ///
-/// <strong>素材から導けないものだけがここに来る。</strong> 落とす定型は人が決めるもので
+/// 素材から導けないものだけがここに来る。 落とす定型は人が決めるもので
 /// あり、指示して動くかは直させてみて初めて分かる。
 ///
-/// <strong>場面は取らない。</strong> 1 カセットが 1 場面なので、入れ物を選ぶことが場面を
+/// 場面は取らない。 1 カセットが 1 場面なので、入れ物を選ぶことが場面を
 /// 選ぶことである。
 fn decide(args: &[String]) -> Exit {
     let Some(path) = args.first() else {
@@ -725,9 +725,9 @@ fn decide(args: &[String]) -> Exit {
     }
 }
 
-/// 落とす定型を決める。<strong>渡した一覧で置き換える。</strong>
+/// 落とす定型を決める。渡した一覧で置き換える。
 ///
-/// 足すのではなく置き換えるのは、<strong>いま何を落としているかが 1 度で読める</strong>ようにする
+/// 足すのではなく置き換えるのは、いま何を落としているかが 1 度で読めるようにする
 /// ためである。積み上げると、消すのに別の操作が要る。
 fn decide_boilerplate(path: &str, words: &[String]) -> Exit {
     let (mut c, generation) = match open(path) {
@@ -735,7 +735,7 @@ fn decide_boilerplate(path: &str, words: &[String]) -> Exit {
         Err(e) => return e,
     };
     c.decided.boilerplate = words.to_vec();
-    // <strong>落とす範囲が変われば値が変わる。</strong> 派生物を捨てる。
+    // 落とす範囲が変われば値が変わる。 派生物を捨てる。
     c.drop_derived();
     refresh(&mut c);
     if let Err(e) = store_back(path, &c, generation) {
@@ -753,9 +753,9 @@ fn decide_boilerplate(path: &str, words: &[String]) -> Exit {
     Exit::Pass
 }
 
-/// 指示して動くかを決める。<strong>[戻る線 1 本目](../../../docs/spec/010-strategy.md#運用に入ると戻る線が-2-本できる)の入口である。</strong>
+/// 指示して動くかを決める。[戻る線 1 本目](../../../docs/spec/010-strategy.md#運用に入ると戻る線が-2-本できる)の入口である。
 ///
-/// <strong>照合値が動かなかったことを根拠にしない。</strong> 照合値は 1 つの切り口には鈍く、
+/// 照合値が動かなかったことを根拠にしない。 照合値は 1 つの切り口には鈍く、
 /// 指摘が正しく通じても動かないことがある。混ぜれば、効いている指標を `stuck` にして
 /// 捨てる。
 fn decide_movement(path: &str, args: &[String]) -> Exit {
@@ -772,7 +772,7 @@ fn decide_movement(path: &str, args: &[String]) -> Exit {
         }
     };
 
-    // <strong>登録簿に無い名前は受けない。</strong> 綴りを間違えたまま書けば、直したつもりの
+    // 登録簿に無い名前は受けない。 綴りを間違えたまま書けば、直したつもりの
     // 指標がいつまでも指摘に出続ける——エラーにならないので気付けない。
     if !measured_names().iter().any(|n| n == metric) {
         eprintln!("知らない指標: {metric}");
@@ -786,10 +786,10 @@ fn decide_movement(path: &str, args: &[String]) -> Exit {
     };
     c.decided.movement.insert(metric.clone(), state);
 
-    // <strong>前に出す指標は movement から導く派生物である。</strong> 書き換えたのに作り直さな
+    // 前に出す指標は movement から導く派生物である。 書き換えたのに作り直さな
     // ければ、`stuck` にした指標が指摘に出続ける。
     //
-    // 値も目盛りも movement では変わらないので、<strong>作り直すのはここだけである。</strong>
+    // 値も目盛りも movement では変わらないので、作り直すのはここだけである。
     let dropped = c.derived.effective.is_some();
     c.derived.effective = None;
     c.derived.spread = None;
@@ -810,7 +810,7 @@ fn decide_movement(path: &str, args: &[String]) -> Exit {
     Exit::Pass
 }
 
-/// ファイル名から拡張子を外したもの。<strong>`--id` を省いたときの名前である。</strong>
+/// ファイル名から拡張子を外したもの。`--id` を省いたときの名前である。
 fn stem_of(f: &str) -> String {
     std::path::Path::new(f)
         .file_stem()
@@ -820,21 +820,21 @@ fn stem_of(f: &str) -> String {
 
 /// 場面を名乗らなかったときの名前。
 ///
-/// <strong>半角で名付ける。</strong> 道具が勝手に作る名前を日本語にしない
-/// ——<strong>打ちにくい名前は道具の側の落ち度である。</strong>
+/// 半角で名付ける。 道具が勝手に作る名前を日本語にしない
+/// ——打ちにくい名前は道具の側の落ち度である。
 const DEFAULT_SCENE: &str = "default";
 
 /// この文章が繰り返している言い回しと、その回数。
 ///
-/// <strong>繰り返していないものは見ない。</strong> 1 度きりの言い回しは書きぶりではなく、
+/// 繰り返していないものは見ない。 1 度きりの言い回しは書きぶりではなく、
 /// その文章の題材である。
 const DRAFT_REPEAT: usize = 3;
 
-/// <strong>上限を渡す先を、道具が勧めた言い回しに限らない。</strong>
+/// 上限を渡す先を、道具が勧めた言い回しに限らない。
 ///
 /// 受け取った側は勧められていない言い回しでも足す——人らしさを通すために語尾を
-/// 揃えるのが、いちばん安い手だからである。<strong>そこを見ていなければ、道具は自分が
-/// 誘発した水増しを見逃す。</strong>
+/// 揃えるのが、いちばん安い手だからである。そこを見ていなければ、道具は自分が
+/// 誘発した水増しを見逃す。
 fn repeated_in_draft(analyzed: Option<&kakiburi_metrics::morph::Analyzed>) -> Vec<(String, usize)> {
     let mut n: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     for (g, _, _) in
@@ -846,7 +846,7 @@ fn repeated_in_draft(analyzed: Option<&kakiburi_metrics::morph::Analyzed>) -> Ve
         .into_iter()
         .filter(|(text, times)| *times >= DRAFT_REPEAT && text.chars().count() >= 4)
         .collect();
-    // <strong>長いほうを先に採る。</strong> 短い並びはその一部なので、両方出すと同じ指摘が重なる。
+    // 長いほうを先に採る。 短い並びはその一部なので、両方出すと同じ指摘が重なる。
     out.sort_by(|a, b| {
         b.1.cmp(&a.1)
             .then_with(|| b.0.chars().count().cmp(&a.0.chars().count()))
@@ -864,15 +864,15 @@ fn repeated_in_draft(analyzed: Option<&kakiburi_metrics::morph::Analyzed>) -> Ve
 
 /// 本人がその言い回しを使う、日本語 1,000 字あたりの最大。
 ///
-/// <strong>カセットの[言い回しの表](kakiburi_cassette::Derived::phrases)を引く。</strong>
-/// <strong>表に無いものは 0 である</strong>——1 つの単位にしか出てこない言い回しは上限が
+/// カセットの[言い回しの表](kakiburi_cassette::Derived::phrases)を引く。
+/// 表に無いものは 0 である——1 つの単位にしか出てこない言い回しは上限が
 /// ほぼ 0 なので、持たないのと同じ結論になる。本人が一度も使っていない言い回しを
 /// 草稿が繰り返していれば、表に無いことがそのまま指摘になる。
 fn person_ceiling(table: &BTreeMap<String, f64>, phrase: &str) -> f64 {
     table.get(phrase).copied().unwrap_or(0.0)
 }
 
-/// 言い回しの表を読む。<strong>読めない行は落とす。</strong>
+/// 言い回しの表を読む。読めない行は落とす。
 fn read_phrase_table(c: &Cassette) -> BTreeMap<String, f64> {
     let mut out = BTreeMap::new();
     let Some(body) = c.derived.phrases.as_deref() else {
@@ -894,9 +894,9 @@ fn read_phrase_table(c: &Cassette) -> BTreeMap<String, f64> {
     out
 }
 
-/// 言い回しの表を作る。<strong>本文の代わりである。</strong>
+/// 言い回しの表を作る。本文の代わりである。
 ///
-/// <strong>2 つ以上の単位に現れるものだけを持つ。</strong> 1 つの単位にしか出てこない
+/// 2 つ以上の単位に現れるものだけを持つ。 1 つの単位にしか出てこない
 /// 言い回しは、その記事の題材であって書きぶりではない——持っても上限がほぼ 0 で、
 /// 持たないのと同じ結論になる。
 fn phrase_table(
@@ -950,7 +950,7 @@ fn phrase_table(
     out
 }
 
-/// 言い回しとして持つ最短の長さ。<strong>草稿を見る側と同じ線である。</strong>
+/// 言い回しとして持つ最短の長さ。草稿を見る側と同じ線である。
 const PHRASE_CHARS: usize = 4;
 
 /// 表に載せるのに要る単位の数。
@@ -958,19 +958,19 @@ const PHRASE_UNITS: usize = 2;
 
 /// 同梱の池が版を名乗るファイル。
 ///
-/// 池を作り直したら中の版を上げる——<strong>上げなければ、中身が変わったのに
-/// 過去の値と比べられてしまう。</strong>
+/// 池を作り直したら中の版を上げる——上げなければ、中身が変わったのに
+/// 過去の値と比べられてしまう。
 const POOL_MARKER: &str = "POOL";
 
-/// 同梱の池の名前。<strong>指紋に入る。</strong>
+/// 同梱の池の名前。指紋に入る。
 const POOL_MODEL: &str = "同梱の池";
 
-/// 池から取る本数。<strong>暫定値である。</strong>
+/// 池から取る本数。暫定値である。
 ///
 /// [下限](kakiburi_scale::split::UNITS_FLOOR)は 10 だが、測れない分が出るので余裕を
 /// 持たせる。手作りの基準 21 本で目盛りが作れていたので、そのあたりに置いた。
 ///
-/// <strong>多く取れば題材の遠いものが混ざり、少なく取れば本数が下限を割る。</strong>
+/// 多く取れば題材の遠いものが混ざり、少なく取れば本数が下限を割る。
 const POOL_TAKE: usize = 24;
 
 /// 基準の池の場所。
@@ -982,13 +982,13 @@ fn baseline_pool() -> Option<String> {
     here.is_dir().then(|| "baselines".to_owned())
 }
 
-/// 池が名乗っている版。<strong>同梱の池かどうかは、池自身が言う。</strong>
+/// 池が名乗っている版。同梱の池かどうかは、池自身が言う。
 ///
-/// <strong>場所では決められない。</strong>[環境変数](baseline_pool)は同梱の池を指すのが
-/// 普通の使い方だが、どこを指しているかは道具に分からない——<strong>場所で決めると、
-/// 別の素材が同梱の池の来歴を名乗る。</strong>
+/// 場所では決められない。[環境変数](baseline_pool)は同梱の池を指すのが
+/// 普通の使い方だが、どこを指しているかは道具に分からない——場所で決めると、
+/// 別の素材が同梱の池の来歴を名乗る。
 ///
-/// <strong>だから目印を池の中に置く。</strong> 目印のあるフォルダだけが同梱の池である。
+/// だから目印を池の中に置く。 目印のあるフォルダだけが同梱の池である。
 fn pool_version(dir: &str) -> Option<String> {
     let marker = std::path::Path::new(dir).join(POOL_MARKER);
     let text = std::fs::read_to_string(marker).ok()?;
@@ -996,7 +996,7 @@ fn pool_version(dir: &str) -> Option<String> {
     (!v.is_empty()).then(|| v.to_owned())
 }
 
-/// フォルダの中の、読める文書。<strong>決定的に並べる。</strong>
+/// フォルダの中の、読める文書。決定的に並べる。
 fn readable_files(dir: &str) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -1015,7 +1015,7 @@ fn readable_files(dir: &str) -> Vec<String> {
     out
 }
 
-/// 地の文の日本語の文字数。<strong>読めないものは数えない。</strong>
+/// 地の文の日本語の文字数。読めないものは数えない。
 fn japanese_chars_of(files: &[String]) -> Vec<usize> {
     files
         .iter()
@@ -1033,15 +1033,15 @@ fn japanese_chars_of(files: &[String]) -> Vec<usize> {
 
 /// 目盛りに乗りそうな文書だけの、地の文の日本語の文字数。
 ///
-/// <strong>[長さの範囲](kakiburi_scale::length_range_ok)は測れた単位だけで測られる。</strong>
-/// 短すぎて落ちる文書まで数えて束ね方を決めると、<strong>実際より低いところから始まる
-/// 分布に合わせてしまう。</strong>
+/// [長さの範囲](kakiburi_scale::length_range_ok)は測れた単位だけで測られる。
+/// 短すぎて落ちる文書まで数えて束ね方を決めると、実際より低いところから始まる
+/// 分布に合わせてしまう。
 ///
 /// 実測で、362 字の記事まで数えていたために本人の下端が低く見え、束ねた基準が
 /// 上へ寄って防護柵に当たった——取り置きの総当たりで 4 分割のうち 1 つが目盛りを
-/// 作れず、<strong>取り置いた 12 本が丸ごと判定できない</strong>になっていた。
+/// 作れず、取り置いた 12 本が丸ごと判定できないになっていた。
 ///
-/// <strong>ここで掛けるのは字数と読点だけである。</strong> 延べ語数は解析器が要り、
+/// ここで掛けるのは字数と読点だけである。 延べ語数は解析器が要り、
 /// 束ね方を決めるだけのために全文を解析し直すのは高い。
 fn measurable_chars_of(files: &[String]) -> Vec<usize> {
     files
@@ -1065,23 +1065,23 @@ fn measurable_chars_of(files: &[String]) -> Vec<usize> {
 
 /// 池の 1 本を何本束ねて 1 単位にするかを決める。
 ///
-/// <strong>池の 1 本では本人の長い記事に届かない。</strong> 生成は地の文 4,500 字あたりで
+/// 池の 1 本では本人の長い記事に届かない。 生成は地の文 4,500 字あたりで
 /// 頭打ちになるので、本人に長い記事があると[長さの範囲](kakiburi_scale::length_range_ok)の
 /// 防護柵に当たり、目盛りが作れない。
 ///
-/// <strong>束ねる仕組みは既にある</strong>——短い文書を 1 単位にまとめるためのものを、
+/// 束ねる仕組みは既にある——短い文書を 1 単位にまとめるためのものを、
 /// 長さを届かせるために使う。束ねた結果は 1 単位なので、下限も範囲も単位で数える。
 ///
 /// 池から、本人の題材に近い分を選ぶ。
 ///
-/// <strong>題材を揃えないと、測っているのは題材である。</strong> 統制しないで訓練した文体表現は、
+/// 題材を揃えないと、測っているのは題材である。 統制しないで訓練した文体表現は、
 /// 題材を揃えたテストで AUC が .79 から .58 へ落ちる
 /// （[Wegmann](../../../docs/references/wegmann-2022.md)）。
 ///
-/// <strong>揃えるのは対ごとではなく素材全体である</strong>——対で絞ると相手の本数が変わる
+/// 揃えるのは対ごとではなく素材全体である——対で絞ると相手の本数が変わる
 /// （[統制](../../../docs/spec/200-extract.md)）。だから池から部分集合を選ぶ形にする。
 ///
-/// 近さは<strong>自立語の重なり</strong>で測る。助詞や助動詞は誰が書いても同じで、題材を
+/// 近さは自立語の重なりで測る。助詞や助動詞は誰が書いても同じで、題材を
 /// 分けない。
 fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> {
     let all = || (0..pool.len()).collect();
@@ -1123,7 +1123,7 @@ fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> 
             (theirs.intersection(&mine).count(), i)
         })
         .collect();
-    // <strong>重なりの多い順。同点なら池の並び順。</strong> 決めておかないと、同じ素材から
+    // 重なりの多い順。同点なら池の並び順。 決めておかないと、同じ素材から
     // 違う目盛りができる。
     scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let mut picked: Vec<usize> = scored.into_iter().take(take).map(|(_, i)| i).collect();
@@ -1140,33 +1140,33 @@ fn source_of(path: &str) -> Source {
     }
 }
 
-/// 返すのは<strong>池の何番目をどう束ねるか</strong>である。中の並びは池の添字。
+/// 返すのは池の何番目をどう束ねるかである。中の並びは池の添字。
 ///
-/// <strong>小さいほうから積んで本人の上端に届かせ、残りは単独で置く。</strong> こうすると単独の分が
+/// 小さいほうから積んで本人の上端に届かせ、残りは単独で置く。 こうすると単独の分が
 /// 下から中ほどを埋め、束ねた分が上端に届く。
 ///
-/// <strong>一律に束ねない。</strong> 全部を同じ本数で束ねると、大きいものどうしが合わさって
+/// 一律に束ねない。 全部を同じ本数で束ねると、大きいものどうしが合わさって
 /// 本人の上端を大きく超え、今度は基準側の範囲が広がりすぎる。実測で、一律 3 本に
 /// したら本人側 70% / 基準側 42% になった。
 ///
-/// <strong>[防護柵](kakiburi_scale::length_range_ok)は通ればよい門であって、最大化する目的ではない。</strong>
-/// この案が通るならそのまま使い、<strong>落ちたときだけ</strong>ほかの束ね方を探す。
+/// [防護柵](kakiburi_scale::length_range_ok)は通ればよい門であって、最大化する目的ではない。
+/// この案が通るならそのまま使い、落ちたときだけほかの束ね方を探す。
 ///
-/// <strong>最大化しにいくと別の場所が壊れる。</strong> 実測で、重なりを最大にする案に置き換え
-/// たら目盛りはすべて作れるようになったが、<strong>本人の通過が 15 本から 9 本へ落ちた</strong>
+/// 最大化しにいくと別の場所が壊れる。 実測で、重なりを最大にする案に置き換え
+/// たら目盛りはすべて作れるようになったが、本人の通過が 15 本から 9 本へ落ちた
 /// ——長さの重なりが最大の案が、値の帯まで良くしてくれるわけではない。
 #[cfg(test)]
 fn bundle_plan(person: &[usize], pool: &[usize]) -> Vec<Vec<usize>> {
     bundle_plans(person, pool).swap_remove(0)
 }
 
-/// 試す順に並べた束ね方。<strong>1 案目が本命で、残りは断られたときの控えである。</strong>
+/// 試す順に並べた束ね方。1 案目が本命で、残りは断られたときの控えである。
 ///
-/// <strong>通るかどうかは作ってみないと分からない。</strong> 長さの範囲は測れた単位だけで
+/// 通るかどうかは作ってみないと分からない。 長さの範囲は測れた単位だけで
 /// 測られ、どれが測れるかは全文を解析するまで決まらない——ここで計算する重なりは
-/// <strong>近似でしかない。</strong>
+/// 近似でしかない。
 ///
-/// だから<strong>選ぶのではなく、順番を付けて渡す。</strong> 決めるのは build である。
+/// だから選ぶのではなく、順番を付けて渡す。 決めるのは build である。
 fn bundle_plans(person: &[usize], pool: &[usize]) -> Vec<Vec<Vec<usize>>> {
     let single = || -> Vec<Vec<usize>> { (0..pool.len()).map(|i| vec![i]).collect() };
     let (Some(&p_hi), Some(&b_hi)) = (person.iter().max(), pool.iter().max()) else {
@@ -1175,7 +1175,7 @@ fn bundle_plans(person: &[usize], pool: &[usize]) -> Vec<Vec<Vec<usize>>> {
     let mut order: Vec<usize> = (0..pool.len()).collect();
     order.sort_by_key(|&i| pool[i]);
 
-    // <strong>本命は今までと同じ案である。</strong> 小さいほうから積んで本人の上端に届かせ、
+    // 本命は今までと同じ案である。 小さいほうから積んで本人の上端に届かせ、
     // 残りは単独で置く。これが通る素材のほうが多い。
     let mut out: Vec<Vec<Vec<usize>>> = Vec::new();
     if b_hi > 0 && p_hi > b_hi {
@@ -1183,7 +1183,7 @@ fn bundle_plans(person: &[usize], pool: &[usize]) -> Vec<Vec<Vec<usize>>> {
     }
     out.push(single());
 
-    // <strong>控えは重なりの良い順。</strong> 近似でしかないが、順番を付ける材料はこれしかない。
+    // 控えは重なりの良い順。 近似でしかないが、順番を付ける材料はこれしかない。
     let mut rest: Vec<(f64, Vec<Vec<usize>>)> = Vec::new();
     for step in 1..=12u32 {
         let target = p_hi * step as usize / 12;
@@ -1236,9 +1236,9 @@ fn lengths_of(plan: &[Vec<usize>], pool: &[usize]) -> Vec<usize> {
         .collect()
 }
 
-/// [防護柵](kakiburi_scale::length_range_ok)の採点。<strong>小さいほうの比を返す。</strong>
+/// [防護柵](kakiburi_scale::length_range_ok)の採点。小さいほうの比を返す。
 ///
-/// 片方だけ良くても通らないので、最大化するのは<strong>悪いほう</strong>である。
+/// 片方だけ良くても通らないので、最大化するのは悪いほうである。
 fn overlap_score(person: &[usize], baseline: &[usize]) -> f64 {
     let span = |v: &[usize]| -> Option<(f64, f64)> {
         #[allow(clippy::cast_precision_loss)]
@@ -1253,26 +1253,26 @@ fn overlap_score(person: &[usize], baseline: &[usize]) -> f64 {
 
 /// 素材のフォルダから目盛りを作る。
 ///
-/// <strong>入れ物を別に作らせない。</strong> 素材をフォルダに置く形にした時点で、
-/// 段は「作る」と「測る」の 2 つではなくなった——<strong>空のカセットにできることは
-/// [人が決めたこと](decide)を書くことだけで、それは目盛りができた後でも打てる。</strong>
+/// 入れ物を別に作らせない。 素材をフォルダに置く形にした時点で、
+/// 段は「作る」と「測る」の 2 つではなくなった——空のカセットにできることは
+/// [人が決めたこと](decide)を書くことだけで、それは目盛りができた後でも打てる。
 ///
-/// <strong>カセットは本文を持たない</strong>ので、作り直すたびにフォルダから読み直す
+/// カセットは本文を持たないので、作り直すたびにフォルダから読み直す
 /// （[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）。
 ///
-/// <strong>作らずに終わる条件を持つ。</strong> 止まっても失敗ではない——目盛りの無いカセットが
+/// 作らずに終わる条件を持つ。 止まっても失敗ではない——目盛りの無いカセットが
 /// 出来上がり、`0` で終わる。
 fn build(args: &[String]) -> Exit {
     let Some(person_dir) = args.first().cloned() else {
         eprintln!("本人の記事が入ったフォルダを渡す");
-        eprintln!("<strong>カセットは本文を持たない。</strong> 作り直すたびに素材を読む");
+        eprintln!("カセットは本文を持たない。 作り直すたびに素材を読む");
         return Exit::Usage;
     };
     let mut cassette: Option<String> = None;
     let mut scene_name: Option<String> = None;
     let mut baseline_dir: Option<String> = None;
     let mut other_dir: Option<String> = None;
-    // 基準の作り方。<strong>記録の無い基準で作った値は、次に測ったときに比べられない。</strong>
+    // 基準の作り方。記録の無い基準で作った値は、次に測ったときに比べられない。
     let mut model: Option<String> = None;
     let mut version: Option<String> = None;
     let mut params: BTreeMap<String, String> = BTreeMap::new();
@@ -1312,12 +1312,12 @@ fn build(args: &[String]) -> Exit {
         i += 2;
     }
     let path = &cassette.unwrap_or_else(|| format!("{person_dir}.kb"));
-    // <strong>作り方を知っているのは同梱の池だけである。</strong> ほかはどこから来たか
-    // 分からないので、<strong>版まで名乗らせる</strong>——モデル名だけでは足りない。
+    // 作り方を知っているのは同梱の池だけである。 ほかはどこから来たか
+    // 分からないので、版まで名乗らせる——モデル名だけでは足りない。
     // 版が変われば出力が変わり、[記録の無い基準で作った値は次に測ったときに
     // 比べられない](../../../docs/spec/200-extract.md#版と推論設定まで記録する)。
     //
-    // <strong>同梱かどうかは池自身が言う。</strong> 場所では決められない。
+    // 同梱かどうかは池自身が言う。 場所では決められない。
     let Some(baseline_dir) = baseline_dir.or_else(baseline_pool) else {
         eprintln!("基準が見つからない。--baseline で渡すか KAKIBURI_BASELINES を指す");
         return Exit::Usage;
@@ -1333,7 +1333,7 @@ fn build(args: &[String]) -> Exit {
     } else {
         let (Some(model), Some(version)) = (model, version) else {
             eprintln!("断る: 同梱の池でない基準には --model と --version が要る");
-            eprintln!("<strong>モデル名だけでは足りない。</strong> 版が変われば出力が変わる");
+            eprintln!("モデル名だけでは足りない。 版が変われば出力が変わる");
             eprintln!("記録の無い基準で作った値は、次に測ったときに比べられない");
             eprintln!("（同梱の池なら {POOL_MARKER} が版を名乗っている）");
             return Exit::Usage;
@@ -1346,20 +1346,20 @@ fn build(args: &[String]) -> Exit {
         }
     };
 
-    // <strong>無ければ作る。在れば人が決めたことを引き継ぐ。</strong>
+    // 無ければ作る。在れば人が決めたことを引き継ぐ。
     //
-    // <strong>在るものを消さない。</strong>[人が決めたこと](kakiburi_cassette::Decided)は
+    // 在るものを消さない。[人が決めたこと](kakiburi_cassette::Decided)は
     // 作り直せないので、消せば落とす定型も動かない指標もそこで消える——
-    // <strong>目盛りは入れ替えるので、消す理由がそもそも無い。</strong>
+    // 目盛りは入れ替えるので、消す理由がそもそも無い。
     let (mut c, generation) = match open_or_create(path, scene_name.as_deref()) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    // <strong>基準の作り方は人が決めたことである。</strong> 派生物ではないので、
+    // 基準の作り方は人が決めたことである。 派生物ではないので、
     // 目盛りを作り直しても残る。
     c.decided.baseline = baseline_made;
 
-    // <strong>`--json` でも進み方は stderr へ出す。</strong> stdout に混ぜれば、JSON として
+    // `--json` でも進み方は stderr へ出す。 stdout に混ぜれば、JSON として
     // 読めなくなる。
     let say = |line: String| {
         if json {
@@ -1403,7 +1403,7 @@ fn build(args: &[String]) -> Exit {
         ));
     }
 
-    // <strong>題材で選んでから、長さで束ねる。</strong> 逆にすると、題材の合わない分を
+    // 題材で選んでから、長さで束ねる。 逆にすると、題材の合わない分を
     // 束ねてから捨てることになる。
     let picked = pick_by_topic(&person_files, &pool_files, POOL_TAKE);
     let pool_files: Vec<String> = picked.iter().map(|&i| pool_files[i].clone()).collect();
@@ -1412,12 +1412,12 @@ fn build(args: &[String]) -> Exit {
         pool_files.len()
     ));
 
-    // <strong>束ね方は作ってみて決める。</strong> 通るかどうかは作るまで分からない——
-    // [長さの範囲](kakiburi_scale::length_range_ok)は<strong>測れた単位だけ</strong>で測られ、
+    // 束ね方は作ってみて決める。 通るかどうかは作るまで分からない——
+    // [長さの範囲](kakiburi_scale::length_range_ok)は測れた単位だけで測られ、
     // どれが測れるかは全文を解析するまで分からない。
     //
-    // <strong>手前で当てにいくと外れる。</strong> 字数と読点で近似して計画したが、延べ語数と
-    // 地の文のバイト数が効いて<strong>本人 37 本のうち使えたのは 17 本</strong>だった。
+    // 手前で当てにいくと外れる。 字数と読点で近似して計画したが、延べ語数と
+    // 地の文のバイト数が効いて本人 37 本のうち使えたのは 17 本だった。
     // 見ている分布が違えば、束ね方も違う。
     let person_lengths = measurable_chars_of(&person_files);
     let pool_lengths = japanese_chars_of(&pool_files);
@@ -1441,19 +1441,19 @@ fn build(args: &[String]) -> Exit {
             Ok(v) => v,
             Err(e) => return e,
         };
-        // <strong>名前は役を跨いで一意である。</strong> 測るときは名前で引くので、
-        // 重なれば<strong>片方の値がもう片方の値で黙って置き換わる</strong>——本人の単位が
+        // 名前は役を跨いで一意である。 測るときは名前で引くので、
+        // 重なれば片方の値がもう片方の値で黙って置き換わる——本人の単位が
         // 基準の数字で測られ、壊れた帯が正常な顔でカセットに入る。
         if let Err(why) = check_names(&person, &baseline, &others) {
             eprintln!("断る: {why}");
-            eprintln!("<strong>名前はファイル名である。</strong> 分けたいならファイル名を分ける");
+            eprintln!("名前はファイル名である。 分けたいならファイル名を分ける");
             return Exit::Usage;
         }
         report = build_scene(&mut c, &person, &baseline, &others, &mecab, json, &say);
         if attempt == last || c.derived.has_scale() {
             break;
         }
-        // <strong>環境が壊れているなら束ね直しても直らない。</strong> 案を全部試せば、
+        // 環境が壊れているなら束ね直しても直らない。 案を全部試せば、
         // 直らないことを何度も確かめるだけで時間が溶ける。
         if report.get("reason").and_then(kakiburi_cassette::json::Value::as_str)
             == Some(BROKEN_ENVIRONMENT)
@@ -1462,11 +1462,11 @@ fn build(args: &[String]) -> Exit {
         }
     }
 
-    // <strong>読んだ取り込み元を指紋に置く。</strong> 別の取り込み元で読み直したのに指紋が
+    // 読んだ取り込み元を指紋に置く。 別の取り込み元で読み直したのに指紋が
     // 古いままだと、照らしても違いが出ない。
     //
-    // <strong>他人の文書も入れる。</strong> 人らしさの較正に実際に効くので、そこだけ
-    // 別の取り込み元で読んでも指紋が動かないと、<strong>較正が変わったことを言えない。</strong>
+    // 他人の文書も入れる。 人らしさの較正に実際に効くので、そこだけ
+    // 別の取り込み元で読んでも指紋が動かないと、較正が変わったことを言えない。
     let read: Vec<String> = person_files
         .iter()
         .chain(pool_files.iter())
@@ -1474,7 +1474,7 @@ fn build(args: &[String]) -> Exit {
         .cloned()
         .collect();
     set_sources(&mut c, &read);
-    // <strong>指紋を作り直す。</strong> 語彙と z 得点と道具が値を決めるので、目盛りができた
+    // 指紋を作り直す。 語彙と z 得点と道具が値を決めるので、目盛りができた
     // 時点で指紋も変わる——変えなければ、次に検めるときに合わないことが分からない。
     refresh(&mut c);
     if let Err(e) = store_back(path, &c, generation) {
@@ -1491,12 +1491,12 @@ fn build(args: &[String]) -> Exit {
 
 /// 単位の名前が役を跨いで一意かを検める。
 ///
-/// <strong>役で名前空間を分けない。</strong> 分ければ、本人の `Rust入門` と基準の `Rust入門` が
+/// 役で名前空間を分けない。 分ければ、本人の `Rust入門` と基準の `Rust入門` が
 /// 別物として通る——[測るときは名前で引く](kakiburi_scale::assemble)ので、重なれば
-/// <strong>片方の測定値がもう片方で置き換わる。</strong>
+/// 片方の測定値がもう片方で置き換わる。
 ///
-/// <strong>[題材を揃える](../../../docs/spec/200-extract.md#題材の統制は対ではなく素材に効かせる)ほど
-/// 同じ名前が付きやすい</strong>ので、いちばん正しく集めた人がいちばん踏む。
+/// [題材を揃える](../../../docs/spec/200-extract.md#題材の統制は対ではなく素材に効かせる)ほど
+/// 同じ名前が付きやすいので、いちばん正しく集めた人がいちばん踏む。
 fn check_names(
     person: &[(String, kakiburi_doc::Document)],
     baseline: &[(String, kakiburi_doc::Document)],
@@ -1513,13 +1513,13 @@ fn check_names(
     Ok(())
 }
 
-/// カセットを開く。<strong>無ければ作る。</strong>
+/// カセットを開く。無ければ作る。
 ///
-/// <strong>在るものを消さない。</strong> カセットとして読めないものを指されたら、それは
-/// 人の別のファイルである——<strong>消さずに断る。</strong>
+/// 在るものを消さない。 カセットとして読めないものを指されたら、それは
+/// 人の別のファイルである——消さずに断る。
 ///
-/// <strong>場面は作るときだけ決まる。</strong> 在るカセットの場面と食い違う名乗りは断る
-/// ——名乗りだけ据え置いて中身を作り直せば、<strong>中身と名前が合わないカセットになる。</strong>
+/// 場面は作るときだけ決まる。 在るカセットの場面と食い違う名乗りは断る
+/// ——名乗りだけ据え置いて中身を作り直せば、中身と名前が合わないカセットになる。
 fn open_or_create(path: &str, scene: Option<&str>) -> Result<(Cassette, u64), Exit> {
     if std::path::Path::new(path).exists() {
         let (c, generation) = open(path)?;
@@ -1529,7 +1529,7 @@ fn open_or_create(path: &str, scene: Option<&str>) -> Result<(Cassette, u64), Ex
                     "断る: 既に在るカセットの場面が違う（{} / 言われたのは {asked}）",
                     c.scene
                 );
-                eprintln!("<strong>場面はファイルで分ける。</strong> --cassette で別の経路を渡す");
+                eprintln!("場面はファイルで分ける。 --cassette で別の経路を渡す");
                 return Err(Exit::Usage);
             }
         }
@@ -1545,35 +1545,35 @@ fn open_or_create(path: &str, scene: Option<&str>) -> Result<(Cassette, u64), Ex
     }
     let mut c = Cassette {
         version: store::VERSION,
-        // <strong>置き換えるたびに増える。</strong> 作った時点では 0 で、書けば 1 になる。
+        // 置き換えるたびに増える。 作った時点では 0 で、書けば 1 になる。
         generation: 0,
         fingerprint: current_fingerprint(),
-        // <strong>いまは常に暫定値が立つ。</strong> 閾値がまだ導き直されていない。
+        // いまは常に暫定値が立つ。 閾値がまだ導き直されていない。
         provisional: vec!["除外の既定".into(), "帯の端".into(), "語彙の大きさ".into()],
         scene: scene.to_owned(),
         decided: Decided::default(),
         derived: Derived::dropped(),
     };
-    // <strong>場面は指紋の材料である。</strong> 組み直さなければ、作った直後から
+    // 場面は指紋の材料である。 組み直さなければ、作った直後から
     // 「環境と合わない」になる。
     refresh(&mut c);
-    // <strong>`expected` に `None` を渡すことが「作るつもりだ」という申告になる。</strong>
+    // `expected` に `None` を渡すことが「作るつもりだ」という申告になる。
     // 見てから書くまでのあいだに割り込まれても、錠の中で断られる。
     if let Err(e) = save::save(path, &c, None) {
         eprintln!("断る: {e}");
         return Err(Exit::Unreadable);
     }
     println!("作った: {path}（場面: {scene}）");
-    // 作った直後は世代 1 である。<strong>次に書くときはそれと照らす。</strong>
+    // 作った直後は世代 1 である。次に書くときはそれと照らす。
     Ok((c, 1))
 }
 
 /// 素材のファイルを単位にする。
 ///
-/// <strong>1 本でも断ったら何も返さない。</strong> 黙って一部を落として通せば、欠けたまま
+/// 1 本でも断ったら何も返さない。 黙って一部を落として通せば、欠けたまま
 /// 目盛りが出来上がる。
 ///
-/// `plan` が空でなければ、<strong>その組ごとに 1 単位へ束ねる</strong>——1 文書では指標が
+/// `plan` が空でなければ、その組ごとに 1 単位へ束ねる——1 文書では指標が
 /// 意味を持たないほど短いものを、何本かでまとめて数えるためである。
 fn load_units(
     files: &[String],
@@ -1585,7 +1585,7 @@ fn load_units(
             eprintln!("読めない: {f}");
             return Err(Exit::Unreadable);
         };
-        // <strong>取り込み元は拡張子から決める。</strong> 既定ではなく判別である——
+        // 取り込み元は拡張子から決める。 既定ではなく判別である——
         // 取り違えれば[0 が並ぶ](../../../docs/spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)。
         match normalize(&body, source_of(f)) {
             Ok(d) => docs.push(d),
@@ -1603,15 +1603,15 @@ fn load_units(
             .zip(docs)
             .collect());
     }
-    // <strong>取り込み元が違うものは束ねない</strong>（[仕様](../../../docs/spec/200-extract.md#短い文書は束ねる)）。
+    // 取り込み元が違うものは束ねない（[仕様](../../../docs/spec/200-extract.md#短い文書は束ねる)）。
     // [升目は取り込み元ごとに効く](../../../docs/spec/030-normalize.md#対応表は取り込み元ごとに持つ)
-    // ので、混ぜると<strong>単位ごとに測れる指標が変わる。</strong>
+    // ので、混ぜると単位ごとに測れる指標が変わる。
     for group in plan {
         let mut kinds = group.iter().map(|&i| source_of(&files[i]));
         let first = kinds.next();
         if kinds.any(|k| Some(k) != first) {
             eprintln!("断る: 取り込み元の違うものを束ねようとした");
-            eprintln!("<strong>升目は取り込み元ごとに効く。</strong> 混ぜると測れる指標が単位ごとに変わる");
+            eprintln!("升目は取り込み元ごとに効く。 混ぜると測れる指標が単位ごとに変わる");
             return Err(Exit::Usage);
         }
     }
@@ -1621,10 +1621,10 @@ fn load_units(
             .iter()
             .flat_map(|&i| docs[i].nodes.iter().cloned())
             .collect();
-        // <strong>束ねた単位は、中身を名前にする。</strong> 連番にすると
+        // 束ねた単位は、中身を名前にする。 連番にすると
         // [束の構成と並び](../../../docs/spec/200-extract.md#短い文書は束ねる)が
-        // どこにも残らず、<strong>割りの表に名前だけが並んで中身が見えない</strong>
-        // ——偏っていても気付けない。<strong>並びも名前がそのまま持つ。</strong>
+        // どこにも残らず、割りの表に名前だけが並んで中身が見えない
+        // ——偏っていても気付けない。並びも名前がそのまま持つ。
         let name = group
             .iter()
             .map(|&i| stem_of(&files[i]))
@@ -1636,12 +1636,12 @@ fn load_units(
 }
 
 
-/// 環境の側で測れないときの理由。<strong>束ね直しでは直らない印である。</strong>
+/// 環境の側で測れないときの理由。束ね直しでは直らない印である。
 const BROKEN_ENVIRONMENT: &str = "環境の側で測れない指標がある";
 
-/// 目盛りを作る。<strong>作らずに終わる条件を持つ。</strong>
+/// 目盛りを作る。作らずに終わる条件を持つ。
 ///
-/// 何が起きたかを返す——<strong>道具向けの出口が要る</strong>ので、出力を組み立てながら
+/// 何が起きたかを返す——道具向けの出口が要るので、出力を組み立てながら
 /// 進み方を捨ててしまわない。
 fn build_scene(
     c: &mut Cassette,
@@ -1662,12 +1662,12 @@ fn build_scene(
         ])
     };
 
-    // <strong>定型は測るときだけ落とす。</strong> 人が決め直したら測り直せる形にしておく。
+    // 定型は測るときだけ落とす。 人が決め直したら測り直せる形にしておく。
     let person_units = stripped(c, person_units);
     let baseline_units = stripped(c, baseline_units);
     let person = samples(&person_units);
     let baseline = samples(&baseline_units);
-    // <strong>他人の文書に落とす定型は掛けない。</strong> 定型は本人の書きぶりについて
+    // 他人の文書に落とす定型は掛けない。 定型は本人の書きぶりについて
     // 人が決めたものである。
     let others = samples(other_units);
     say(format!(
@@ -1681,7 +1681,7 @@ fn build_scene(
     }
     let a = Some(mecab as &dyn kakiburi_metrics::morph::Analyzer);
 
-    // <strong>環境の側の理由で測れないものがあれば、目盛りを作らない。</strong>
+    // 環境の側の理由で測れないものがあれば、目盛りを作らない。
     // 直すのはコーパスではなく環境であり、直せば全部の値が変わる——このまま進めば、
     // 壊れた環境で出た値が正常な顔でカセットに入る。
     let broken = broken_environment(&person, &baseline, a);
@@ -1690,7 +1690,7 @@ fn build_scene(
         for (name, why) in &broken {
             say(format!("  {name}: {why}"));
         }
-        say("<strong>素材ではなく環境を直す。</strong> 足しても直らない".to_owned());
+        say("素材ではなく環境を直す。 足しても直らない".to_owned());
         c.drop_derived();
         return stopped(BROKEN_ENVIRONMENT.to_owned());
     }
@@ -1703,16 +1703,16 @@ fn build_scene(
     let scale = match assemble(material, a) {
         Ok(s) => s,
         Err(e) => {
-            // <strong>作らずに終わる。</strong> 止まっても失敗ではない。
+            // 作らずに終わる。 止まっても失敗ではない。
             say(format!("目盛りを作らない: {e}"));
-            // <strong>どの単位のどこで止まったかを言う。</strong>「10 本に届かない」だけでは、
+            // どの単位のどこで止まったかを言う。「10 本に届かない」だけでは、
             // 素材を足すべきか、長さを揃えるべきか、辞書を入れるべきかが分からない。
             let mine = kakiburi_scale::inspect(&person, a);
             print_reports("本人", &mine, json);
             print_reports("基準", &kakiburi_scale::inspect(&baseline, a), json);
-            // <strong>次の一手を言う。</strong> 止まった理由だけでは、素材を足せばよいのか
-            // 長さを揃えればよいのかが分からない——<strong>本人側が短さで落ちているなら、
-            // 足しても直らない。</strong>
+            // 次の一手を言う。 止まった理由だけでは、素材を足せばよいのか
+            // 長さを揃えればよいのかが分からない——本人側が短さで落ちているなら、
+            // 足しても直らない。
             for line in next_step(&mine) {
                 say(line);
             }
@@ -1722,8 +1722,8 @@ fn build_scene(
     };
 
     say(String::new());
-    // <strong>どう割れたかを出す。</strong> 単位名の昇順で取るので、名前に年や媒体が入って
-    // いれば相手集合と測る分がその境目で分かれる——<strong>値は出るし、エラーにもならない。</strong>
+    // どう割れたかを出す。 単位名の昇順で取るので、名前に年や媒体が入って
+    // いれば相手集合と測る分がその境目で分かれる——値は出るし、エラーにもならない。
     // 帯が「本人 対 本人」ではなく「ある時期 対 別の時期」になっていても、出さなければ
     // 出力から区別が付かない。
     for line in selection_lines(&scale.selection) {
@@ -1741,11 +1741,11 @@ fn build_scene(
         scale.band.floor.low,
         scale.band.floor.high
     ));
-    // <strong>向きを支えられなかった次元を数える。</strong> 指標の定義は、先行研究に基づいて
-    // どちらが機械の側かを名乗っている。<strong>素材がその向きを否定したなら、目盛りは
-    // 作れても人らしさを名乗れない</strong>——黙って出せば、重なった帯が「判定できない」
+    // 向きを支えられなかった次元を数える。 指標の定義は、先行研究に基づいて
+    // どちらが機械の側かを名乗っている。素材がその向きを否定したなら、目盛りは
+    // 作れても人らしさを名乗れない——黙って出せば、重なった帯が「判定できない」
     // として出るだけで、原因が基準の側にあることが誰にも見えない。
-    // <strong>分けていないので落とした次元を先に言う。</strong> 言わなければ、次の行が
+    // 分けていないので落とした次元を先に言う。 言わなければ、次の行が
     // その次元を「定義と逆に出た」として数えてしまう——落とした理由は向きではない。
     let dropped = scale.humanness.ineffective_dims();
     if !dropped.is_empty() {
@@ -1769,13 +1769,13 @@ fn build_scene(
             scale.humanness.dims().len(),
             bad.join("、")
         ));
-        // <strong>食い違いは止める理由ではない。</strong> 寄せる向きは較正から読むので、
-        // 定義と逆でも直し方は渡せる——<strong>逆だと分かったことを言うだけである。</strong>
+        // 食い違いは止める理由ではない。 寄せる向きは較正から読むので、
+        // 定義と逆でも直し方は渡せる——逆だと分かったことを言うだけである。
         let toward = scale.humanness.toward_human();
         say(format!(
             "  寄せる向き（較正が決めた）: {}",
             if toward.is_empty() {
-                "無し。<strong>どの指標も次元の向きが割れている</strong>".to_owned()
+                "無し。どの指標も次元の向きが割れている".to_owned()
             } else {
                 toward
                     .iter()
@@ -1793,11 +1793,11 @@ fn build_scene(
         scale.humanness_band.floor.high
     ));
     if scale.humanness.evenly_spread() {
-        // 語彙の狭さを見る 5 つは同じ現象を別の角度から見ている。<strong>均等に開いたら較正を疑う。</strong>
+        // 語彙の狭さを見る 5 つは同じ現象を別の角度から見ている。均等に開いたら較正を疑う。
         eprintln!("但し書き: 人らしさの合算が指標に均等に開いている。較正を疑う");
     }
 
-    // <strong>効くかの判定はここで出す。</strong> 検めが作り直せる形にしておくと、検める文書を
+    // 効くかの判定はここで出す。 検めが作り直せる形にしておくと、検める文書を
     // 見てから幅や集合を作り直す経路が書けてしまう。
     // **効くかの判定も、下端と同じ分け方に従う。** 密度や個数では 0 が「使わなかった」
     // を意味するので、素の幅で見ると**いちばん指示しやすい指標が落ちる。**
@@ -1809,7 +1809,7 @@ fn build_scene(
     let works = effective.iter().filter(|e| e.works()).count();
     say(format!("効く指標: {works} / {} 本", effective.len()));
 
-    // <strong>本人がいちばん高く出るかは、ここでしか測れない。</strong> カセットは本文を
+    // 本人がいちばん高く出るかは、ここでしか測れない。 カセットは本文を
     // 持たないので、作り終えたあとに測り直す道が無い。
     say(String::new());
     let suspect = check_person_higher(&scale, &person, &baseline, a, say);
@@ -1848,9 +1848,9 @@ fn build_scene(
         ),
     ]);
 
-    // <strong>作り終えた目盛りだけを入れる。</strong> 検めはこれを受け取る。
+    // 作り終えた目盛りだけを入れる。 検めはこれを受け取る。
     //
-    // <strong>言い回しの表は本文の代わりである。</strong> どの言い回しを訊かれるかは検める
+    // 言い回しの表は本文の代わりである。 どの言い回しを訊かれるかは検める
     // まで決まらないので、ここで畳んでおかなければ繰り返しの上限を言えない。
     c.derived = Derived {
         vocabulary: Some(vocabulary_note(&scale)),
@@ -1885,9 +1885,9 @@ fn band_json(b: kakiburi_scale::Band) -> kakiburi_cassette::json::Value {
     ])
 }
 
-/// 割りを読める形にする。<strong>4 つとも出す。</strong>
+/// 割りを読める形にする。4 つとも出す。
 ///
-/// <strong>相手集合だけでは、どこで割れたかが読めない。</strong>
+/// 相手集合だけでは、どこで割れたかが読めない。
 fn selection_lines(s: &kakiburi_scale::Selection) -> Vec<String> {
     let mut out = vec!["割り（単位名の昇順）".to_owned()];
     for (label, names) in [
@@ -1901,7 +1901,7 @@ fn selection_lines(s: &kakiburi_scale::Selection) -> Vec<String> {
     out
 }
 
-/// 桁を区切る。<strong>下限は文書でも区切って書いてある。</strong>
+/// 桁を区切る。下限は文書でも区切って書いてある。
 fn with_commas(n: usize) -> String {
     let s = n.to_string();
     let mut out = String::new();
@@ -1916,9 +1916,9 @@ fn with_commas(n: usize) -> String {
 
 /// 本人側が短さで止まっているときの、次の一手。
 ///
-/// <strong>「10 本に届かない」だけでは足りない。</strong> 素材を足すべきか、長さを揃えるべきか、
-/// 辞書を入れるべきかが分からない——<strong>短さで落ちているなら、同じ長さのものを
-/// いくら足しても届かない。</strong>
+/// 「10 本に届かない」だけでは足りない。 素材を足すべきか、長さを揃えるべきか、
+/// 辞書を入れるべきかが分からない——短さで落ちているなら、同じ長さのものを
+/// いくら足しても届かない。
 fn next_step(mine: &[kakiburi_scale::Report]) -> Vec<String> {
     let usable = mine.iter().filter(|r| r.usable()).count();
     if usable >= kakiburi_scale::split::UNITS_FLOOR {
@@ -1928,23 +1928,23 @@ fn next_step(mine: &[kakiburi_scale::Report]) -> Vec<String> {
         .iter()
         .filter(|r| !r.usable() && r.chars < kakiburi_metrics::floor::JAPANESE_CHARS)
         .count();
-    // <strong>落ちた分の大半が短さなら、足しても直らない。</strong>
+    // 落ちた分の大半が短さなら、足しても直らない。
     if short * 2 < mine.len() - usable {
         return Vec::new();
     }
     vec![
         String::new(),
-        "<strong>短い文書ばかりなので、同じものを足しても届かない。</strong>".to_owned(),
+        "短い文書ばかりなので、同じものを足しても届かない。".to_owned(),
         format!(
             "  1 単位が地の文 {} 字に届く必要がある。いまは {short} 本がそこで落ちている",
             with_commas(kakiburi_metrics::floor::JAPANESE_CHARS)
         ),
-        "  <strong>いまの道具は本人側を束ねられない。</strong> 長い文書を素材にするか、".to_owned(),
+        "  いまの道具は本人側を束ねられない。 長い文書を素材にするか、".to_owned(),
         "  1 つのファイルにまとめてから渡す".to_owned(),
     ]
 }
 
-/// 単位ごとの内訳を出す。<strong>止まった理由を単位まで下ろす。</strong>
+/// 単位ごとの内訳を出す。止まった理由を単位まで下ろす。
 fn print_reports(side: &str, reports: &[kakiburi_scale::Report], json: bool) {
     let say = |line: String| {
         if json {
@@ -1959,8 +1959,8 @@ fn print_reports(side: &str, reports: &[kakiburi_scale::Report], json: bool) {
         "{side}: 使える単位 {usable} / {} 本",
         reports.len()
     ));
-    // <strong>短さでまとめて言う。</strong> どの指標が落ちたかを 1 本ずつ並べても、
-    // <strong>読み手が知りたいのは「なぜ」と「次に何をするか」である</strong>
+    // 短さでまとめて言う。 どの指標が落ちたかを 1 本ずつ並べても、
+    // 読み手が知りたいのは「なぜ」と「次に何をするか」である
     // ——同じ理由の単位が 15 本並ぶのは、情報ではなく雑音である。
     let short: Vec<&kakiburi_scale::Report> = reports
         .iter()
@@ -1969,13 +1969,13 @@ fn print_reports(side: &str, reports: &[kakiburi_scale::Report], json: bool) {
     if !short.is_empty() {
         let longest = short.iter().map(|r| r.chars).max().unwrap_or(0);
         say(format!(
-            "  <strong>{} 本が短すぎる。</strong> 地の文の日本語が {} 字に届かない（いちばん長いもので {longest} 字）",
+            "  {} 本が短すぎる。 地の文の日本語が {} 字に届かない（いちばん長いもので {longest} 字）",
             short.len(),
             with_commas(kakiburi_metrics::floor::JAPANESE_CHARS)
         ));
-        say("  <strong>短い文書は測れない。</strong> 分布と呼べる形にならないものを 0 で埋めない".to_owned());
+        say("  短い文書は測れない。 分布と呼べる形にならないものを 0 で埋めない".to_owned());
     }
-    // 残りは 1 本ずつ言う。<strong>長さで説明が付かないものは、理由が違う。</strong>
+    // 残りは 1 本ずつ言う。長さで説明が付かないものは、理由が違う。
     for r in reports {
         if r.usable() || r.chars < kakiburi_metrics::floor::JAPANESE_CHARS {
             continue;
@@ -2000,9 +2000,9 @@ fn print_reports(side: &str, reports: &[kakiburi_scale::Report], json: bool) {
     }
 }
 
-/// 単位から<strong>定型を落とした写し</strong>を作る。
+/// 単位から定型を落とした写しを作る。
 ///
-/// <strong>素材は変えない。</strong> 定型は[人が決めたこと](../../../docs/spec/200-extract.md#定型を落とす)
+/// 素材は変えない。 定型は[人が決めたこと](../../../docs/spec/200-extract.md#定型を落とす)
 /// であって本文ではないので、決め直したら測り直せる形にしておく。
 fn stripped(
     c: &Cassette,
@@ -2027,7 +2027,7 @@ fn samples(units: &[(String, kakiburi_doc::Document)]) -> Vec<Sample<'_>> {
         .collect()
 }
 
-/// 語彙の覚え書き。<strong>次元の並びそのものは目盛りの中にある。</strong>
+/// 語彙の覚え書き。次元の並びそのものは目盛りの中にある。
 fn vocabulary_note(scale: &Scale) -> String {
     scale
         .frozen
@@ -2037,11 +2037,11 @@ fn vocabulary_note(scale: &Scale) -> String {
         .join(" / ")
 }
 
-/// 環境の側の理由で測れない指標。<strong>あれば目盛りを作らない。</strong>
+/// 環境の側の理由で測れない指標。あれば目盛りを作らない。
 ///
 /// コーパスの性質（下限未満・分母 0・書けない記法）は素材や取り込み元を替えれば
-/// 直るが、<strong>道具が無い・道具が失敗したは環境の壊れである</strong>。分母から外して済ませると、
-/// 辞書を入れ忘れたまま <strong>まともな値が出ているように見える</strong>。
+/// 直るが、道具が無い・道具が失敗したは環境の壊れである。分母から外して済ませると、
+/// 辞書を入れ忘れたまま まともな値が出ているように見える。
 ///
 /// 名前ごとに 1 度だけ挙げる。全単位で同じ理由が並ぶので、繰り返しても読めない。
 fn broken_environment(
@@ -2054,16 +2054,16 @@ fn broken_environment(
         let Some(u) = m.unmeasured().filter(|u| !u.is_corpus()) else {
             return;
         };
-        // <strong>いちばん手の限られている理由を残す。</strong>
+        // いちばん手の限られている理由を残す。
         out.entry(name.to_owned())
             .and_modify(|e| *e = (*e).min(u))
             .or_insert(u);
     };
     for s in person.iter().chain(baseline) {
-        // <strong>人らしさの側も見る。</strong> 解析器と圧縮器を使うのはこちらなので、
+        // 人らしさの側も見る。 解析器と圧縮器を使うのはこちらなので、
         // 環境の壊れはここに出る。
         let prose = s.document.prose();
-        // <strong>解析に失敗したら、解析器が無いのと同じにしない。</strong> `None` を渡すと
+        // 解析に失敗したら、解析器が無いのと同じにしない。 `None` を渡すと
         // 「道具が無い」になるが、実際は道具が返さなかった——別の理由である。
         let analyzed = analyzer.and_then(|a| kakiburi_metrics::morph::Analyzed::of(&prose, a).ok());
         if analyzer.is_some() && analyzed.is_none() {
@@ -2081,11 +2081,11 @@ fn broken_environment(
         .collect()
 }
 
-/// 単位ごとの、指示できる指標の値。<strong>効くかの判定に渡す形である。</strong>
+/// 単位ごとの、指示できる指標の値。効くかの判定に渡す形である。
 ///
-/// <strong>相手集合の 5 本ではなく、その役の全単位から取る。</strong> 帯に使わない単位も値と幅には
+/// 相手集合の 5 本ではなく、その役の全単位から取る。 帯に使わない単位も値と幅には
 /// 使う。幅そのものの決め方は[目盛りの側](kakiburi_scale::effective)が持つ——
-/// <strong>ここで作れば、検めも作れることになる。</strong>
+/// ここで作れば、検めも作れることになる。
 fn rows(
     samples: &[Sample<'_>],
     analyzer: Option<&dyn kakiburi_metrics::morph::Analyzer>,
@@ -2103,14 +2103,14 @@ fn rows(
         .collect()
 }
 
-/// 人らしさを測る。<strong>識別子を伏せてから測る。</strong>
+/// 人らしさを測る。識別子を伏せてから測る。
 ///
 /// [目盛りを作る側](kakiburi_scale)が同じ前処理を掛けている。掛けないと、`measure` が
-/// 出す値と `review` が判定に使う値が食い違う——<strong>同じ文書で違う数を 2 つ出す道具</strong>に
+/// 出す値と `review` が判定に使う値が食い違う——同じ文書で違う数を 2 つ出す道具に
 /// なる。実際そうなっていて、生の圧縮率がほぼ同じ本人と基準の記事で、寄与が
-/// <strong>+2.604 と −0.539</strong> に割れていた。
+/// +2.604 と −0.539 に割れていた。
 ///
-/// <strong>掛けるのは人らしさと照合だけである。</strong> 指示できる指標は和欧間スペースや
+/// 掛けるのは人らしさと照合だけである。 指示できる指標は和欧間スペースや
 /// 半角英字そのものを測るので、生の文から測り続ける。
 fn humanness_of(
     doc: &kakiburi_doc::Document,
@@ -2121,7 +2121,7 @@ fn humanness_of(
     kakiburi_metrics::Humanness::measure(&prose, analyzed.as_ref())
 }
 
-/// 解析し終えた形。<strong>解析器が無ければ `None`。</strong>
+/// 解析し終えた形。解析器が無ければ `None`。
 fn analyzed_of(
     prose: &[kakiburi_doc::prose::Segment],
     analyzer: Option<&dyn kakiburi_metrics::morph::Analyzer>,
@@ -2131,8 +2131,8 @@ fn analyzed_of(
 
 /// 判定できないで終える。
 ///
-/// <strong>`--json` でも必ず JSON を出す。</strong> 途中で抜ける道だけ人向けの文にすると、
-/// 道具の側は<strong>「出力が無い」を自分で場合分けする</strong>ことになる——そこは
+/// `--json` でも必ず JSON を出す。 途中で抜ける道だけ人向けの文にすると、
+/// 道具の側は「出力が無い」を自分で場合分けすることになる——そこは
 /// 判定できないと同じ側であって、壊れたわけではない。
 fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) -> Exit {
     let outcome = judge(&[], None, None, &[]);
@@ -2155,7 +2155,7 @@ fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) 
                 ("missing_systems".to_owned(), Value::Array(vec![])),
                 ("directives".to_owned(), Value::Number(0.0)),
                 ("points".to_owned(), Value::Array(vec![])),
-                // <strong>早く抜けても欄は同じである。</strong> 欄が消えれば、読む側は
+                // 早く抜けても欄は同じである。 欄が消えれば、読む側は
                 // 「出なかった」と「そもそも無い」を区別できない。
                 ("humanness_points".to_owned(), Value::Array(vec![])),
                 ("humanness_by_metric".to_owned(), Value::obj([])),
@@ -2175,7 +2175,7 @@ fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) 
 
 /// 検める。
 ///
-/// <strong>目盛りを作らない。</strong> カセットから受け取るだけである——検める文書を見てから
+/// 目盛りを作らない。 カセットから受け取るだけである——検める文書を見てから
 /// 重みや語彙を作り直す経路を作らない。
 fn review(args: &[String]) -> Exit {
     let Some(path) = args.first() else {
@@ -2250,13 +2250,13 @@ fn review(args: &[String]) -> Exit {
         }
     };
 
-    // <strong>場面はカセットが言う。</strong>[1 カセットが 1 場面](../../../docs/spec/010-strategy.md#場面ごとに閉じる)
+    // 場面はカセットが言う。[1 カセットが 1 場面](../../../docs/spec/010-strategy.md#場面ごとに閉じる)
     // なので、入れ物を選ぶことが場面を選ぶことである——選び間違いは、検める前に
-    // <strong>どのファイルを渡すかとして現れる。</strong>
+    // どのファイルを渡すかとして現れる。
     let scene = c.scene.clone();
 
-    // <strong>指紋を先に照らす。</strong> 合わないカセットで測れば、比べたものに意味が無い。
-    // 判定できないではなく <strong>使う前の問題</strong>である——64 以上で返す。
+    // 指紋を先に照らす。 合わないカセットで測れば、比べたものに意味が無い。
+    // 判定できないではなく 使う前の問題である——64 以上で返す。
     if let Err(diff) = check_fingerprint(&c) {
         eprintln!("指紋が環境と合わない: {}", diff.join("、"));
         eprintln!("測り直しが要る。過去の値とは比べられない。");
@@ -2270,7 +2270,7 @@ fn review(args: &[String]) -> Exit {
         );
     }
 
-    // <strong>目盛りが無ければ判定できない。</strong> 素材が足りずに作れなかったのは正常な
+    // 目盛りが無ければ判定できない。 素材が足りずに作れなかったのは正常な
     // 状態であり、仕様がそのために判定できないを置いている。
     let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
         return unknown(
@@ -2282,15 +2282,15 @@ fn review(args: &[String]) -> Exit {
         );
     };
 
-    // <strong>検める側にも同じ定型を掛ける。</strong> 片方だけに掛ければ、落とした分だけ値が
+    // 検める側にも同じ定型を掛ける。 片方だけに掛ければ、落とした分だけ値が
     // ずれたものを比べることになる（[同じ測り方で測る](../../../docs/spec/300-revise.md#同じ測り方で測る)）。
     let doc = doc.without_boilerplate(&c.decided.boilerplate);
 
-    // <strong>相手集合は目盛りが持っている。</strong> カセットは本文を持たないので、
+    // 相手集合は目盛りが持っている。 カセットは本文を持たないので、
     // 検める側が本文から選び直す経路そのものが無い。
     //
-    // <strong>本数だけでは足りない。</strong> 次元がずれていても距離は短いほうまでで
-    // 計算されるので、<strong>エラーにならずに違う照合値が出る。</strong>
+    // 本数だけでは足りない。 次元がずれていても距離は短いほうまでで
+    // 計算されるので、エラーにならずに違う照合値が出る。
     if !scale.partner_vectors_ok() {
         eprintln!("相手集合が目盛りと噛み合わない。目盛りが壊れている");
         eprintln!("素材のフォルダを指して build し直す");
@@ -2307,17 +2307,17 @@ fn review(args: &[String]) -> Exit {
         Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer),
     );
 
-    // <strong>照合値のどこが違うのかを言えるようにする。</strong> 1 つの数のままでは、帯の中で
+    // 照合値のどこが違うのかを言えるようにする。 1 つの数のままでは、帯の中で
     // 止まったときに受け取った側が動きようがない。
     //
-    // <strong>次元が語として読める系統だけを見る。</strong> 品詞 bigram の「名詞-助詞」を
+    // 次元が語として読める系統だけを見る。 品詞 bigram の「名詞-助詞」を
     // 増やせとは言えない。
     let readable = [
         kakiburi_metrics::System::FunctionWord,
         kakiburi_metrics::System::Comma,
         kakiburi_metrics::System::CharType,
     ];
-    // <strong>畳む前の距離を出す。</strong> 照合値は 5 つの距離を重みで畳んだものなので、
+    // 畳む前の距離を出す。 照合値は 5 つの距離を重みで畳んだものなので、
     // 畳んだあとだけではどこが動いたか分からない。
     let distances = kakiburi_scale::assemble::distances_against(
         &scale,
@@ -2348,7 +2348,7 @@ fn review(args: &[String]) -> Exit {
     let humanness = side(scale.humanness_band, got.humanness);
     let matching = side(scale.band, got.matching);
 
-    // <strong>幅も効くかの判定も、目盛りが持っているものを読むだけである。</strong>
+    // 幅も効くかの判定も、目盛りが持っているものを読むだけである。
     // 検める時点で作り直さない——作り直せるなら、検める文書を見てから作り直す
     // 経路が書ける（[分ける基準](../../../docs/design/000-architecture.md#分ける基準)）。
     let Some(effective) = c
@@ -2358,7 +2358,7 @@ fn review(args: &[String]) -> Exit {
         .zip(c.derived.effective.as_deref())
         .and_then(|(s, e)| effective_json::read(s, e))
     else {
-        // <strong>空と欠けを分ける。</strong> 判定がまだ行われていないカセットで「効く指標が
+        // 空と欠けを分ける。 判定がまだ行われていないカセットで「効く指標が
         // 1 本も無い」と読んではいけない。
         return unknown(
             json,
@@ -2370,20 +2370,20 @@ fn review(args: &[String]) -> Exit {
     };
     let defs = remedies::FromDefinitions::load();
     if defs.is_empty() {
-        // <strong>黙って指摘を落とさない。</strong> 直し方の出どころが無ければ、判定は出ても
+        // 黙って指摘を落とさない。 直し方の出どころが無ければ、判定は出ても
         // 指摘が 1 本も出ない——それを「幅の中だった」と読まれてはいけない。
         eprintln!("但し書き: 定義ファイルが見つからない。指摘の文を引けない");
     } else if json {
-        // <strong>どこから引いたかは結果ではない。</strong> stdout に混ぜれば JSON が読めない。
+        // どこから引いたかは結果ではない。 stdout に混ぜれば JSON が読めない。
         eprintln!("直し方の出どころ: 定義ファイル {} 本", defs.len());
     } else {
         println!("直し方の出どころ: 定義ファイル {} 本", defs.len());
     }
-    // <strong>前に出す指標。</strong> 効くと判定されたものから、層 3 と動かないものを除く
+    // 前に出す指標。 効くと判定されたものから、層 3 と動かないものを除く
     // （[3 段](../../../docs/spec/300-revise.md#種別を合わせて通るを出す)）。
-    // <strong>判定も指摘も、この同じ集合から取る。</strong>
-    // <strong>検める側も同じ解析器で測る。</strong> 片方だけ違えば、比べたものに意味が無い。
-    // <strong>カセットが持つ辞書で割る。</strong> 作ったときと違う割り方をすれば、
+    // 判定も指摘も、この同じ集合から取る。
+    // 検める側も同じ解析器で測る。 片方だけ違えば、比べたものに意味が無い。
+    // カセットが持つ辞書で割る。 作ったときと違う割り方をすれば、
     // 比べたものに意味が無い。
     let analyzed_now = kakiburi_metrics::morph::Analyzed::with_lexicon(
         &doc.prose(),
@@ -2404,7 +2404,7 @@ fn review(args: &[String]) -> Exit {
                 .iter()
                 .find(|(n, _)| *n == name)
                 .and_then(|(_, m)| m.value());
-            // <strong>どこが壊れているかを渡す。</strong> 「読点を外せ」と言うだけでは、
+            // どこが壊れているかを渡す。 「読点を外せ」と言うだけでは、
             // 受け取った側は文書ぜんぶを読み直すことになる。
             let where_ = match name.as_str() {
                 "語を割る読点" => analyzed_now
@@ -2436,9 +2436,9 @@ fn review(args: &[String]) -> Exit {
         .filter(|e| e.works())
         // 検査は幅で見ない。**比べる先が本人ではない。**
         .filter(|e| !defs.is_inspection(&e.name))
-        // 条件 3。<strong>動かないと分かった指標は前に出さない。</strong>
+        // 条件 3。動かないと分かった指標は前に出さない。
         .filter(|e| !c.is_stuck(&e.name))
-        // <strong>層 3 は指摘にも判定にも使わない。</strong> 止めた理由を言えないものは止めない。
+        // 層 3 は指摘にも判定にも使わない。 止めた理由を言えないものは止めない。
         .filter(|e| !defs.is_layer_three(&e.name))
         .filter_map(|e| {
             let (_, m) = measured_now.iter().find(|(n, _)| *n == e.name)?;
@@ -2454,10 +2454,10 @@ fn review(args: &[String]) -> Exit {
             })
         })
         .collect();
-    // <strong>一貫しているだけの軸も見る。判定はしない、指摘にだけ出す。</strong>
+    // 一貫しているだけの軸も見る。判定はしない、指摘にだけ出す。
     //
-    // 条件 2 は「基準と本人が違うか」で軸を選ぶので、<strong>基準と本人が一致している軸は
-    // 捨てられる</strong>——そこから草稿が外れても何も言われない。
+    // 条件 2 は「基準と本人が違うか」で軸を選ぶので、基準と本人が一致している軸は
+    // 捨てられる——そこから草稿が外れても何も言われない。
     let habits: Vec<Observed> = effective
         .iter()
         .filter(|e| e.narrow_only())
@@ -2478,7 +2478,7 @@ fn review(args: &[String]) -> Exit {
             })
         })
         .collect();
-    // <strong>人らしさの直し方は、指標ごとの値から組む。</strong> 合算した 1 つの値では
+    // 人らしさの直し方は、指標ごとの値から組む。 合算した 1 つの値では
     // 「機械の側にある」としか言えず、直し方を渡せない。
     let by_metric: Vec<kakiburi_review::HumannessObserved> = got
         .humanness_by_metric
@@ -2487,7 +2487,7 @@ fn review(args: &[String]) -> Exit {
             name: m.name.clone(),
             value: m.value,
             raise: m.raise,
-            // <strong>長い繰り返しにだけ添える。</strong> ほかの指標に言い回しを付けても、
+            // 長い繰り返しにだけ添える。 ほかの指標に言い回しを付けても、
             // どう使えばよいかを言えない。
             phrases: if m.name == "長い繰り返し" {
                 scale.phrases.clone()
@@ -2512,11 +2512,11 @@ fn review(args: &[String]) -> Exit {
             spots: d.spots.clone(),
         })
         .collect();
-    // <strong>型が使われているか。</strong> 地の文から探す——記法の外にある並びは型ではない。
+    // 型が使われているか。 地の文から探す——記法の外にある並びは型ではない。
     let joined = kakiburi_metrics::humanness::joined(&doc.prose());
     let ja = doc.japanese_chars();
-    // <strong>出ている箇所と回数を数える。</strong>「言い換えろ」と言うなら、どこを言い換えるのかを言う。
-    // <strong>回数も要る</strong>——繰り返し出ているものほど、その機械の癖である。
+    // 出ている箇所と回数を数える。「言い換えろ」と言うなら、どこを言い換えるのかを言う。
+    // 回数も要る——繰り返し出ているものほど、その機械の癖である。
     const SPOTS_SHOWN: usize = 2;
     let spots_of = |needle: &str| -> (Vec<String>, usize) {
         const AROUND: usize = 12;
@@ -2560,7 +2560,7 @@ fn review(args: &[String]) -> Exit {
                     density,
                     ceiling: k.ceiling,
                     base: k.base,
-                    // <strong>穴あきは、固定部が 2 つともこの順で同じ段落にあれば使われている。</strong>
+                    // 穴あきは、固定部が 2 つともこの順で同じ段落にあれば使われている。
                     // 間は書き手が埋めるので、そこは見ない。
                     used: match &k.tail {
                         Some(t) => joined.split('\n').any(|line| {
@@ -2577,7 +2577,7 @@ fn review(args: &[String]) -> Exit {
             })
             .collect()
     };
-    // <strong>直し方に載せた言い回しも、同じ見方で数える。</strong> 使いすぎを止めるためである。
+    // 直し方に載せた言い回しも、同じ見方で数える。 使いすぎを止めるためである。
     let phrases: Vec<kakiburi_review::Kata> = scale
         .phrase_ceilings
         .iter()
@@ -2592,7 +2592,7 @@ fn review(args: &[String]) -> Exit {
             kakiburi_review::Kata {
                 text: text.clone(),
                 rate: 0.0,
-                // <strong>本人の側は分からない。</strong> ここは草稿から作った行なので、
+                // 本人の側は分からない。 ここは草稿から作った行なので、
                 // 本人の割合を持たない——言い切らせないために 0 を渡さない筋も無い。
                 base: 0.0,
                 at: 0.0,
@@ -2604,18 +2604,18 @@ fn review(args: &[String]) -> Exit {
             }
         })
         .collect();
-    // <strong>この文章が繰り返している言い回しも、同じ物差しに乗せる。</strong>
+    // この文章が繰り返している言い回しも、同じ物差しに乗せる。
     //
-    // <strong>上限を持っていたのは道具が「繰り返せ」と言った分だけだった。</strong> 受け取った
+    // 上限を持っていたのは道具が「繰り返せ」と言った分だけだった。 受け取った
     // 側が自分で足した言い回しは誰も見ていない——実測で、人らしさを通すために
-    // <strong>本人が 49 本で 6 本しか使わない `ことになります` を 1 本に 6 回</strong>入れても、
+    // 本人が 49 本で 6 本しか使わない `ことになります` を 1 本に 6 回入れても、
     // 道具は何も言わなかった。
     //
-    // <strong>機械の型では拾えない。</strong> あれは基準の 10% 以上が使う並びしか名指しできず、
+    // 機械の型では拾えない。 あれは基準の 10% 以上が使う並びしか名指しできず、
     // この言い回しは池 44 本のうち 1 本にしか出てこない。
     //
-    // <strong>本人の上限は畳んだ表から引く。</strong> どの言い回しを訊かれるかは検めるまで
-    // 決まらないので、<strong>`build` が 2 つ以上の単位に現れるものを全部表にしてある</strong>
+    // 本人の上限は畳んだ表から引く。 どの言い回しを訊かれるかは検めるまで
+    // 決まらないので、`build` が 2 つ以上の単位に現れるものを全部表にしてある
     // ——[表に無いものは上限 0](../../../docs/design/100-cassette.md#phrasesjsonl--本文の代わり)
     // で、本人が一度も使っていないことがそのまま指摘になる。
     let ceilings = read_phrase_table(&c);
@@ -2654,9 +2654,9 @@ fn review(args: &[String]) -> Exit {
         )
         .collect();
     let katas = seen(&scale.katas);
-    // <strong>役を入れ替えた側も同じ見方で拾う。</strong>
+    // 役を入れ替えた側も同じ見方で拾う。
     let machine_katas = seen(&scale.machine_katas);
-    // <strong>語は文字列ではなく語彙素で照らす。</strong> そのまま探すと `地味` が `地味な` の
+    // 語は文字列ではなく語彙素で照らす。 そのまま探すと `地味` が `地味な` の
     // 前半に当たるだけで、`地味だ` と `地味に` を別のものとして数えてしまう。
     let here = kakiburi_metrics::word::goi(analyzed_now.as_ref());
     let machine_gois: Vec<kakiburi_review::Goi> = scale
@@ -2688,7 +2688,7 @@ fn review(args: &[String]) -> Exit {
     );
 
     if json {
-        // <strong>人向けの表示は変えない。</strong> 出すのは同じ値の生の形である。
+        // 人向けの表示は変えない。 出すのは同じ値の生の形である。
         use kakiburi_cassette::json::Value;
         #[allow(clippy::cast_precision_loss)]
         let n = |v: usize| Value::Number(v as f64);
@@ -2709,10 +2709,10 @@ fn review(args: &[String]) -> Exit {
                     machine::strings(&got.missing_humanness),
                 ),
                 (
-                    // <strong>指標ごとの観測。</strong> 合算した 1 つの値だけでは、どの指標が
+                    // 指標ごとの観測。 合算した 1 つの値だけでは、どの指標が
                     // 隔たりを担っているかを言えない——直し方を選ぶ根拠が消える。
                     //
-                    // <strong>向きも出す。</strong> 落とせば、向きを知りたい読み手は
+                    // 向きも出す。 落とせば、向きを知りたい読み手は
                     // `humanness_points` の散文を切り出すしかなくなる——
                     // [道具向けの出力](machine)が避けようとした経路そのものである。
                     "humanness_by_metric".to_owned(),
@@ -2745,8 +2745,8 @@ fn review(args: &[String]) -> Exit {
                     "katas".to_owned(),
                     Value::Array(result.katas.iter().map(Value::s).collect()),
                 ),
-                // <strong>人向けに出しているものは、道具向けにも出す。</strong> 片方にしか
-                // 無ければ、<strong>同じ検めでも読む口で結論が変わる</strong>——
+                // 人向けに出しているものは、道具向けにも出す。 片方にしか
+                // 無ければ、同じ検めでも読む口で結論が変わる——
                 // `--json` は表示を変えないという約束が、そこで崩れる。
                 (
                     "machine_katas".to_owned(),
@@ -2757,12 +2757,12 @@ fn review(args: &[String]) -> Exit {
                     Value::Array(result.machine_gois.iter().map(Value::s).collect()),
                 ),
                 (
-                    // <strong>指摘は結果であって断り書きではない。</strong> ここに入れる。
+                    // 指摘は結果であって断り書きではない。 ここに入れる。
                     "points".to_owned(),
                     Value::Array(result.points.iter().map(|p| Value::s(p.prose())).collect()),
                 ),
                 (
-                    // <strong>書きぶりの枠と混ぜない。</strong> 別の欄に出す——混ぜれば、
+                    // 書きぶりの枠と混ぜない。 別の欄に出す——混ぜれば、
                     // 機械臭さを消す指示と、その人へ寄せる指示が席を取り合う。
                     "humanness_points".to_owned(),
                     machine::strings(&result.humanness),
@@ -2772,7 +2772,7 @@ fn review(args: &[String]) -> Exit {
                     machine::strings(&result.matching),
                 ),
                 (
-                    // <strong>散文だけでは検証できない。</strong> 予測した効きが当たったかを
+                    // 散文だけでは検証できない。 予測した効きが当たったかを
                     // 確かめるには、次元と値がそのまま要る。
                     "matching_by_dim".to_owned(),
                     Value::Array(
@@ -2800,8 +2800,8 @@ fn review(args: &[String]) -> Exit {
 
     println!("前に出す指標: {} 本", directives.len());
     println!();
-    // <strong>長さで黙るなら、長さで黙ると言う。</strong> 直すと短くなり、下限を割って測れなく
-    // なる——<strong>直した側には、道具が壊れたのか自分が削りすぎたのかが分からない。</strong>
+    // 長さで黙るなら、長さで黙ると言う。 直すと短くなり、下限を割って測れなく
+    // なる——直した側には、道具が壊れたのか自分が削りすぎたのかが分からない。
     let tokens = analyzed_of(
         &doc.prose(),
         Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer),
@@ -2811,12 +2811,12 @@ fn review(args: &[String]) -> Exit {
         let floor = kakiburi_metrics::floor::TOKENS;
         if n < floor {
             println!(
-                "延べ {n} 語。<strong>下限 {floor} 語に届かないので測れない</strong>——{} 語ぶん足りない",
+                "延べ {n} 語。下限 {floor} 語に届かないので測れない——{} 語ぶん足りない",
                 floor - n
             );
         } else if n < floor + floor / 5 {
             println!(
-                "延べ {n} 語。<strong>下限 {floor} 語に近い</strong>——これ以上削ると測れなくなる"
+                "延べ {n} 語。下限 {floor} 語に近い——これ以上削ると測れなくなる"
             );
         }
     }
@@ -2891,7 +2891,7 @@ fn review(args: &[String]) -> Exit {
     Exit::from_verdict(result.outcome.verdict)
 }
 
-/// 値か、出ていないことを書く。<strong>0 と混ぜない。</strong>
+/// 値か、出ていないことを書く。0 と混ぜない。
 fn shown(v: Option<f64>) -> String {
     v.map_or_else(|| "出ていない".to_owned(), |x| format!("{x:.3}"))
 }
@@ -2907,17 +2907,17 @@ fn verdict_name(v: kakiburi_review::Verdict) -> &'static str {
 
 /// いまの環境の指紋を組み立てる。
 ///
-/// <strong>材料をすべて渡さないと組み立てられない。</strong> 混ぜ忘れは型が止める。
+/// 材料をすべて渡さないと組み立てられない。 混ぜ忘れは型が止める。
 fn current_fingerprint() -> Fingerprint {
     Fingerprint::build(base_inputs())
 }
 
-/// カセットに入れる指紋。<strong>目盛りができた時点で変わる。</strong>
+/// カセットに入れる指紋。目盛りができた時点で変わる。
 ///
 /// 語彙と z 得点と道具が値を決めるので、目盛りを入れたら指紋も入れ替える——
-/// <strong>入れ替えなければ、次に検めるときに合わないことが分からない。</strong>
+/// 入れ替えなければ、次に検めるときに合わないことが分からない。
 ///
-/// <strong>場面ごとの部分は、その場面の目盛りから読む。</strong> 1 つの場面を `build` した
+/// 場面ごとの部分は、その場面の目盛りから読む。 1 つの場面を `build` した
 /// だけで、ほかの場面の語彙が消えてはいけない。
 fn fingerprint_with(c: &Cassette) -> Fingerprint {
     let mut inputs = base_inputs();
@@ -2928,7 +2928,7 @@ fn fingerprint_with(c: &Cassette) -> Fingerprint {
         vocabulary: vocabulary_of(scale.as_ref()),
         z_scores: z_scores_of(scale.as_ref()),
         selection: selection_of(scale.as_ref()),
-        // <strong>基準の作り方は `decided` が正本である。</strong> 指紋に写した値ではなく、
+        // 基準の作り方は `decided` が正本である。 指紋に写した値ではなく、
         // 人が決めたほうを読む——写しを読むと、決め直したのに指紋が動かない。
         baseline: c.decided.baseline.clone(),
         decided: decided_inputs(&c.scene, &c.decided),
@@ -2936,7 +2936,7 @@ fn fingerprint_with(c: &Cassette) -> Fingerprint {
     Fingerprint::build(inputs)
 }
 
-/// 固定した語彙。<strong>次元の並びが変われば値が変わる。</strong>
+/// 固定した語彙。次元の並びが変われば値が変わる。
 fn vocabulary_of(scale: Option<&Scale>) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
     let Some(s) = scale else { return out };
@@ -2952,9 +2952,9 @@ fn vocabulary_of(scale: Option<&Scale>) -> BTreeMap<String, Vec<String>> {
     out
 }
 
-/// 単位の割り。<strong>束の構成と並びもここに出る。</strong>
+/// 単位の割り。束の構成と並びもここに出る。
 ///
-/// <strong>[束ねた単位は中身を名前にする](../../../docs/spec/200-extract.md#短い文書は束ねる)</strong>
+/// [束ねた単位は中身を名前にする](../../../docs/spec/200-extract.md#短い文書は束ねる)
 /// ので、どの文書をどの順で束ねたかがそのまま並びに入る。
 fn selection_of(scale: Option<&Scale>) -> BTreeMap<String, Vec<String>> {
     let mut out = BTreeMap::new();
@@ -2988,13 +2988,13 @@ fn z_scores_of(scale: Option<&Scale>) -> BTreeMap<String, Vec<(f64, f64)>> {
 
 /// 取り込み元を渡していない。
 ///
-/// <strong>取り込み元に既定を置かない。</strong> 役に既定を置かないのと同じ理由である——
-/// <strong>取り違えても、エラーは出ない。</strong> HTML を `github-markdown` として読めば、
+/// 取り込み元に既定を置かない。 役に既定を置かないのと同じ理由である——
+/// 取り違えても、エラーは出ない。 HTML を `github-markdown` として読めば、
 /// 見出しも箇条書きも記法として認識されず、節も項目も文も違う数になる。
-/// 値だけが静かに変わるので、<strong>出力を見ても間違いに気付けない。</strong>
+/// 値だけが静かに変わるので、出力を見ても間違いに気付けない。
 fn missing_source() -> Exit {
     eprintln!("--source を渡す（{}）", source_names().join(" / "));
-    eprintln!("<strong>既定を置かない。</strong> 取り違えても数が変わるだけで、エラーにならない");
+    eprintln!("既定を置かない。 取り違えても数が変わるだけで、エラーにならない");
     Exit::Usage
 }
 
@@ -3003,25 +3003,25 @@ fn source_names() -> Vec<&'static str> {
     Source::all().iter().map(|s| s.name()).collect()
 }
 
-/// 人が決めたこと。<strong>指紋に入る。</strong>
+/// 人が決めたこと。指紋に入る。
 ///
-/// <strong>場面がいちばん効く。</strong> どのカセットのファイルを渡すかが場面の指定になっている
-/// のに、入れなければ <strong>取り違えても指紋が通る</strong>——1 場面 1 ファイルという切り方が、
+/// 場面がいちばん効く。 どのカセットのファイルを渡すかが場面の指定になっている
+/// のに、入れなければ 取り違えても指紋が通る——1 場面 1 ファイルという切り方が、
 /// それ自体の守りを持たないことになる。
 ///
-/// <strong>空にしない。</strong> 空対空の比較は必ず一致するので、差が出る道が閉じる。
+/// 空にしない。 空対空の比較は必ず一致するので、差が出る道が閉じる。
 fn decided_inputs(scene: &str, d: &Decided) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    // <strong>場面の名前も入れる。</strong> 材料は場面ごとに分かれたが、名前そのものが
+    // 場面の名前も入れる。 材料は場面ごとに分かれたが、名前そのものが
     // 中身に写っていなければ、名前だけを変えたことが差にならない。
     out.insert("場面".to_owned(), scene.to_owned());
-    // <strong>落とす定型は本文を変える。</strong> 変えたのに指紋が動かなければ、落とす前の値と
+    // 落とす定型は本文を変える。 変えたのに指紋が動かなければ、落とす前の値と
     // 落としたあとの値が同じ顔で並ぶ。
     out.insert("落とす定型".to_owned(), d.boilerplate.join("\u{1F}"));
     // 基準の題材は `SceneInputs::baseline` が持つので、ここには入れない——同じものを
     // 2 か所に入れると、変わったときに違う名前で 2 回言うことになる。
     //
-    // <strong>指示して動くか。</strong> 前に出す指標が変われば、判定も指摘も変わる。
+    // 指示して動くか。 前に出す指標が変われば、判定も指摘も変わる。
     out.insert(
         "動かないと分かった指標".to_owned(),
         d.movement
@@ -3034,7 +3034,7 @@ fn decided_inputs(scene: &str, d: &Decided) -> BTreeMap<String, String> {
     out
 }
 
-/// 外部の表の版。<strong>名前だけでは足りない。</strong>
+/// 外部の表の版。名前だけでは足りない。
 ///
 /// 版が上がれば区画や推奨列が増え、同じ本文から違う値が出る。
 fn external_tables() -> BTreeMap<String, String> {
@@ -3043,19 +3043,19 @@ fn external_tables() -> BTreeMap<String, String> {
         "Unicode".to_owned(),
         kakiburi_doc::text::UNICODE_VERSION.to_owned(),
     );
-    // <strong>暫定の表も、暫定と書いて残す。</strong> 正規の表に替えたら値が変わる。
+    // 暫定の表も、暫定と書いて残す。 正規の表に替えたら値が変わる。
     out.insert(
         "絵文字の表".to_owned(),
         kakiburi_metrics::symbol::EMOJI_RANGES_VERSION.to_owned(),
     );
-    // <strong>使わない表も、使わないと書いて残す。</strong> 空にすると、あとで足したときに
+    // 使わない表も、使わないと書いて残す。 空にすると、あとで足したときに
     // 「もともと無かった」のか「混ぜ忘れた」のかが分からない。
     out.insert("語の文体値の表".to_owned(), "使わない".to_owned());
     out.insert("文末表現の辞書".to_owned(), "使わない".to_owned());
     out
 }
 
-/// 適用した対応表。<strong>版だけでは足りない。</strong>
+/// 適用した対応表。版だけでは足りない。
 ///
 /// 升目の中身を変えても版を上げ忘れれば、指紋が同じまま別の木が出る。
 fn normalization_mapping() -> BTreeMap<String, String> {
@@ -3066,13 +3066,13 @@ fn normalization_mapping() -> BTreeMap<String, String> {
     out
 }
 
-/// 指紋の材料。<strong>共通部分だけを環境から作る。</strong>
+/// 指紋の材料。共通部分だけを環境から作る。
 ///
 /// 場面ごとの部分はカセットの側にしか無い。
 fn base_inputs() -> Inputs {
     Inputs {
         common: Common {
-            // <strong>本数を指紋にしない。</strong> 同じ本数のまま数え方・除外・直し方を変えれば、
+            // 本数を指紋にしない。 同じ本数のまま数え方・除外・直し方を変えれば、
             // 値の意味が変わったのに指紋が動かず、古い派生値が使い回される。
             metric_definitions: remedies::FromDefinitions::load().digest(),
             unit_definitions: format!(
@@ -3081,7 +3081,7 @@ fn base_inputs() -> Inputs {
                 kakiburi_doc::text::UNICODE_VERSION,
             ),
             morphology: analyzer::tool(),
-            // <strong>まだ使わないものも、使わないと書いて渡す。</strong>
+            // まだ使わないものも、使わないと書いて渡す。
             dependency: Tool::unused(),
             compressor: analyzer::compressor(),
             external_tables: external_tables(),
@@ -3098,10 +3098,10 @@ fn base_inputs() -> Inputs {
 
 /// カセットの指紋を、いまの環境と照らす。
 ///
-/// <strong>合わなければ何が違うかを言う。</strong> ハッシュだけでは、変わったことは分かっても
+/// 合わなければ何が違うかを言う。 ハッシュだけでは、変わったことは分かっても
 /// 何が変わったかが分からない。
 ///
-/// <strong>照らす相手は、道具と実装と定義の側である。</strong> 辞書を入れ替えた、圧縮器が
+/// 照らす相手は、道具と実装と定義の側である。 辞書を入れ替えた、圧縮器が
 /// 変わった、指標が増えた——そこが変われば過去の値と比べられない。取り込み元と語彙は
 /// カセットが決めたことなので、カセットのものを引き継いで照らす。
 fn check_fingerprint(c: &Cassette) -> Result<(), Vec<String>> {
@@ -3116,10 +3116,10 @@ fn check_fingerprint(c: &Cassette) -> Result<(), Vec<String>> {
 
 /// 1 本を測る。
 ///
-/// <strong>カセットが無くても動く。ただし出るものが違う。</strong> 系統の距離は出ない——
+/// カセットが無くても動く。ただし出るものが違う。 系統の距離は出ない——
 /// 頻度で次元を選ぶ系統は、渡された 2 本からその場で選べば違う軸になる。
 ///
-/// <strong>黙ってスカラーだけ出さない。</strong> 系統を出せないことを言う。
+/// 黙ってスカラーだけ出さない。 系統を出せないことを言う。
 fn measure(args: &[String]) -> Exit {
     let Some(path) = args.first() else {
         eprintln!("ファイルを渡す");
@@ -3176,11 +3176,11 @@ fn measure(args: &[String]) -> Exit {
         }
     };
 
-    // <strong>解析は 1 度だけ行い、両方の出し方が同じ値を使う。</strong>
+    // 解析は 1 度だけ行い、両方の出し方が同じ値を使う。
     //
-    // 別々に解析すると<strong>片方だけが解析器を捨てる</strong>。実際そうなっていた——
+    // 別々に解析すると片方だけが解析器を捨てる。実際そうなっていた——
     // 人向けは `語を割る読点 0.000`、`--json` は `道具が無い` を返していた。
-    // <strong>同じ入力に対して、測れたか測れていないかが出し方で変わってはいけない。</strong>
+    // 同じ入力に対して、測れたか測れていないかが出し方で変わってはいけない。
     let mecab = analyzer::resolve();
     let analyzed = analyzed_of(
         &doc.prose(),
@@ -3191,7 +3191,7 @@ fn measure(args: &[String]) -> Exit {
     let values = measured_with(&doc, analyzed.as_ref());
 
     if json {
-        // <strong>人向けの表示は変えない。</strong> 出すのは同じ値の生の形である。
+        // 人向けの表示は変えない。 出すのは同じ値の生の形である。
         println!(
             "{}",
             kakiburi_cassette::json::Value::obj([
@@ -3208,8 +3208,8 @@ fn measure(args: &[String]) -> Exit {
                 ("structure".to_owned(), machine::structure(&doc)),
                 ("directives".to_owned(), machine::metrics(&values)),
                 (
-                    // <strong>人らしさの生の値も出す。</strong> カセットが無くても測れる値であり、
-                    // 出さなければ<strong>素材が向きを支えているかを外から確かめられない</strong>。
+                    // 人らしさの生の値も出す。 カセットが無くても測れる値であり、
+                    // 出さなければ素材が向きを支えているかを外から確かめられない。
                     "humanness".to_owned(),
                     machine::metrics(
                         &humanness_of(
@@ -3227,7 +3227,7 @@ fn measure(args: &[String]) -> Exit {
 
     println!("取り込み元 {}", source.name());
     println!("日本語 {} 字", doc.japanese_chars());
-    // <strong>形態素の数も出す。</strong> 字数で足りていても語で足りないことがあり、
+    // 形態素の数も出す。 字数で足りていても語で足りないことがあり、
     // そのとき何が測れないかが字数からは分からない。
     if let Some(n) = tokens {
         println!(
@@ -3249,14 +3249,14 @@ fn measure(args: &[String]) -> Exit {
     for (name, m) in values {
         match m.unmeasured() {
             None => println!("  {name:<28} {:>10.3}", m.value().unwrap_or_default()),
-            // <strong>理由をそのまま出す。</strong> まとめて「測れない」と出せば、辞書を入れ忘れた
+            // 理由をそのまま出す。 まとめて「測れない」と出せば、辞書を入れ忘れた
             // 環境が「素材が足りない」という顔で回り続ける。
             Some(u) => println!("  {name:<28} {:>10}  {}", "—", u.name()),
         }
     }
     println!("{}", "-".repeat(46));
-    println!("`—` は測っていない。<strong>0 ではない。</strong>");
-    println!("理由が「道具が無い」「道具が失敗した」なら、<strong>直すのは素材ではなく環境である。</strong>");
+    println!("`—` は測っていない。0 ではない。");
+    println!("理由が「道具が無い」「道具が失敗した」なら、直すのは素材ではなく環境である。");
     println!();
 
     let Some(path_to_cassette) = cassette else {
@@ -3290,13 +3290,13 @@ fn measure(args: &[String]) -> Exit {
         "照合値の帯: 天井 {:.3}〜{:.3} / 床 {:.3}〜{:.3}",
         scale.band.ceiling.low, scale.band.ceiling.high, scale.band.floor.low, scale.band.floor.high
     );
-    // <strong>判定はしない。</strong> 3 段の判定は検めの仕事で、ここは測るだけである
+    // 判定はしない。 3 段の判定は検めの仕事で、ここは測るだけである
     // ——混ぜれば、指摘の出ない「通る」が別の口から出ることになる。
-    println!("<strong>判定はしない。</strong> 3 段で判定するのは review である");
+    println!("判定はしない。 3 段で判定するのは review である");
     Exit::Pass
 }
 
-/// 数を散文に載せる。<strong>個数を `1.0000` と書かない。</strong>
+/// 数を散文に載せる。個数を `1.0000` と書かない。
 fn number(v: f64) -> String {
     if (v - v.round()).abs() < f64::EPSILON {
         format!("{v:.0}")
@@ -3305,15 +3305,15 @@ fn number(v: f64) -> String {
     }
 }
 
-/// 測れる指標。<strong>使う側は一覧を持たない</strong>ので、ここに置くのは呼び出しの束である。
+/// 測れる指標。使う側は一覧を持たないので、ここに置くのは呼び出しの束である。
 fn measured(doc: &kakiburi_doc::Document) -> Vec<(String, Measured)> {
     measured_with(doc, None)
 }
 
-/// 測れる指標。<strong>解析器を要るものも含める。</strong>
+/// 測れる指標。解析器を要るものも含める。
 ///
 /// 解析器が無ければ、要る軸は[道具が無い](kakiburi_metrics::Measured::ToolMissing)になる
-/// ——<strong>0 を返さない</strong>し、名前も落とさない。落とせば、書き手ごとに軸の数が変わる。
+/// ——0 を返さないし、名前も落とさない。落とせば、書き手ごとに軸の数が変わる。
 fn measured_with(
     doc: &kakiburi_doc::Document,
     analyzed: Option<&kakiburi_metrics::morph::Analyzed>,
@@ -3324,14 +3324,14 @@ fn measured_with(
         .map(|(n, m)| (n.to_owned(), m))
         .collect();
 
-    // <strong>1 つの定義が 24 本の軸に展開される。</strong> 名前は定義が作る——実装が作れば、
+    // 1 つの定義が 24 本の軸に展開される。 名前は定義が作る——実装が作れば、
     // 名前が 2 か所に現れる。
     out.push((
         "語を割る読点".to_owned(),
         kakiburi_metrics::word::splitting_commas(analyzed),
     ));
 
-    // <strong>文末の軸は node の種類ごとに出す。</strong> 1 つの定義が種類の数だけ軸を作るので、
+    // 文末の軸は node の種類ごとに出す。 1 つの定義が種類の数だけ軸を作るので、
     // 種類が増えても指標の側を書き足さなくてよい。
     out.extend(structure::register_rates(&p, analyzed));
 
@@ -3389,7 +3389,7 @@ fn fixed(
         ("段落長の変動係数", structure::paragraph_length_cv(doc)),
         ("箇条書き項目長の変動係数", structure::item_length_cv(doc)),
         ("節の長さの変動係数", structure::section_length_cv(doc)),
-        // 手で選んだ語句で数えるもの。<strong>形態素解析を要らない。</strong>
+        // 手で選んだ語句で数えるもの。形態素解析を要らない。
         ("非断定の密度", phrase::hedging(p)),
         ("対比構文", phrase::contrast(p)),
         ("自己否定の密度", phrase::self_negation(p)),
@@ -3410,7 +3410,7 @@ fn metrics(_args: &[String]) -> Exit {
         kakiburi_metrics::matching::FOR_VERDICT.len()
     );
     for s in kakiburi_metrics::matching::FOR_VERDICT {
-        // <strong>部分ベクトルごとに書く。</strong> 足して 1 つにすると、部分ごとに割っている
+        // 部分ベクトルごとに書く。 足して 1 つにすると、部分ごとに割っている
         // ことが見えなくなる。
         let parts: Vec<String> = kakiburi_metrics::matching::limits(s)
             .iter()
@@ -3430,7 +3430,7 @@ fn metrics(_args: &[String]) -> Exit {
     println!();
     println!("登録簿の全体は docs/spec/metrics/ にある。");
     println!(
-        "<strong>形態素解析は同梱である</strong>——{} / {} {}。何も用意しなくてよい。",
+        "形態素解析は同梱である——{} / {} {}。何も用意しなくてよい。",
         kakiburi_metrics::lindera::ENGINE,
         kakiburi_metrics::lindera::DICT_NAME,
         kakiburi_metrics::lindera::DICT_VERSION
@@ -3449,9 +3449,9 @@ mod tests {
 
     #[test]
     fn 人らしさは識別子を伏せてから測る() {
-        // <strong>目盛りを作る側が同じ前処理を掛けている。</strong> 掛けないと、`measure` が出す値と
+        // 目盛りを作る側が同じ前処理を掛けている。 掛けないと、`measure` が出す値と
         // `review` が判定に使う値が食い違う——同じ文書で違う数を 2 つ出す道具になる。
-        // <strong>圧縮率の下限を越える長さが要る。</strong> 越えないとどちらも「測っていない」に
+        // 圧縮率の下限を越える長さが要る。 越えないとどちらも「測っていない」に
         // なり、同じ値として通ってしまう。
         let body = "ここでは denops.vim という名前のプラグインを書いていきます。\n\n".repeat(200);
         let doc = normalize(&body, Source::PlainMarkdown).expect("正規化できる");
@@ -3465,10 +3465,10 @@ mod tests {
 
     #[test]
     fn 測る値は出し方で変わらない() {
-        // <strong>片方だけが解析器を捨てる</strong>という壊れ方をした。人向けは
+        // 片方だけが解析器を捨てるという壊れ方をした。人向けは
         // `語を割る読点 0.000`、`--json` は `道具が無い` を返していた。
         //
-        // <strong>解析器の有無で測れる軸は変わってよい。</strong> 変わってはいけないのは、
+        // 解析器の有無で測れる軸は変わってよい。 変わってはいけないのは、
         // 同じ解析器を渡したのに出し方で結果が違うことである。
         let doc = normalize(
             "あらためて取得し直す。\n\n次の段落。",
@@ -3481,7 +3481,7 @@ mod tests {
             measured_with(&doc, a.as_ref()),
             "同じ入力と同じ解析器からは同じ値が出る"
         );
-        // 解析器を捨てれば、要る軸は<strong>0 ではなく「道具が無い」</strong>になる。
+        // 解析器を捨てれば、要る軸は0 ではなく「道具が無い」になる。
         let without: Vec<Measured> = measured_with(&doc, None)
             .into_iter()
             .filter(|(n, _)| n == "語を割る読点")
@@ -3492,7 +3492,7 @@ mod tests {
 
     #[test]
     fn 池が本人の長さに届かなければ束ねる() {
-        // <strong>池の 1 本は地の文 4,500 字あたりで頭打ちになる。</strong> 本人に長い記事が
+        // 池の 1 本は地の文 4,500 字あたりで頭打ちになる。 本人に長い記事が
         // あると長さの範囲の防護柵に当たり、目盛りが作れない。実測では、池を
         // 題材でも長さでも広げたのに本人の範囲との重なりが 28% から 43% までしか
         // 伸びず、束ねて初めて通った。
@@ -3518,11 +3518,11 @@ mod tests {
 
     #[test]
     fn 束ね方は防護柵の式で選ぶ() {
-        // <strong>勘で決めた 1 案では落ちる素材がある。</strong> 取り置きの総当たりで、
+        // 勘で決めた 1 案では落ちる素材がある。 取り置きの総当たりで、
         // 4 分割のうち 1 つが長さの範囲で目盛りを作れず、取り置いた 12 本が
         // 丸ごと判定できないになっていた。
         //
-        // <strong>候補を作って、通さなければならない式そのもので採点する。</strong>
+        // 候補を作って、通さなければならない式そのもので採点する。
         let pool = vec![2200, 2900, 3000, 4400, 2400, 2600, 3200, 3800, 2300];
         for person in [
             vec![1500, 7000],
@@ -3545,7 +3545,7 @@ mod tests {
 
     #[test]
     fn 採点は悪いほうの比を返す() {
-        // <strong>片方だけ良くても通らない。</strong> 防護柵は両方に 0.5 を要求する。
+        // 片方だけ良くても通らない。 防護柵は両方に 0.5 を要求する。
         // 基準が本人の範囲に完全に含まれていると、本人側の比だけが効く。
         let wide = overlap_score(&[1000, 5000], &[2000, 3000]);
         assert!(wide < 0.5, "基準が狭すぎれば落ちる: {wide}");
@@ -3599,7 +3599,7 @@ mod tests {
     #[test]
     fn 割りは_4_つとも読める形で出る() {
         // 昇順で取るので、単位名に年や媒体が入っていれば割りがその境目で分かれる。
-        // <strong>値は出るしエラーにもならない</strong>ので、出さなければ帯が「ある時期 対
+        // 値は出るしエラーにもならないので、出さなければ帯が「ある時期 対
         // 別の時期」になっていることに気付けない。
         let s = fixture::scale();
         let lines = selection_lines(&s.selection);
@@ -3620,7 +3620,7 @@ mod tests {
     #[test]
     fn 取り込み元を省いたら断る() {
         // HTML を github-markdown として読めば、節も項目も文も違う数になる——
-        // <strong>エラーは出ず、値だけが静かに変わる。</strong>
+        // エラーは出ず、値だけが静かに変わる。
         let dir = temp_dir("no-source");
         let f = a_document(&dir, "x");
         let c = empty_cassette(&dir);
@@ -3648,10 +3648,10 @@ mod tests {
     #[test]
     fn 指標の一覧が出る() {
         assert_eq!(run(&["metrics".to_owned()]), Exit::Pass);
-        // <strong>定義と軸は 1 対 1 ではない。</strong> ほとんどの定義は軸 1 本を作るが、
+        // 定義と軸は 1 対 1 ではない。 ほとんどの定義は軸 1 本を作るが、
         // 接続詞直後の読点は語彙素 × 位置に、文末の軸は node の種類に展開される。
         //
-        // <strong>展開の分は数え上げない。</strong> 展開する側から取る——ここに数を書くと、
+        // 展開の分は数え上げない。 展開する側から取る——ここに数を書くと、
         // 種類や語彙素を足すたびに 2 か所を直すことになる。
         let expanded = kakiburi_metrics::word::conjunction_comma_names().len()
             + kakiburi_metrics::structure::register_names().len();
@@ -3661,7 +3661,7 @@ mod tests {
             24,
             "展開後の軸"
         );
-        // <strong>地の文に入る種類ごとに、敬体率と体言止め率が 1 本ずつ。</strong>
+        // 地の文に入る種類ごとに、敬体率と体言止め率が 1 本ずつ。
         assert_eq!(
             kakiburi_metrics::structure::register_names().len(),
             kakiburi_doc::node::Kind::PROSE.len() * 2,
@@ -3679,8 +3679,8 @@ mod tests {
         assert_eq!(names.len(), before);
     }
 
-    /// 目盛りの入ったカセットを置く。<strong>作るのは目盛りの側である。</strong>
-    /// 目盛りの入ったカセットを置く。<strong>作るのは目盛りの側である。</strong>
+    /// 目盛りの入ったカセットを置く。作るのは目盛りの側である。
+    /// 目盛りの入ったカセットを置く。作るのは目盛りの側である。
     fn cassette_with_scale(dir: &std::path::Path) -> String {
         let scale = fixture::scale();
         let (person, baseline) = fixture::corpus();
@@ -3694,7 +3694,7 @@ mod tests {
             derived: Derived::dropped(),
         };
         c.derived.scale = Some(scale_json::write(&scale));
-        // <strong>効くかの判定も入れる。</strong> 入れなければ、検めはそこで判定できないを返す
+        // 効くかの判定も入れる。 入れなければ、検めはそこで判定できないを返す
         // ——別の理由で止まるので、通したい経路が通っていないことに気付けない。
         let effective = kakiburi_scale::effective::judge(
             &rows(&fixture::samples(&person), Some(&fixture::Chars)),
@@ -3704,7 +3704,7 @@ mod tests {
         c.derived.spread = Some(effective_json::write_spread(&effective));
         c.derived.effective = Some(effective_json::write_effective(&effective));
         c.derived.phrases = Some(phrase_table(&person, Some(&fixture::Chars)));
-        // <strong>指紋も目盛りに合わせる。</strong> 合わせなければ、検めが使う前に断る。
+        // 指紋も目盛りに合わせる。 合わせなければ、検めが使う前に断る。
         refresh(&mut c);
         let path = dir.join("scale.kbc");
         std::fs::write(&path, store::write(&c)).expect("書ける");
@@ -3720,7 +3720,7 @@ mod tests {
 
     #[test]
     fn 目盛りを読んで検める() {
-        // <strong>検めが目盛りを受け取るところまで通す。</strong> 読み戻し・相手集合の解決・
+        // 検めが目盛りを受け取るところまで通す。 読み戻し・相手集合の解決・
         // 測り・判定・指摘が、実際の経路で繋がっていることを確かめる。
         let dir = temp_dir("review");
         let cassette = cassette_with_scale(&dir);
@@ -3735,7 +3735,7 @@ mod tests {
             "--source".to_owned(),
             "plain-markdown".to_owned(),
         ];
-        // 短い 1 本なので除外に掛かる。<strong>0 ではなく「測れていない」が返る</strong>ので、
+        // 短い 1 本なので除外に掛かる。0 ではなく「測れていない」が返るので、
         // 1 段目で止まって判定できないになる。
         assert_eq!(run(&args), Exit::Unknown);
         std::fs::remove_dir_all(&dir).ok();
@@ -3743,7 +3743,7 @@ mod tests {
 
     #[test]
     fn 検めは場面を訊かない() {
-        // <strong>1 カセットが 1 場面である。</strong> 入れ物を選ぶことが場面を選ぶこと
+        // 1 カセットが 1 場面である。 入れ物を選ぶことが場面を選ぶこと
         // なので、引数で二重に言わせない——言わせれば、食い違ったときに正本が
         // 決まらない。
         let dir = temp_dir("review-no-scene");
@@ -3767,9 +3767,9 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 目盛りの無いカセットを 1 つ作る。<strong>素材が足りないので止まる。</strong>
+    /// 目盛りの無いカセットを 1 つ作る。素材が足りないので止まる。
     ///
-    /// <strong>入れ物だけを作るコマンドはもう無い。</strong>`build` が作って、素材が
+    /// 入れ物だけを作るコマンドはもう無い。`build` が作って、素材が
     /// 足りずに目盛りを作らずに終わる——それが正常な状態である。
     fn empty_cassette(dir: &std::path::Path) -> String {
         let p = dir.join("c.kbc").to_string_lossy().into_owned();
@@ -3779,7 +3779,7 @@ mod tests {
 
     /// 目盛りの作れない素材で `build` を呼ぶ引数。
     ///
-    /// <strong>基準も渡す。</strong> 試験は作業ディレクトリがクレートの下なので、
+    /// 基準も渡す。 試験は作業ディレクトリがクレートの下なので、
     /// 同梱の池が見つからない——省くと「基準が見つからない」で落ちる。
     fn build_args(dir: &std::path::Path, cassette: &str, scene: &str) -> Vec<String> {
         let person = dir.join("b-person");
@@ -3849,7 +3849,7 @@ mod tests {
 
     #[test]
     fn カセットを渡せば目盛りに載せた値も出る() {
-        // <strong>指示できる指標だけでは天井と比べられない。</strong> n 周した草稿を
+        // 指示できる指標だけでは天井と比べられない。 n 周した草稿を
         // 並べても、近づいているのかが読めない。
         let dir = temp_dir("compare-cassette");
         let cassette = cassette_with_scale(&dir);
@@ -3873,7 +3873,7 @@ mod tests {
 
     #[test]
     fn 目盛りの無いカセットでは比べられない() {
-        // <strong>空と欠けを分ける。</strong> 目盛りが無いカセットを渡されて、
+        // 空と欠けを分ける。 目盛りが無いカセットを渡されて、
         // 指示できる指標だけ出して「通った」ことにしない。
         let dir = temp_dir("compare-no-scale");
         let c = empty_cassette(&dir);
@@ -3912,7 +3912,7 @@ mod tests {
 
     #[test]
     fn 検査は素材を要らない() {
-        // <strong>カセット単体で矛盾していないかを見る。</strong> 本人がいちばん高く出るかは
+        // カセット単体で矛盾していないかを見る。 本人がいちばん高く出るかは
         // build が測る——そちらは素材を持っているときにしか言えない。
         let dir = temp_dir("doctor-no-material");
         let cassette = cassette_with_scale(&dir);
@@ -3939,7 +3939,7 @@ mod tests {
         );
         let (got, _) = open(&c).expect("読める");
         assert_eq!(got.decided.boilerplate, vec!["お世話になっており"]);
-        // <strong>置き換える。</strong> 足していく形にしない。
+        // 置き換える。 足していく形にしない。
         assert_eq!(
             run(&["decide".to_owned(), c.clone(), "boilerplate".to_owned()]),
             Exit::Pass
@@ -4010,7 +4010,7 @@ mod tests {
 
     #[test]
     fn 場面が違えば指紋が違う() {
-        // <strong>場面は指紋の材料である。</strong> 入れなければ、どの場面として検めても
+        // 場面は指紋の材料である。 入れなければ、どの場面として検めても
         // 指紋が通ってしまう。
         let dir = temp_dir("scene-fingerprint");
         let mut made = Vec::new();
@@ -4023,7 +4023,7 @@ mod tests {
             made[0].fingerprint.differences(&made[1].fingerprint),
             vec!["人が決めたこと"]
         );
-        // <strong>道具は同じである。</strong> 場面が違うだけで「辞書が変わった」と言わない。
+        // 道具は同じである。 場面が違うだけで「辞書が変わった」と言わない。
         assert!(made[0]
             .fingerprint
             .common_differences(&made[1].fingerprint)
@@ -4034,7 +4034,7 @@ mod tests {
     #[test]
     fn 各コマンドが自分の節を出す() {
         // 位置引数がファイルなので、そのまま渡すと `--help` がファイル名として
-        // 解釈され、<strong>「読めない（65）」で終わる。</strong>
+        // 解釈され、「読めない（65）」で終わる。
         for name in [
             "measure", "decide", "build", "review", "compare", "doctor", "metrics",
         ] {
@@ -4045,7 +4045,7 @@ mod tests {
             );
             assert!(section(name).is_some(), "{name}");
         }
-        // <strong>カセットを渡したあとでも効く。</strong> 実際の打ち方はこちらである。
+        // カセットを渡したあとでも効く。 実際の打ち方はこちらである。
         assert_eq!(
             run(&[
                 "build".to_owned(),
@@ -4058,7 +4058,7 @@ mod tests {
 
     #[test]
     fn 消したコマンドは知らないコマンドである() {
-        // <strong>黙って別の意味で受けない。</strong> 素材はフォルダを指して渡すように
+        // 黙って別の意味で受けない。 素材はフォルダを指して渡すように
         // なったので、単位を 1 本ずつ入れる道はもう無い。
         for name in ["scene", "add", "replace", "new", "quick", "show"] {
             assert_eq!(run(&[name.to_owned()]), Exit::Usage, "{name}");
@@ -4069,7 +4069,7 @@ mod tests {
     #[test]
     fn 全体の_help_に環境変数と取り込み元が出る() {
         // 未設定だと言うだけでは、辞書をどこから引くかが分からない。
-        // <strong>用意させるものが減ったら、help もそう言う。</strong>
+        // 用意させるものが減ったら、help もそう言う。
         assert!(ENVIRONMENT.contains("KAKIBURI_BASELINES"));
         assert!(ENVIRONMENT.contains("同梱"), "{ENVIRONMENT}");
         for gone in ["KAKIBURI_UNIDIC", "KAKIBURI_MECAB", "unidic-mecab-2.1.2_bin.zip"] {
@@ -4112,7 +4112,7 @@ mod tests {
     fn 落とす定型と動かない指標も指紋に入る() {
         // どちらも派生物を変える。指紋が動かなければ、変える前の値と変えたあとの
         // 値が同じ顔で並ぶ。
-        // <strong>解析器は環境から取る。</strong> カセットに入る指紋は解析器を含むので、
+        // 解析器は環境から取る。 カセットに入る指紋は解析器を含むので、
         // ここで `None` を渡すと、辞書を持っている環境でだけ「形態素解析器」が
         // 差として出て落ちる——見たいのは決めたことが指紋に入るかである。
         let dir = temp_dir("decided-fingerprint");
@@ -4149,21 +4149,21 @@ mod tests {
 
     #[test]
     fn 素材から作り直すと同じものが出る() {
-        // <strong>[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)が
-        // 本当かを確かめる。</strong> 通らなければ、派生物のどこかに原本が混ざっている
+        // [素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)が
+        // 本当かを確かめる。 通らなければ、派生物のどこかに原本が混ざっている
         // ——気付かないまま運用すると、測り直した瞬間に人が決めたことが消える。
         //
-        // <strong>実際に消して、実際に build する。</strong> 控えを戻す形では build を 1 度も
+        // 実際に消して、実際に build する。 控えを戻す形では build を 1 度も
         // 呼ばずに通ってしまう。
-        // <strong>辞書が無ければ目盛りは作れない。</strong> そのまま走らせると、捨てた派生物と
-        // 作り直した派生物がどちらも空で一致し、<strong>何も確かめずに緑になる。</strong>
-        // <strong>解析器は同梱なので、飛ばす条件が無い。</strong>
+        // 辞書が無ければ目盛りは作れない。 そのまま走らせると、捨てた派生物と
+        // 作り直した派生物がどちらも空で一致し、何も確かめずに緑になる。
+        // 解析器は同梱なので、飛ばす条件が無い。
         let dir = temp_dir("rebuild");
         let person = dir.join("person");
         let baseline = dir.join("baseline");
         std::fs::create_dir_all(&person).expect("作れる");
         std::fs::create_dir_all(&baseline).expect("作れる");
-        // <strong>素材は目盛りが作れる形で置く。</strong> 作れなければ、捨てた派生物と
+        // 素材は目盛りが作れる形で置く。 作れなければ、捨てた派生物と
         // 作り直した派生物がどちらも空で一致し、何も確かめていないことになる。
         let (p, b) = fixture::corpus();
         for (side, units) in [(&person, &p), (&baseline, &b)] {
@@ -4182,7 +4182,7 @@ mod tests {
             "試験".to_owned(),
             "--baseline".to_owned(),
             baseline.to_string_lossy().into_owned(),
-            // <strong>同梱の池ではないので、作り方を名乗る。</strong>
+            // 同梱の池ではないので、作り方を名乗る。
             "--model".to_owned(),
             "m".to_owned(),
             "--version".to_owned(),
@@ -4210,7 +4210,7 @@ mod tests {
 
     #[test]
     fn カセットでないファイルは踏まない() {
-        // <strong>在るものを消さない。</strong> カセットとして読めないものを指されたら、
+        // 在るものを消さない。 カセットとして読めないものを指されたら、
         // それは人の別のファイルである。
         let dir = temp_dir("not-a-cassette");
         let victim = dir.join("大事.txt");
@@ -4227,7 +4227,7 @@ mod tests {
 
     #[test]
     fn 作り直しても人が決めたことは残る() {
-        // <strong>人が決めたことは作り直せない。</strong> 消せば落とす定型も動かない指標も
+        // 人が決めたことは作り直せない。 消せば落とす定型も動かない指標も
         // そこで消える——目盛りは入れ替えるので、消す理由がそもそも無い。
         let dir = temp_dir("rebuild-keeps-decided");
         let c = dir.join("c.kb").to_string_lossy().into_owned();
@@ -4265,15 +4265,15 @@ mod tests {
 
     #[test]
     fn 役を跨いで名前が重なれば断る() {
-        // <strong>測るときは名前で引く。</strong> 重なれば片方の測定値がもう片方で
-        // 置き換わり、<strong>本人の単位が基準の数字で測られる</strong>——壊れた帯が
+        // 測るときは名前で引く。 重なれば片方の測定値がもう片方で
+        // 置き換わり、本人の単位が基準の数字で測られる——壊れた帯が
         // 正常な顔でカセットに入る。
         let dir = temp_dir("dup-name");
         let person = dir.join("person");
         let baseline = dir.join("baseline");
         std::fs::create_dir_all(&person).expect("作れる");
         std::fs::create_dir_all(&baseline).expect("作れる");
-        // <strong>同じ題材を揃えるほど同じ名前が付きやすい。</strong>
+        // 同じ題材を揃えるほど同じ名前が付きやすい。
         for side in [&person, &baseline] {
             std::fs::write(side.join("Rust入門.md"), "これは、そうだ。\n").expect("書ける");
         }
@@ -4298,7 +4298,7 @@ mod tests {
 
     #[test]
     fn 同梱の池は自分で版を名乗る() {
-        // <strong>場所では決められない。</strong> 環境変数が同梱の池を指すのは普通の
+        // 場所では決められない。 環境変数が同梱の池を指すのは普通の
         // 使い方だが、どこを指しているかは道具に分からない——目印を池の中に置く。
         let dir = temp_dir("pool-marker");
         let pool = dir.join("pool");
@@ -4314,7 +4314,7 @@ mod tests {
 
     #[test]
     fn 同梱でない基準には版が要る() {
-        // <strong>記録の無い基準で作った値は、次に測ったときに比べられない。</strong>
+        // 記録の無い基準で作った値は、次に測ったときに比べられない。
         let dir = temp_dir("baseline-version");
         let person = dir.join("person");
         let baseline = dir.join("baseline");
@@ -4368,7 +4368,7 @@ mod tests {
 
     #[test]
     fn 束ねない_1_本はファイル名を名乗る() {
-        // <strong>束ねた単位だけが自分の名前を名乗る。</strong> 1 本しか入っていない組に
+        // 束ねた単位だけが自分の名前を名乗る。 1 本しか入っていない組に
         // 別の名前を付けると、割りの表からどのファイルか引けなくなる。
         let dir = temp_dir("bundle-name");
         let files = vec![a_document(&dir, "記事")];
@@ -4394,7 +4394,7 @@ mod tests {
         // 世代が進まなければ、同時に書いた片方の変更が正常終了のまま消える。
         let dir = temp_dir("generation");
         let c = empty_cassette(&dir);
-        // <strong>build は 2 度書く。</strong> 入れ物を作るときと、目盛りを入れるときである。
+        // build は 2 度書く。 入れ物を作るときと、目盛りを入れるときである。
         assert_eq!(save::generation_of(&c), 2, "作って目盛りを入れた時点で 2");
         assert_eq!(
             run(&[
@@ -4411,7 +4411,7 @@ mod tests {
 
     #[test]
     fn 解析器が無ければ環境の壊れとして止める() {
-        // <strong>「素材が足りない」と混ぜない。</strong> 混ぜれば、辞書を入れ忘れた環境が
+        // 「素材が足りない」と混ぜない。 混ぜれば、辞書を入れ忘れた環境が
         // 素材不足の顔で回り続け、素材をいくら足しても直らない。
         let (person, baseline) = fixture::corpus();
         let broken = broken_environment(
@@ -4440,7 +4440,7 @@ mod tests {
     #[test]
     fn 言い回しの表は_2_つ以上の単位に出るものだけを持つ() {
         // 1 つの単位にしか出てこない言い回しは、その記事の題材であって書きぶり
-        // ではない——<strong>持っても上限がほぼ 0 で、持たないのと同じ結論になる。</strong>
+        // ではない——持っても上限がほぼ 0 で、持たないのと同じ結論になる。
         let (person, _) = fixture::corpus();
         let table = phrase_table(&person, Some(&fixture::Chars));
         let read = Cassette {
@@ -4453,7 +4453,7 @@ mod tests {
         let got = read_phrase_table(&read);
         assert!(!got.is_empty(), "共通の言い回しが拾えている");
         assert!(got.values().all(|v| *v > 0.0), "上限は正である");
-        // <strong>表に無いものは上限 0 である。</strong> 本人が一度も使っていない言い回しを
+        // 表に無いものは上限 0 である。 本人が一度も使っていない言い回しを
         // 草稿が繰り返していれば、それがそのまま指摘になる。
         assert_eq!(person_ceiling(&got, "誰も書かない並び"), 0.0);
     }
@@ -4473,7 +4473,7 @@ mod tests {
 
     #[test]
     fn 効くかの判定が無ければ判定できない() {
-        // <strong>空と欠けを分ける。</strong> 判定がまだ入っていないカセットを「効く指標が 1 本も
+        // 空と欠けを分ける。 判定がまだ入っていないカセットを「効く指標が 1 本も
         // 無い」と読んではいけない——読めば、指摘の出ない通るが返る。
         let dir = temp_dir("no-effective");
         let cassette = cassette_with_scale(&dir);
@@ -4493,7 +4493,7 @@ mod tests {
             "plain-markdown".to_owned(),
         ];
         assert_eq!(run(&args), Exit::Unknown);
-        // <strong>途中で抜ける道でも JSON を出す。</strong> 出さなければ、道具の側が
+        // 途中で抜ける道でも JSON を出す。 出さなければ、道具の側が
         // 「出力が無い」を自分で場合分けすることになる。
         let mut with = args.to_vec();
         with.push("--json".to_owned());
@@ -4503,8 +4503,8 @@ mod tests {
 
     #[test]
     fn 相手集合のベクトルが欠ければ使う前の問題である() {
-        // <strong>カセットは本文を持たない。</strong> 相手集合のベクトルが目盛りの中で欠けて
-        // いれば、照合値はもう出せない——<strong>目盛りがあるのに判定できないが返る</strong>
+        // カセットは本文を持たない。 相手集合のベクトルが目盛りの中で欠けて
+        // いれば、照合値はもう出せない——目盛りがあるのに判定できないが返る
         // のは、壊れていることが正常に見えるということである。
         let dir = temp_dir("partners");
         let cassette = cassette_with_scale(&dir);
@@ -4562,7 +4562,7 @@ mod tests {
 
     #[test]
     fn 外れた_1_本を足しても割合はほとんど動かない() {
-        // <strong>これが最小・最大との違いである。</strong> 端で見れば、この 1 本だけで
+        // これが最小・最大との違いである。 端で見れば、この 1 本だけで
         // 通っていたものが落ちる。
         let mine: Vec<f64> = (0..20).map(|i| 2.0 + f64::from(i)).collect();
         let theirs: Vec<f64> = (0..20).map(|i| -20.0 + f64::from(i)).collect();

@@ -1,4 +1,4 @@
-//! 指摘。<strong>観測・直し方・普段が 3 つ揃って初めて直せる。</strong>
+//! 指摘。観測・直し方・普段が 3 つ揃って初めて直せる。
 //!
 //! これは軸の要求そのものである。「ここが、こちらへ、これだけ」の 3 つに、それぞれ
 //! 観測・直し方・普段が対応する。
@@ -6,10 +6,10 @@
 use crate::range::{Lower, Outside};
 use crate::verdict::Observed;
 
-/// 普段の言い方。<strong>判定に使った見方と揃える。</strong>
+/// 普段の言い方。判定に使った見方と揃える。
 ///
 /// 下端を[出現割合](Lower::Appearance)で見た指標を「どこからどこまで」で言えば、
-/// <strong>文面がそれ自体で矛盾する</strong>——出てこなかったことを外れとしたのに、その指標の
+/// 文面がそれ自体で矛盾する——出てこなかったことを外れとしたのに、その指標の
 /// 幅の下端は 0 なので「0 になっている。普段は 0 から N の範囲」と読める。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Usual {
@@ -24,7 +24,7 @@ pub enum Usual {
     Appearance {
         /// 現れた単位の割合。
         rate: f64,
-        /// 多いときの値。<strong>足す先の見当が付かないと直せない。</strong>
+        /// 多いときの値。足す先の見当が付かないと直せない。
         high: f64,
     },
 }
@@ -49,15 +49,15 @@ impl Usual {
 pub struct Point {
     /// 指標の名前。
     pub name: String,
-    /// <strong>観測。</strong> この文章ではどうだったか。
+    /// 観測。 この文章ではどうだったか。
     pub observed: f64,
-    /// <strong>普段。</strong> その人はこれまでどう書いてきたか。
+    /// 普段。 その人はこれまでどう書いてきたか。
     ///
-    /// <strong>判定に使った見方のまま持つ。</strong>
+    /// 判定に使った見方のまま持つ。
     pub usual: Usual,
-    /// <strong>直し方。</strong> どちらへ、どうすればよいか。
+    /// 直し方。 どちらへ、どうすればよいか。
     ///
-    /// <strong>指標の定義から取る。</strong> 指摘を出す側で書くと、指標を足したときに直し方の
+    /// 指標の定義から取る。 指摘を出す側で書くと、指標を足したときに直し方の
     /// 無い指摘が出る。
     pub remedy: String,
     /// 外れの大きさ。幅を 1 とした倍数。
@@ -69,7 +69,7 @@ pub struct Point {
 pub enum PointError {
     /// 指標の定義に直し方が無い。
     ///
-    /// <strong>名前と数値だけでは直せない。</strong> 3 つ揃わないものを指摘として出さない。
+    /// 名前と数値だけでは直せない。 3 つ揃わないものを指摘として出さない。
     NoRemedy {
         /// どの指標か。
         name: String,
@@ -100,14 +100,14 @@ pub trait Remedies {
 
 /// 指摘を組む。
 ///
-/// <strong>直し方が無ければ作らない。</strong> 名前と数値だけ渡しても直せない。
+/// 直し方が無ければ作らない。 名前と数値だけ渡しても直せない。
 pub fn build(
     observed: &Observed,
     outside: Outside,
     remedies: &dyn Remedies,
 ) -> Result<Point, PointError> {
     let value = observed.value.expect("外れている以上、測れている");
-    // <strong>下に外れたときだけ見方が分かれる。</strong> 上に外れたなら、どちらの指標でも
+    // 下に外れたときだけ見方が分かれる。 上に外れたなら、どちらの指標でも
     // 幅の上端を超えたという同じ事実である。
     let usual = match (outside, observed.lower) {
         (Outside::Below { .. }, Lower::Appearance { rate }) => Usual::Appearance {
@@ -145,7 +145,7 @@ pub fn build(
 impl Point {
     /// 散文にする。
     ///
-    /// <strong>表で返さない。</strong> 構造化した形を求めると成績が落ちる。<strong>数値は落とさない</strong>——
+    /// 表で返さない。 構造化した形を求めると成績が落ちる。数値は落とさない——
     /// 散文にするのは言い方であって、根拠の値ではない。
     #[must_use]
     pub fn prose(&self) -> String {

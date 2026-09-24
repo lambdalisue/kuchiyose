@@ -135,7 +135,7 @@ impl Lock {
     }
 }
 
-/// まだ無いときだけ作って開く。<strong>symlink を追わない。</strong>
+/// まだ無いときだけ作って開く。symlink を追わない。
 fn create_new(path: &Path) -> std::io::Result<fs::File> {
     fs::OpenOptions::new()
         .write(true)
@@ -145,15 +145,15 @@ fn create_new(path: &Path) -> std::io::Result<fs::File> {
 
 /// 書き終えた一時ファイルを本体の名前にする。
 ///
-/// <strong>作るときと置き換えるときで、要る保証が違う。</strong>
+/// 作るときと置き換えるときで、要る保証が違う。
 ///
 /// | | どうするか | なぜ |
 /// | --- | --- | --- |
-/// | 置き換える | `rename` | 既存を原子的に差し替える。<strong>それが目的である</strong> |
-/// | <strong>作る</strong> | `hard_link` して一時を外す | <strong>既に在れば失敗する。</strong> `rename` は黙って踏む |
+/// | 置き換える | `rename` | 既存を原子的に差し替える。それが目的である |
+/// | 作る | `hard_link` して一時を外す | 既に在れば失敗する。 `rename` は黙って踏む |
 ///
-/// <strong>`exists()` を見てから `rename` では足りない。</strong> 見てから置き換えるまでのあいだに
-/// 誰かが作れば踏むし、<strong>錠は助言的なので押さえていない相手は止められない。</strong>
+/// `exists()` を見てから `rename` では足りない。 見てから置き換えるまでのあいだに
+/// 誰かが作れば踏むし、錠は助言的なので押さえていない相手は止められない。
 /// `hard_link` は「既に在れば失敗する」を OS が保証する——同じディレクトリに置いた
 /// 一時ファイルなので、必ず同じファイルシステムである。
 fn publish(tmp: &Path, path: &Path, creating: bool) -> Result<(), SaveError> {
@@ -162,7 +162,7 @@ fn publish(tmp: &Path, path: &Path, creating: bool) -> Result<(), SaveError> {
     }
     match fs::hard_link(tmp, path) {
         Ok(()) => {
-            // 名前が 2 つになったので、一時のほうを外す。<strong>実体は残る。</strong>
+            // 名前が 2 つになったので、一時のほうを外す。実体は残る。
             fs::remove_file(tmp).ok();
             Ok(())
         }
@@ -175,8 +175,8 @@ fn publish(tmp: &Path, path: &Path, creating: bool) -> Result<(), SaveError> {
 
 /// 隣を探すディレクトリ。
 ///
-/// <strong>素の相対パスでは親が空になる。</strong>`c.kbc` の親は `""` で、そのまま開こうと
-/// すると失敗する——<strong>いちばん普通の打ち方で片づけが止まる。</strong>
+/// 素の相対パスでは親が空になる。`c.kbc` の親は `""` で、そのまま開こうと
+/// すると失敗する——いちばん普通の打ち方で片づけが止まる。
 fn parent_of(path: &Path) -> Option<&Path> {
     match path.parent() {
         Some(p) if p.as_os_str().is_empty() => Some(Path::new(".")),
@@ -184,11 +184,11 @@ fn parent_of(path: &Path) -> Option<&Path> {
     }
 }
 
-/// 隣に残った一時ファイルを片づける。<strong>錠を持っているあいだにだけ呼ぶ。</strong>
+/// 隣に残った一時ファイルを片づける。錠を持っているあいだにだけ呼ぶ。
 ///
 /// 錠を持っていれば、ほかの書き手は居ない——だから隣の `*.tmp.*` は全部、
-/// <strong>誰かが落とした跡である。</strong> pid で名前を分けた以上、次に動かすときには
-/// 別の pid になっているので、<strong>ここで拾わないと永久に溜まる。</strong>
+/// 誰かが落とした跡である。 pid で名前を分けた以上、次に動かすときには
+/// 別の pid になっているので、ここで拾わないと永久に溜まる。
 fn sweep_stale(path: &Path) {
     let (Some(dir), Some(name)) = (parent_of(path), path.file_name()) else {
         return;
@@ -199,11 +199,11 @@ fn sweep_stale(path: &Path) {
     let prefix = format!("{}.tmp.", name.to_string_lossy());
     for entry in entries.flatten() {
         let this = entry.file_name();
-        // <strong>自分が作る形のものだけを消す。</strong> 前置きが合うだけで消すと、
-        // `<カセット>.tmp.backup` のような<strong>人が置いたファイルを黙って消す</strong>——
+        // 自分が作る形のものだけを消す。 前置きが合うだけで消すと、
+        // `<カセット>.tmp.backup` のような人が置いたファイルを黙って消す——
         // この道具がほかの場所で徹底している「黙って落とさない」からの取りこぼしになる。
         //
-        // <strong>名前が UTF-8 でなければ触らない。</strong> 潰した文字列で比べると、別のものが
+        // 名前が UTF-8 でなければ触らない。 潰した文字列で比べると、別のものが
         // 同じ名前に見える。
         let Some(this) = this.to_str() else { continue };
         let Some(rest) = this.strip_prefix(&prefix) else {
@@ -428,14 +428,14 @@ mod tests {
         fs::remove_dir_all(&d).ok();
     }
 
-    /// この試験の中で使う一時ファイルの名前。<strong>書く側ごとに変わる。</strong>
+    /// この試験の中で使う一時ファイルの名前。書く側ごとに変わる。
     fn tmp_of(p: &Path) -> PathBuf {
         sidecar(p, &format!("tmp.{}", std::process::id()))
     }
 
     #[test]
     fn 錠が取れなければ断る() {
-        // <strong>目印ファイルが在ることではなく、押さえられていることで断る。</strong>
+        // 目印ファイルが在ることではなく、押さえられていることで断る。
         // 在るだけで断ると、落ちた跡のファイルが永久に書き込みを止める。
         let d = dir("lock");
         let p = d.join("c.kbc");
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn 落ちた跡の目印は書き込みを止めない() {
-        // <strong>ここがこの形にした理由である。</strong> SIGKILL や電源断で `Drop` は
+        // ここがこの形にした理由である。 SIGKILL や電源断で `Drop` は
         // 動かない。目印ファイルを在るかどうかで見ていると、以後すべての置き換えが
         // 永久に断られ、直す道が「手で消す」しかなくなる。
         let d = dir("stale-lock");
@@ -490,8 +490,8 @@ mod tests {
 
     #[test]
     fn 書いている最中は片づけない() {
-        // <strong>書いている相手は錠を持っている。</strong> 押さえられないなら、隣の一時ファイルは
-        // 落ちた跡ではなく<strong>書いている最中のもの</strong>である——消せば相手の検めか
+        // 書いている相手は錠を持っている。 押さえられないなら、隣の一時ファイルは
+        // 落ちた跡ではなく書いている最中のものである——消せば相手の検めか
         // 置き換えを失敗させられる。
         let d = dir("sweep-busy");
         let p = d.join("c.kbc");
@@ -506,10 +506,10 @@ mod tests {
 
     #[test]
     fn 素の相対パスでも隣を探せる() {
-        // <strong>`c.kbc` の親は空である。</strong> そのまま開こうとすると失敗し、
-        // <strong>いちばん普通の打ち方で片づけが止まる。</strong>
+        // `c.kbc` の親は空である。 そのまま開こうとすると失敗し、
+        // いちばん普通の打ち方で片づけが止まる。
         //
-        // <strong>作業ディレクトリを動かして試さない。</strong> プロセス全体のものなので、
+        // 作業ディレクトリを動かして試さない。 プロセス全体のものなので、
         // 並列に走るほかの試験へ漏れる。
         assert_eq!(parent_of(Path::new("c.kbc")), Some(Path::new(".")));
         assert_eq!(parent_of(Path::new("./c.kbc")), Some(Path::new(".")));
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn 人が置いたファイルは片づけない() {
-        // <strong>前置きが合うだけで消すと、人が置いたファイルを黙って消す。</strong>
+        // 前置きが合うだけで消すと、人が置いたファイルを黙って消す。
         // この道具がほかの場所で徹底している「黙って落とさない」からの取りこぼしになる。
         let d = dir("sweep-keep");
         let p = d.join("c.kbc");
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn 落ちた跡は次に書くときに片づく() {
-        // <strong>pid で名前を分けた以上、次に動かすときには別の pid になっている。</strong>
+        // pid で名前を分けた以上、次に動かすときには別の pid になっている。
         // 自分のものだと分からないので、錠を持っているあいだに隣をまとめて拾う
         // ——持っていれば、ほかの書き手が居ないと言い切れる。
         let d = dir("sweep-stale");
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn 既に在るところへは作らない() {
-        // <strong>世代では守れない唯一の場所である。</strong> 呼ぶ側で見てから渡すと、
+        // 世代では守れない唯一の場所である。 呼ぶ側で見てから渡すと、
         // 見てから書くまでのあいだに割り込まれる。
         let d = dir("exists");
         let p = d.join("c.kbc");

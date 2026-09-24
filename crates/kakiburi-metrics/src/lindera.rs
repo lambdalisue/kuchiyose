@@ -1,13 +1,13 @@
-//! 形態素解析。<strong>辞書を同梱する。</strong>
+//! 形態素解析。辞書を同梱する。
 //!
-//! <strong>利用者に何も用意させない。</strong> 外の実行ファイルも、手で落とす辞書も要らない
+//! 利用者に何も用意させない。 外の実行ファイルも、手で落とす辞書も要らない
 //! ——[道具の壊れが素材の不足という顔で出る](crate::morph)いちばんの原因が、
-//! <strong>環境に置いた依存そのもの</strong>だった。
+//! 環境に置いた依存そのものだった。
 //!
 //! 実測で、nix store から MeCab が消えた環境が「測れた単位が 0 本」と報告した。
-//! <strong>実行ファイルに畳んでしまえば、消えようがない。</strong>
+//! 実行ファイルに畳んでしまえば、消えようがない。
 //!
-//! <strong>辞書は UniDic である。</strong>[語彙素で引く](crate::word::goi)ので、体系を替えられない
+//! 辞書は UniDic である。[語彙素で引く](crate::word::goi)ので、体系を替えられない
 //! ——IPADic には語彙素の欄が無い。
 
 use std::borrow::Cow;
@@ -19,31 +19,31 @@ use lindera::segmenter::Segmenter;
 
 use crate::morph::{Analyzer, Dictionary, Morpheme};
 
-/// 同梱した辞書の名前。<strong>指紋に入る。</strong>
+/// 同梱した辞書の名前。指紋に入る。
 pub const DICT_NAME: &str = "UniDic";
 
-/// 同梱した辞書の版。<strong>指紋に入る。</strong>
+/// 同梱した辞書の版。指紋に入る。
 ///
-/// <strong>`lindera-unidic` が `unidic-mecab-2.1.2` を取ってくる。</strong> 版を上げたら
+/// `lindera-unidic` が `unidic-mecab-2.1.2` を取ってくる。 版を上げたら
 /// ここも上げる——上げなければ、辞書が変わったのに過去の値と比べられてしまう。
 pub const DICT_VERSION: &str = "2.1.2";
 
-/// 解析器の名前。<strong>指紋に入る。</strong>
+/// 解析器の名前。指紋に入る。
 ///
-/// <strong>MeCab とは別の実装である。</strong> 同じ辞書でも Viterbi の実装が違えば
-/// 分かち書きが変わりうるので、<strong>名前で分ける</strong>——混ぜれば、実装を替えたことが
+/// MeCab とは別の実装である。 同じ辞書でも Viterbi の実装が違えば
+/// 分かち書きが変わりうるので、名前で分ける——混ぜれば、実装を替えたことが
 /// 指紋から読めない。
 pub const ENGINE: &str = "Lindera";
 
 /// 解析器の版。
 pub const ENGINE_VERSION: &str = "6.0";
 
-/// 語彙素が入っている欄。<strong>UniDic の 8 番目。</strong>
+/// 語彙素が入っている欄。UniDic の 8 番目。
 const LEMMA: usize = 7;
 
 /// 同梱の辞書で動く解析器。
 ///
-/// <strong>辞書は 1 度だけ読む。</strong> 解析のたびに読めば、200 MB の表を何度も展開する
+/// 辞書は 1 度だけ読む。 解析のたびに読めば、200 MB の表を何度も展開する
 /// ——[測るのが高ければ周回数が減る](../../../docs/spec/100-metrics.md#測るのを安くする)。
 pub struct Lindera {
     segmenter: &'static Segmenter,
@@ -58,7 +58,7 @@ impl Default for Lindera {
 impl Lindera {
     /// 同梱の辞書で組み立てる。
     ///
-    /// <strong>失敗しない。</strong> 辞書は実行ファイルの中にあるので、環境に左右されない
+    /// 失敗しない。 辞書は実行ファイルの中にあるので、環境に左右されない
     /// ——読めないならそれは実行ファイルが壊れている。
     #[must_use]
     pub fn new() -> Self {
@@ -83,7 +83,7 @@ impl Analyzer for Lindera {
 
     fn analyze(&self, text: &str) -> Vec<Morpheme> {
         let Ok(mut tokens) = self.segmenter.segment(Cow::Borrowed(text)) else {
-            // <strong>呼べなかった。</strong> 形態素 0 なので除外に掛かる。
+            // 呼べなかった。 形態素 0 なので除外に掛かる。
             return Vec::new();
         };
         tokens
@@ -92,7 +92,7 @@ impl Analyzer for Lindera {
                 let surface = t.surface.to_string();
                 let d = t.details();
                 let at = |i: usize| d.get(i).copied().unwrap_or("*");
-                // <strong>辞書に無い語は欄が `*` で埋まる。</strong> そのとき語彙素は表層形である。
+                // 辞書に無い語は欄が `*` で埋まる。 そのとき語彙素は表層形である。
                 let lemma = {
                     let v = at(LEMMA);
                     if v.is_empty() || v == "*" {
@@ -118,7 +118,7 @@ mod tests {
 
     #[test]
     fn 同梱の辞書で動く() {
-        // <strong>環境に何も置かせない。</strong> これが成り立たなければ、利用者は
+        // 環境に何も置かせない。 これが成り立たなければ、利用者は
         // また辞書を手で落とすことになる。
         let a = Lindera::new();
         let ms = a.analyze("これは、地味に便利なファイラーです。");
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn 語彙素を返す() {
-        // <strong>語彙素で引くので、活用形では困る。</strong>「書い」は「書く」で引く。
+        // 語彙素で引くので、活用形では困る。「書い」は「書く」で引く。
         let ms = Lindera::new().analyze("書いてみました。");
         let lemma = |s: &str| {
             ms.iter()
@@ -146,8 +146,8 @@ mod tests {
 
     #[test]
     fn 形状詞を名詞に寄せない() {
-        // <strong>学校文法の「形容動詞」を名詞に寄せる体系だと、地味・静か・便利が
-        // 語として見えなくなる。</strong> UniDic はここを分けている。
+        // 学校文法の「形容動詞」を名詞に寄せる体系だと、地味・静か・便利が
+        // 語として見えなくなる。 UniDic はここを分けている。
         let ms = Lindera::new().analyze("地味に便利です。");
         let pos = |s: &str| {
             ms.iter()
@@ -167,7 +167,7 @@ mod tests {
 
     #[test]
     fn 機能語を拾える() {
-        // 日本語の個人性は助詞や助動詞に宿る。<strong>ここが取れなければ照合が成り立たない。</strong>
+        // 日本語の個人性は助詞や助動詞に宿る。ここが取れなければ照合が成り立たない。
         let ms = Lindera::new().analyze("これは、そうだと思います。");
         assert!(ms.iter().any(|m| m.is_function_word()), "{ms:?}");
     }

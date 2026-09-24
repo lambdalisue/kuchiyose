@@ -1,9 +1,9 @@
 //! 目盛りを派生物として書き出し、読み戻す。
 //!
-//! <strong>ここが繋ぎ目である。</strong> 入れ物はカセット、組み立ては目盛り、繋ぐのはこちら——
+//! ここが繋ぎ目である。 入れ物はカセット、組み立ては目盛り、繋ぐのはこちら——
 //! 検めが目盛りを作り直せる経路を作らないために、この 3 つを分けている。
 //!
-//! <strong>読み戻したものが元と一致することを試験が確かめる。</strong> 一致しなければ、
+//! 読み戻したものが元と一致することを試験が確かめる。 一致しなければ、
 //! 保存したカセットで測った値は、作ったときの値と違う。
 
 use kakiburi_cassette::json::Value;
@@ -36,10 +36,10 @@ fn read_strings(v: Option<&Value>) -> Option<Vec<String>> {
     )
 }
 
-/// 重み。<strong>平均と標準偏差も書く。</strong>
+/// 重み。平均と標準偏差も書く。
 ///
 /// 落とせば、検めが標準化なしの値に標準化ずみの重みを当てることになり、
-/// <strong>値だけが静かに変わる</strong>。エラーにはならない。
+/// 値だけが静かに変わる。エラーにはならない。
 fn weights(w: &Weights) -> Value {
     Value::obj([
         ("切片".to_owned(), Value::Number(w.intercept())),
@@ -50,10 +50,10 @@ fn weights(w: &Weights) -> Value {
 }
 
 fn read_weights(v: &Value) -> Option<Weights> {
-    // <strong>欠けていたら読まない。</strong> 平均 0・標準偏差 1 で補うと、標準化して当てはめた
+    // 欠けていたら読まない。 平均 0・標準偏差 1 で補うと、標準化して当てはめた
     // 重みを標準化なしの値に当てることになる。
     //
-    // <strong>欄があることだけでは足りない。</strong> 長さが揃わなければ足りない次元だけが
+    // 欄があることだけでは足りない。 長さが揃わなければ足りない次元だけが
     // 埋められるので、`restore` が中身まで検める。
     Weights::restore(
         v.get("切片")?.as_f64()?,
@@ -143,7 +143,7 @@ pub fn write(s: &Scale) -> String {
         ("語彙".to_owned(), frozen_v),
         ("較正".to_owned(), calibration),
         ("帯".to_owned(), band(s.band)),
-        // <strong>割りは 4 つとも書く。</strong> 相手集合だけでは、どこで割れたかが読めない。
+        // 割りは 4 つとも書く。 相手集合だけでは、どこで割れたかが読めない。
         (
             "割り".to_owned(),
             Value::obj([
@@ -165,7 +165,7 @@ pub fn write(s: &Scale) -> String {
                 ),
             ]),
         ),
-        // <strong>実例を書く。</strong> 数値と向きだけを渡された側は、その人の文章を
+        // 実例を書く。 数値と向きだけを渡された側は、その人の文章を
         // 自分で読みに行くことになる——読みに行く先がもう無い。
         (
             "実例".to_owned(),
@@ -182,9 +182,9 @@ pub fn write(s: &Scale) -> String {
                     .collect(),
             ),
         ),
-        // <strong>相手集合のベクトルを書く。</strong> カセットは本文を持たないので、
+        // 相手集合のベクトルを書く。 カセットは本文を持たないので、
         // ここに無ければ検めるときに照合値を出せない。
-        // <strong>並びを保つ。</strong> 対象にすると鍵の順で並び替わり、系統の並びが
+        // 並びを保つ。 対象にすると鍵の順で並び替わり、系統の並びが
         // 語彙の並びと食い違う。
         (
             "相手集合のベクトル".to_owned(),
@@ -224,7 +224,7 @@ pub fn write(s: &Scale) -> String {
         ("人らしさ".to_owned(), humanness),
         ("人らしさの帯".to_owned(), band(s.humanness_band)),
         (
-            // <strong>効く量を数える相手。</strong> 正反対を指す直し方が同時に出たとき、
+            // 効く量を数える相手。 正反対を指す直し方が同時に出たとき、
             // どちらが勝つかは動く量でしか言えない。
             "人らしさの代表値".to_owned(),
             Value::obj(
@@ -234,13 +234,13 @@ pub fn write(s: &Scale) -> String {
             ),
         ),
         (
-            // <strong>直し方に載せる言い回し。</strong> 数値と向きだけでは、受け取った側は
+            // 直し方に載せる言い回し。 数値と向きだけでは、受け取った側は
             // 自分ででっち上げた定型句を挿し込むことになる。
             "言い回し".to_owned(),
             Value::Array(s.phrases.iter().map(Value::s).collect()),
         ),
         (
-            // <strong>繰り返せと言うなら、上限も渡す。</strong>
+            // 繰り返せと言うなら、上限も渡す。
             "言い回しの上限".to_owned(),
             Value::Array(
                 s.phrase_ceilings
@@ -250,9 +250,9 @@ pub fn write(s: &Scale) -> String {
             ),
         ),
         (
-            // <strong>その人の型。</strong> コーパスから見つけたものなので、カセットに残さないと
+            // その人の型。 コーパスから見つけたものなので、カセットに残さないと
             // 検めのたびに素材を読み直すことになる。
-            // <strong>コーパスから見つけた語。</strong> 検めるときも同じ辞書で割らなければ、
+            // コーパスから見つけた語。 検めるときも同じ辞書で割らなければ、
             // 比べたものに意味が無い。
             "語".to_owned(),
             Value::Array(
@@ -277,7 +277,7 @@ pub fn write(s: &Scale) -> String {
                             ("相手側".to_owned(), Value::Number(k.base)),
                             ("上限".to_owned(), Value::Number(k.ceiling)),
                             (
-                                // <strong>穴あきなら、後ろの固定部を持つ。</strong> 間は書き手が埋める。
+                                // 穴あきなら、後ろの固定部を持つ。 間は書き手が埋める。
                                 "後ろ".to_owned(),
                                 k.tail.as_ref().map_or(Value::Null, Value::s),
                             ),
@@ -286,7 +286,7 @@ pub fn write(s: &Scale) -> String {
                     .collect(),
             ),
         ),
-        // <strong>役を入れ替えた側も持つ。</strong> 機械の言い回しが残っていることは、
+        // 役を入れ替えた側も持つ。 機械の言い回しが残っていることは、
         // 本人の型が入っていないことからは言えない。
         (
             "機械の型".to_owned(),
@@ -310,7 +310,7 @@ pub fn write(s: &Scale) -> String {
                     .collect(),
             ),
         ),
-        // <strong>並びで割れた癖を、語彙素でも持つ。</strong> 同じ癖が語形ごとに割れると、
+        // 並びで割れた癖を、語彙素でも持つ。 同じ癖が語形ごとに割れると、
         // どの綴りも床を割って機械の型に出てこない。
         (
             "機械の語".to_owned(),
@@ -322,7 +322,7 @@ pub fn write(s: &Scale) -> String {
                             ("語彙素".to_owned(), Value::s(&g.text)),
                             ("出現割合".to_owned(), Value::Number(g.rate)),
                             ("相手側".to_owned(), Value::Number(g.base)),
-                            // <strong>置き換える先も持つ。</strong> 「別の言い方にする」だけでは、
+                            // 置き換える先も持つ。 「別の言い方にする」だけでは、
                             // 受け取った側が道具の外で語を探すことになる。
                             (
                                 "本人の語".to_owned(),
@@ -337,7 +337,7 @@ pub fn write(s: &Scale) -> String {
     .write()
 }
 
-/// 語の配列を読み戻す。<strong>無くてもよい</strong>——持たない版のカセットは指摘が 1 本減る。
+/// 語の配列を読み戻す。無くてもよい——持たない版のカセットは指摘が 1 本減る。
 fn gois_at(v: &Value, key: &str) -> Vec<kakiburi_scale::assemble::Goi> {
     v.get(key)
         .and_then(Value::as_array)
@@ -364,7 +364,7 @@ fn gois_at(v: &Value, key: &str) -> Vec<kakiburi_scale::assemble::Goi> {
         .unwrap_or_default()
 }
 
-/// 型の配列を読み戻す。<strong>無くてもよい</strong>——持たない版のカセットは指摘が 1 本減る。
+/// 型の配列を読み戻す。無くてもよい——持たない版のカセットは指摘が 1 本減る。
 fn katas_at(v: &Value, key: &str) -> Vec<kakiburi_scale::assemble::Kata> {
     v.get(key)
         .and_then(Value::as_array)
@@ -386,7 +386,7 @@ fn katas_at(v: &Value, key: &str) -> Vec<kakiburi_scale::assemble::Kata> {
         .unwrap_or_default()
 }
 
-/// 読み戻す。<strong>1 つでも欠けたら組み立てない。</strong>
+/// 読み戻す。1 つでも欠けたら組み立てない。
 ///
 /// 半端に組み立てれば、次元の意味がずれたまま距離を取ることになる。
 #[must_use]
@@ -432,7 +432,7 @@ pub fn read(text: &str) -> Option<Scale> {
                 baseline_points: read_strings(s.get("基準の床の点"))?,
             }
         },
-        // <strong>無くてもよい。</strong> 実例を持たない目盛りは、直し方に例が付かない
+        // 無くてもよい。 実例を持たない目盛りは、直し方に例が付かない
         // だけで判定は変わらない。
         examples: v
             .get("実例")
@@ -449,8 +449,8 @@ pub fn read(text: &str) -> Option<Scale> {
                     .collect()
             })
             .unwrap_or_default(),
-        // <strong>欠けていたら読まない。</strong> 空で通せば照合値が出なくなり、
-        // <strong>目盛りがあるのに判定できないが返る</strong>——壊れていることが正常に見える。
+        // 欠けていたら読まない。 空で通せば照合値が出なくなり、
+        // 目盛りがあるのに判定できないが返る——壊れていることが正常に見える。
         partner_vectors: v
             .get("相手集合のベクトル")?
             .as_array()?
@@ -477,10 +477,10 @@ pub fn read(text: &str) -> Option<Scale> {
             .collect::<Option<Vec<_>>>()?,
         humanness,
         humanness_band: read_band(v.get("人らしさの帯")?)?,
-        // <strong>無くてもよい。</strong> 持たない版のカセットは、直し方の並びが粗くなる
+        // 無くてもよい。 持たない版のカセットは、直し方の並びが粗くなる
         // だけで判定は変わらない。
         humanness_target: {
-            // <strong>指標の並びから引く。</strong> 欄の並びに頼らない。
+            // 指標の並びから引く。 欄の並びに頼らない。
             let o = v.get("人らしさの代表値");
             kakiburi_metrics::humanness::Metric::ALL
                 .into_iter()
@@ -490,9 +490,9 @@ pub fn read(text: &str) -> Option<Scale> {
                 })
                 .collect()
         },
-        // <strong>無くてもよい。</strong> 言い回しを持たない版のカセットは、直し方が短くなる
+        // 無くてもよい。 言い回しを持たない版のカセットは、直し方が短くなる
         // だけで判定は変わらない。
-        // <strong>無くてもよい。</strong> 語を持たない版のカセットは、辞書どおりに割る。
+        // 無くてもよい。 語を持たない版のカセットは、辞書どおりに割る。
         lexicon: kakiburi_metrics::lexicon::Lexicon::from_pairs(
             v.get("語")
                 .and_then(Value::as_array)
@@ -521,7 +521,7 @@ pub fn read(text: &str) -> Option<Scale> {
                     .collect()
             })
             .unwrap_or_default(),
-        // <strong>無くてもよい。</strong> 上限を持たない版のカセットは、指摘が 1 本減るだけである。
+        // 無くてもよい。 上限を持たない版のカセットは、指摘が 1 本減るだけである。
         phrase_ceilings: v
             .get("言い回しの上限")
             .and_then(Value::as_array)
@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn 標準化が半端な重みは組み立てない() {
-        // <strong>足りない次元は「平均 0・標準偏差 1」で埋まる。</strong> つまりその次元だけ
+        // 足りない次元は「平均 0・標準偏差 1」で埋まる。 つまりその次元だけ
         // 標準化が外れた値が、エラーにならずに出る——仕様が名指しで禁じている経路。
         let s = fixture::scale();
         let text = write(&s);

@@ -1,6 +1,6 @@
 //! 形態素解析を要る指標。
 //!
-//! <strong>受け取るのは[解析し終えた形](crate::morph::Analyzed)である。</strong> 体系の確かめは
+//! 受け取るのは[解析し終えた形](crate::morph::Analyzed)である。 体系の確かめは
 //! そこで済んでいる——UniDic 以外で測れば、語彙素で引く指標が 0 件として静かに落ちる。
 
 use std::collections::BTreeMap;
@@ -14,9 +14,9 @@ use crate::Measured;
 
 /// 機能語の分布。
 ///
-/// 品詞が助詞・助動詞・接続詞・副詞・感動詞である形態素の <strong>表層形</strong>ごとに数える。
+/// 品詞が助詞・助動詞・接続詞・副詞・感動詞である形態素の 表層形ごとに数える。
 ///
-/// <strong>表層形で数える。</strong>「は」と「わ」、「けれど」と「けど」は別に扱う——
+/// 表層形で数える。「は」と「わ」、「けれど」と「けど」は別に扱う——
 /// そこが人によって違う。
 #[must_use]
 pub fn function_words(a: &Analyzed) -> Counts {
@@ -31,10 +31,10 @@ pub fn function_words(a: &Analyzed) -> Counts {
 
 /// 品詞 bigram の分布。
 ///
-/// <strong>第 1 層のタグを使う。</strong> 暫定である——[金 2013](../../../docs/references/jin-2013.md)は
+/// 第 1 層のタグを使う。 暫定である——[金 2013](../../../docs/references/jin-2013.md)は
 /// 第 2 層が最良だった報告を持つ。
 ///
-/// <strong>node を跨がない。</strong> 跨げば、見出しの末尾と次の段落の先頭の組ができる——
+/// node を跨がない。 跨げば、見出しの末尾と次の段落の先頭の組ができる——
 /// その隣接は書き手が選んだものではない。
 #[must_use]
 pub fn pos_bigrams(a: &Analyzed) -> Counts {
@@ -48,9 +48,9 @@ pub fn pos_bigrams(a: &Analyzed) -> Counts {
     counts
 }
 
-/// 接続詞直後の読点で見る語彙素。<strong>この一覧は定義の一部である。</strong>
+/// 接続詞直後の読点で見る語彙素。この一覧は定義の一部である。
 ///
-/// <strong>コーパスから選ばない。</strong> 書き手ごとに違う語彙素を採れば、指標の名前が書き手
+/// コーパスから選ばない。 書き手ごとに違う語彙素を採れば、指標の名前が書き手
 /// ごとに変わる。
 pub const CONJUNCTIONS: [&str; 12] = [
     "で",
@@ -69,7 +69,7 @@ pub const CONJUNCTIONS: [&str; 12] = [
 
 /// 文頭か文中か。
 ///
-/// <strong>文頭の接続詞は打たれやすいことが分かっており、そこは規範の層である。</strong>
+/// 文頭の接続詞は打たれやすいことが分かっており、そこは規範の層である。
 /// 人が出るのは文中の側である。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Position {
@@ -90,14 +90,14 @@ impl Position {
     }
 }
 
-/// 接続詞直後の読点が展開する軸の名前。<strong>12 語彙素 × 2 位置 = 24 本。</strong>
+/// 接続詞直後の読点が展開する軸の名前。12 語彙素 × 2 位置 = 24 本。
 ///
-/// <strong>解析器が無くても名前は決まる。</strong> 一覧が定義の一部なので、コーパスから選ばない
+/// 解析器が無くても名前は決まる。 一覧が定義の一部なので、コーパスから選ばない
 /// ——選べば書き手ごとに軸の名前が変わり、
 /// [名前は 1 度しか書かない](../../../docs/spec/100-metrics.md#名前は-1-度しか書かない)が
 /// 守れなくなる。
 ///
-/// 登録簿は<strong>展開後の軸</strong>を持つ。親の名前だけを置くと、値の側にある 24 本と
+/// 登録簿は展開後の軸を持つ。親の名前だけを置くと、値の側にある 24 本と
 /// 一致しなくなる。
 #[must_use]
 pub fn conjunction_comma_names() -> Vec<String> {
@@ -110,19 +110,19 @@ pub fn conjunction_comma_names() -> Vec<String> {
     out
 }
 
-/// 形態素列を文節に割る。<strong>自立語 1 つと、それに続く付属語。</strong>
+/// 形態素列を文節に割る。自立語 1 つと、それに続く付属語。
 ///
-/// <strong>文節が並びの単位である。</strong> 形態素の窓で切ると、`が地味` `に分け` `が含ま` の
-/// ような<strong>言葉として立たない断片</strong>が候補を埋める——実測で、機械の型を
-/// 出したときに上位がそういう断片ばかりになった。<strong>並べ替えでは直らない。</strong>
+/// 文節が並びの単位である。 形態素の窓で切ると、`が地味` `に分け` `が含ま` の
+/// ような言葉として立たない断片が候補を埋める——実測で、機械の型を
+/// 出したときに上位がそういう断片ばかりになった。並べ替えでは直らない。
 /// 候補の集合そのものが断片でできているからである。
 ///
-/// <strong>自立語が続くときは切らない。</strong> `フロント`＋`エンド` のような複合語は 1 つの
+/// 自立語が続くときは切らない。 `フロント`＋`エンド` のような複合語は 1 つの
 /// 文節である。切ると、複合語の途中から始まる並びが出る。
 fn bunsetsu(words: &[(&str, &str)]) -> Vec<(usize, usize)> {
     let mut out: Vec<(usize, usize)> = Vec::new();
     for (i, w) in words.iter().enumerate() {
-        // <strong>自立語で始まる。</strong> 直前も自立語なら複合語なので切らない。
+        // 自立語で始まる。 直前も自立語なら複合語なので切らない。
         let starts = is_content(w) && !out.last().is_some_and(|_| is_content(&words[i - 1]));
         if starts || out.is_empty() {
             out.push((i, i + 1));
@@ -130,7 +130,7 @@ fn bunsetsu(words: &[(&str, &str)]) -> Vec<(usize, usize)> {
             last.1 = i + 1;
         }
     }
-    // <strong>先頭が付属語で始まる塊は落とす。</strong> 文節ではなく、前の文の残りである。
+    // 先頭が付属語で始まる塊は落とす。 文節ではなく、前の文の残りである。
     if out.first().is_some_and(|&(s, _)| !is_content(&words[s])) {
         out.remove(0);
     }
@@ -139,16 +139,16 @@ fn bunsetsu(words: &[(&str, &str)]) -> Vec<(usize, usize)> {
 
 /// その単位に現れる語の並びと、文書の中での位置。
 ///
-/// <strong>型を取り出すための材料である</strong>——並びが本人の多くの単位に現れ、基準にほとんど
+/// 型を取り出すための材料である——並びが本人の多くの単位に現れ、基準にほとんど
 /// 現れないなら、それはその人の型である（[取り出し](../../kakiburi-scale/src/assemble.rs)）。
 ///
-/// <strong>数えるのは[文節](bunsetsu)の並びである。</strong> `ns` は文節の数を指す。
+/// 数えるのは[文節](bunsetsu)の並びである。 `ns` は文節の数を指す。
 ///
-/// <strong>英数字を含む並びは落とす。</strong> URL・パス・製品名は題材であって書きぶりではない
+/// 英数字を含む並びは落とす。 URL・パス・製品名は題材であって書きぶりではない
 /// ——[識別子を伏せる](kakiburi_doc::prose::mask_identifiers)のと同じ理由である。
 ///
-/// 位置は <strong>node の番号 ÷ node の総数</strong>。書き出しにしか現れない並びは、書き出しの型
-/// である。<strong>node の番号も返す</strong>——同じ node に現れる 2 つの型は、
+/// 位置は node の番号 ÷ node の総数。書き出しにしか現れない並びは、書き出しの型
+/// である。node の番号も返す——同じ node に現れる 2 つの型は、
 /// [穴あきの型](../../kakiburi-scale/src/assemble.rs)として繋がる。
 #[must_use]
 pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(String, f64, usize)> {
@@ -170,9 +170,9 @@ pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(St
                 let (from, to) = (span[0].0, span[span.len() - 1].1);
                 let w = &words[from..to];
                 let text: String = w.iter().map(|(s, _)| *s).collect();
-                // <strong>伏せ字を含む並びは型ではない。</strong> 識別子を畳んだ跡であって、
+                // 伏せ字を含む並びは型ではない。 識別子を畳んだ跡であって、
                 // 書き手が選んだ言い回しではない——渡せば「ゐゑと書け」と言うことになる。
-                // <strong>伏せ字の一部でも落とす。</strong> 並びが伏せ字の途中から始まれば、
+                // 伏せ字の一部でも落とす。 並びが伏せ字の途中から始まれば、
                 // 全体は含まないのに欠片が残る。
                 if text
                     .chars()
@@ -189,26 +189,26 @@ pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(St
     out
 }
 
-/// 語として数える品詞。<strong>評価と程度を言う語だけを取る。</strong>
+/// 語として数える品詞。評価と程度を言う語だけを取る。
 ///
-/// 名詞と動詞を入れない。<strong>あれは題材が決める</strong>——`Terraform` を使ったことが
+/// 名詞と動詞を入れない。あれは題材が決める——`Terraform` を使ったことが
 /// 無い書き手の文章に `Terraform` が出ても、書きぶりの話にはならない。
-/// 形容詞・形状詞・副詞は<strong>何をどう評価するかを言う語</strong>で、題材が変わっても
+/// 形容詞・形状詞・副詞は何をどう評価するかを言う語で、題材が変わっても
 /// 書き手ごとにほぼ閉じている。
 ///
-/// 実測で、本人 49 本のこの族の語彙素は 341 種。<strong>1 本を外して残り 48 本と比べると、
-/// その 1 本にしか無い語彙素は中央値 2 種</strong>である。名詞を入れれば固有名詞が全部出る。
+/// 実測で、本人 49 本のこの族の語彙素は 341 種。1 本を外して残り 48 本と比べると、
+/// その 1 本にしか無い語彙素は中央値 2 種である。名詞を入れれば固有名詞が全部出る。
 pub const GOI_POS: [&str; 3] = ["形容詞", "形状詞", "副詞"];
 
 /// その単位に現れる[語](GOI_POS)の語彙素と、その品詞と回数。
 ///
-/// <strong>品詞も返す。</strong>「別の言い方にする」とだけ言っても直せない——
-/// <strong>同じ品詞で本人が何を使うか</strong>が言えて初めて、置き換える語が選べる。
+/// 品詞も返す。「別の言い方にする」とだけ言っても直せない——
+/// 同じ品詞で本人が何を使うかが言えて初めて、置き換える語が選べる。
 ///
-/// <strong>[並び](grams_with_position)では拾えないものを拾う。</strong> 並びは表層形をそのまま
-/// 照合するので、<strong>同じ癖が語形ごとに割れる</strong>——実測で、基準の池 44 本のうち
+/// [並び](grams_with_position)では拾えないものを拾う。 並びは表層形をそのまま
+/// 照合するので、同じ癖が語形ごとに割れる——実測で、基準の池 44 本のうち
 /// `地味` は 9 本に出るのに、`地味に` という綴りは 2 本にしかなく、
-/// <strong>並びとしては床を割って一度も拾えなかった。</strong>
+/// 並びとしては床を割って一度も拾えなかった。
 ///
 /// 語彙素まで畳めば `地味な` `地味だ` `地味に` が 1 つに合流する。
 #[must_use]
@@ -221,7 +221,7 @@ pub fn goi(analyzed: Option<&Analyzed>) -> BTreeMap<String, (String, usize)> {
         if !GOI_POS.contains(&m.pos1.as_str()) {
             continue;
         }
-        // <strong>伏せ字と英数字は語ではない。</strong>[並び](grams_with_position)と同じ理由で、
+        // 伏せ字と英数字は語ではない。[並び](grams_with_position)と同じ理由で、
         // 識別子を畳んだ跡や題材そのものを書きぶりの指摘に混ぜない。
         if m.lemma
             .chars()
@@ -237,13 +237,13 @@ pub fn goi(analyzed: Option<&Analyzed>) -> BTreeMap<String, (String, usize)> {
     out
 }
 
-/// 自立語か。<strong>単独で文節を始められる語。</strong>
+/// 自立語か。単独で文節を始められる語。
 ///
-/// <strong>UniDic の体系をそのまま使う。</strong> 学校文法の「名詞」「形容動詞」を当てはめると
-/// 落ちるものが出る——<strong>UniDic は な形容詞の語幹を `形状詞` に、`私` `これ` を
-/// `代名詞` に分ける。</strong>
+/// UniDic の体系をそのまま使う。 学校文法の「名詞」「形容動詞」を当てはめると
+/// 落ちるものが出る——UniDic は な形容詞の語幹を `形状詞` に、`私` `これ` を
+/// `代名詞` に分ける。
 ///
-/// 実測で、この 2 つを落としていたために<strong>「地味に」が並びとして一度も拾えなかった</strong>
+/// 実測で、この 2 つを落としていたために「地味に」が並びとして一度も拾えなかった
 /// ——`地味` は `形状詞` なので、`地味`＋`に` は自立語を含まない並びと見なされていた。
 /// 同じ理由で 静か・便利・重要・簡単・快適 も、すべて見えていなかった。
 fn is_content(m: &(&str, &str)) -> bool {
@@ -255,13 +255,13 @@ fn is_content(m: &(&str, &str)) -> bool {
 
 /// 語を割っている読点の数。
 ///
-/// <strong>道具が「読点を増やせ」と言った結果、語の内側に読点が入ることがある。</strong>
+/// 道具が「読点を増やせ」と言った結果、語の内側に読点が入ることがある。
 /// `あらため、て取得し直す` は `改めて` を割っている。指標は満たされ、日本語は壊れる。
 ///
-/// <strong>数え方は[解析のとき](kakiburi_metrics::morph::Analyzed)に済ませてある</strong>——
+/// 数え方は[解析のとき](kakiburi_metrics::morph::Analyzed)に済ませてある——
 /// 読点を抜いて解析し直す必要があり、解析器を持っているのはそこだけである。
 ///
-/// <strong>線は 0 である。</strong> 実測で、素材 71 本・読点 3,721 個のうち<strong>1 つも当たらなかった</strong>
+/// 線は 0 である。 実測で、素材 71 本・読点 3,721 個のうち1 つも当たらなかった
 /// ——`ある、という` も `さて、では` も `はい、なので` も、読点を外して語が繋がらない。
 /// 壊れた草稿の `あらため、て` だけが当たる。
 #[must_use]
@@ -273,11 +273,11 @@ pub fn splitting_commas(analyzed: Option<&Analyzed>) -> Measured {
     Measured::Value(a.split_commas().len() as f64)
 }
 
-/// 接続詞直後の読点。<strong>語彙素 × 位置ごとのスカラー。</strong>
+/// 接続詞直後の読点。語彙素 × 位置ごとのスカラー。
 ///
 /// 名前は「接続詞直後の読点・&lt;語彙素&gt;・&lt;文頭|文中&gt;」。12 × 2 = 24 本になる。
 ///
-/// <strong>まとめて 1 つの割合にしない。</strong> まとめると、規範で決まる分に薄まる。
+/// まとめて 1 つの割合にしない。 まとめると、規範で決まる分に薄まる。
 #[must_use]
 pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Measured> {
     // (語彙素, 位置) → (読点あり, 全体)
@@ -289,7 +289,7 @@ pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Measured> {
     }
 
     for ms in a.segments() {
-        // 文頭の判定。<strong>直前が終端記号か、node の先頭。</strong>
+        // 文頭の判定。直前が終端記号か、node の先頭。
         let mut at_head = true;
         for (i, m) in ms.iter().enumerate() {
             if m.is_conjunction() {
@@ -311,12 +311,12 @@ pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Measured> {
         }
     }
 
-    // <strong>除外は位置ごとに掛ける。</strong> 文頭に 10 回、文中に 0 回の語彙素は、
+    // 除外は位置ごとに掛ける。 文頭に 10 回、文中に 0 回の語彙素は、
     // 文中側の分母が 0 になる。
     let mut out = BTreeMap::new();
     for ((lemma, pos), (hit, total)) in tally {
         let name = format!("接続詞直後の読点・{lemma}・{}", pos.name());
-        // <strong>1 度も現れないのと、現れたが足りないのを分ける。</strong> 前者は素材を足しても
+        // 1 度も現れないのと、現れたが足りないのを分ける。 前者は素材を足しても
         // 直るとは限らない——その語彙素をその位置で使わない書き手である。
         let m = match total {
             0 => Measured::NoDenominator,
@@ -332,7 +332,7 @@ pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Measured> {
     out
 }
 
-/// 語の文体値の表。<strong>外から与える。</strong>
+/// 語の文体値の表。外から与える。
 ///
 /// 語彙素から (硬さ, 語り性) を引く。
 pub trait StyleTable {
@@ -340,14 +340,14 @@ pub trait StyleTable {
     fn lookup(&self, lemma: &str) -> Option<(f64, f64)>;
     /// 表に載る語の値を昇順に並べた、10 等分位の境目。
     ///
-    /// <strong>階級は表そのものから決める。</strong> 手で境目を置かない。
+    /// 階級は表そのものから決める。 手で境目を置かない。
     fn deciles(&self) -> ([f64; 9], [f64; 9]);
 }
 
 /// 語の文体値の分布。
 ///
-/// <strong>平均を取らない。</strong> 硬い語と軟らかい語を混ぜて書く人と、中庸な語だけで書く人が、
-/// 同じ平均になる。<strong>分布として持つ。</strong>
+/// 平均を取らない。 硬い語と軟らかい語を混ぜて書く人と、中庸な語だけで書く人が、
+/// 同じ平均になる。分布として持つ。
 ///
 /// 次元は 2 軸 × 各 10 階級 + 表に無い語の割合 = 21。
 #[must_use]
@@ -356,7 +356,7 @@ pub fn word_style(a: &Analyzed, table: &dyn StyleTable) -> Option<Vec<f64>> {
     let mut hard = [0usize; 10];
     let mut narr = [0usize; 10];
     let (mut found, mut total) = (0usize, 0usize);
-    // <strong>同じ語彙素の重複は 1 回として数える。</strong>
+    // 同じ語彙素の重複は 1 回として数える。
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for m in a.all() {
         if !seen.insert(m.lemma.as_str()) {
@@ -406,7 +406,7 @@ mod tests {
             .collect()
     }
 
-    /// 解析し終えた形にする。<strong>体系の確かめはここで済む。</strong>
+    /// 解析し終えた形にする。体系の確かめはここで済む。
     fn analyzed(texts: &[&str]) -> Analyzed {
         Analyzed::of(&prose(texts), &Stub::unidic()).unwrap()
     }
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn 別の体系では解析し終えた形が作れない() {
         // 黙って測れば、語彙素で引く指標が 0 件として静かに落ちる。
-        // <strong>指標ごとに確かめるのではなく、作る道が 1 つだから書き忘れられない。</strong>
+        // 指標ごとに確かめるのではなく、作る道が 1 つだから書き忘れられない。
         let p = prose(&["これ は 大事 である 。"]);
         assert!(Analyzed::of(&p, &Stub::other()).is_err());
         assert!(Analyzed::of(&p, &Stub::unidic()).is_ok());

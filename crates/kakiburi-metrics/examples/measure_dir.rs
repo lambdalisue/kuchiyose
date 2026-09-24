@@ -4,13 +4,13 @@
 //! cargo run --example measure_dir -- <ディレクトリ> [取り込み元]
 //! ```
 //!
-//! <strong>0 と「測っていない」を区別して出す。</strong> 測っていないものは `—` で出る。
+//! 0 と「測っていない」を区別して出す。 測っていないものは `—` で出る。
 
 use kakiburi_doc::Document;
 use kakiburi_metrics::{structure, symbol, Measured};
 use kakiburi_normalize::{normalize, Source};
 
-/// 名前と測り方の対。<strong>使う側は一覧を持たない</strong>ので、ここに並べるのは例だけである。
+/// 名前と測り方の対。使う側は一覧を持たないので、ここに並べるのは例だけである。
 type Metric = (&'static str, fn(&Document) -> Measured);
 
 const METRICS: &[Metric] = &[
@@ -114,10 +114,10 @@ fn main() {
         println!();
     }
     println!("{}", "-".repeat(26 + 11 * docs.len()));
-    println!("測っていない印。<strong>どれも 0 ではない。</strong>");
+    println!("測っていない印。どれも 0 ではない。");
     println!("  —      下限未満。長い文書を足せば直る");
     println!("  0/0    分母が 0。その文書では測れない");
     println!("  ×      書けない記法。別の取り込み元で集め直す");
-    println!("  道具無 形態素解析器や外部の表が無い。<strong>環境を直す</strong>");
-    println!("  道具失 道具が返さなかった。<strong>報告する</strong>");
+    println!("  道具無 形態素解析器や外部の表が無い。環境を直す");
+    println!("  道具失 道具が返さなかった。報告する");
 }

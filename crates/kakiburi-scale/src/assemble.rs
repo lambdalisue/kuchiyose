@@ -1,12 +1,12 @@
-//! 目盛りを組み立てる。<strong>素材から端まで通す 1 本の道である。</strong>
+//! 目盛りを組み立てる。素材から端まで通す 1 本の道である。
 //!
-//! <strong>順序が守るべきものを持っている。</strong>
+//! 順序が守るべきものを持っている。
 //!
 //! | 順 | すること | 崩すと何が起きるか |
 //! | --- | --- | --- |
 //! | 1 | 測れた単位だけを取る | 除外に掛かった単位が対に入り、相手の本数が黙って 5 を割る |
 //! | 2 | 長さの範囲を確かめる | 長さと連動する指標がすべて離れて見える |
-//! | 3 | <strong>割る前に</strong>語彙を固定する | 側ごとに次元の意味が変わる |
+//! | 3 | 割る前に語彙を固定する | 側ごとに次元の意味が変わる |
 //! | 4 | 対を割り当てる | 較正と目盛りが対を共有し、いちばん危ない検査が無効になる |
 //! | 5 | 較正して帯を作る | |
 
@@ -30,7 +30,7 @@ use crate::{length_range_ok, Scale, ScaleError};
 /// 素材 1 本。
 #[derive(Debug, Clone, Copy)]
 pub struct Sample<'a> {
-    /// 単位の名前。<strong>ファイル名ではない。</strong>
+    /// 単位の名前。ファイル名ではない。
     pub name: &'a str,
     /// 正規形。
     pub document: &'a Document,
@@ -38,34 +38,34 @@ pub struct Sample<'a> {
 
 /// 1 単位を測り終えた形。
 struct Measurements {
-    /// 系統ごとの部分ベクトルの数え上げ。<strong>測れなかった系統は入っていない。</strong>
+    /// 系統ごとの部分ベクトルの数え上げ。測れなかった系統は入っていない。
     parts: BTreeMap<System, Vec<Counts>>,
     /// その単位の中で再来した言い回し。
     recurring: Vec<String>,
     /// その単位が繰り返しすぎている短い言い回し。
     overused: Vec<String>,
-    /// その単位で一度しか出てこない語。<strong>語を散らしている当のものである。</strong>
+    /// その単位で一度しか出てこない語。語を散らしている当のものである。
     once_only: Vec<String>,
-    /// その単位に現れる語の並びと、位置と node の番号。<strong>型を取り出す材料。</strong>
+    /// その単位に現れる語の並びと、位置と node の番号。型を取り出す材料。
     grams: Vec<(String, f64, usize)>,
     /// その単位に現れる[語](kakiburi_metrics::word::goi)の語彙素と、品詞と回数。
-    /// <strong>語形が散っても 1 つに合流する。</strong>
+    /// 語形が散っても 1 つに合流する。
     goi: BTreeMap<String, (String, usize)>,
     /// 人らしさの次元。
     humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
     chars: usize,
-    /// 地の文をつないだもの。<strong>言い回しの上限を文字列として数えるために持つ。</strong>
+    /// 地の文をつないだもの。言い回しの上限を文字列として数えるために持つ。
     ///
-    /// <strong>[文節の並び](Self::grams)では数えられない。</strong> 渡す言い回しは
+    /// [文節の並び](Self::grams)では数えられない。 渡す言い回しは
     /// `ています。` のように文節にならないものを含むので、文節の並びと照らすと
-    /// <strong>ほとんどが 0 になる</strong>——実測で、20 本のうち 15 本の上限が 0 だった。
+    /// ほとんどが 0 になる——実測で、20 本のうち 15 本の上限が 0 だった。
     text: String,
 }
 
 /// 本人の素材からコーパスの語を見つける。
 ///
-/// <strong>解析するだけで、測らない。</strong> ここで測ってしまうと、割れたままの値が
+/// 解析するだけで、測らない。 ここで測ってしまうと、割れたままの値が
 /// 派生物に残る。
 fn lexicon_of(person: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Lexicon {
     let Some(a) = analyzer else {
@@ -83,14 +83,14 @@ fn lexicon_of(person: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Lexicon
 
 impl Measurements {
     fn of(sample: Sample<'_>, analyzer: Option<&dyn Analyzer>, lexicon: &Lexicon) -> Self {
-        // <strong>識別子を伏せてから測る。</strong> `denops.vim` のような半角英字の連なりは
-        // <strong>書き手が選んだ書きぶりではなく題材が決めるもの</strong>で、そのまま入れると
-        // <strong>同じ人が別の題材で書いた文章を「その人らしくない」と言う</strong>。
+        // 識別子を伏せてから測る。 `denops.vim` のような半角英字の連なりは
+        // 書き手が選んだ書きぶりではなく題材が決めるもので、そのまま入れると
+        // 同じ人が別の題材で書いた文章を「その人らしくない」と言う。
         //
-        // <strong>掛けるのはここだけである。</strong> 指示できる指標は和欧間スペースや半角英字
+        // 掛けるのはここだけである。 指示できる指標は和欧間スペースや半角英字
         // そのものを測るので、生の文から測り続ける。
         let prose = kakiburi_doc::prose::mask_identifiers(&sample.document.prose());
-        // <strong>解析は 1 度だけ。</strong> 指標ごとに呼べば、外の実行ファイルを指標の数だけ起こす。
+        // 解析は 1 度だけ。 指標ごとに呼べば、外の実行ファイルを指標の数だけ起こす。
         let analyzed = analyzer.and_then(|a| Analyzed::with_lexicon(&prose, a, lexicon).ok());
         let mut parts = BTreeMap::new();
         for s in FOR_VERDICT {
@@ -100,19 +100,19 @@ impl Measurements {
         }
         Self {
             parts,
-            // <strong>長いほうだけを取る。</strong> 短い言い回しは誰でも繰り返すので、
+            // 長いほうだけを取る。 短い言い回しは誰でも繰り返すので、
             // 渡しても癖にならない。
             recurring: kakiburi_metrics::humanness::recurring(
                 analyzed.as_ref(),
                 &kakiburi_metrics::humanness::LONG_N,
             ),
-            // <strong>「減らせ」と言うなら、どれを減らすのかを言う。</strong>
+            // 「減らせ」と言うなら、どれを減らすのかを言う。
             overused: kakiburi_metrics::humanness::overused(
                 analyzed.as_ref(),
                 &kakiburi_metrics::humanness::SHORT_N,
                 OVERUSED,
             ),
-            // <strong>「散らすな」と言うなら、どれが散らしているのかを言う。</strong>
+            // 「散らすな」と言うなら、どれが散らしているのかを言う。
             once_only: kakiburi_metrics::humanness::once_only(analyzed.as_ref(), ONCE_ONLY),
             grams: kakiburi_metrics::word::grams_with_position(analyzed.as_ref(), &KATA_N),
             goi: kakiburi_metrics::word::goi(analyzed.as_ref()),
@@ -130,7 +130,7 @@ impl Measurements {
 
 /// 1 単位が測れたかの内訳。
 ///
-/// <strong>止まったなら、どの単位のどこで止まったかを言う。</strong> 「10 本に届かない」だけでは、
+/// 止まったなら、どの単位のどこで止まったかを言う。 「10 本に届かない」だけでは、
 /// 素材を足すべきか、長さを揃えるべきか、辞書を入れるべきかが分からない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Report {
@@ -152,7 +152,7 @@ impl Report {
     }
 }
 
-/// 素材を測って内訳を返す。<strong>目盛りは作らない。</strong>
+/// 素材を測って内訳を返す。目盛りは作らない。
 #[must_use]
 pub fn inspect(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Vec<Report> {
     samples
@@ -175,39 +175,39 @@ pub fn inspect(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Vec<R
 
 /// 目盛りを作る材料。
 ///
-/// <strong>場面を跨げる素材を、跨げない素材と同じ配列に入れない。</strong> 入れれば、
+/// 場面を跨げる素材を、跨げない素材と同じ配列に入れない。 入れれば、
 /// 相手集合にも天井にも他人が混ざる道が開く——[場面ごとに閉じる](../../../docs/spec/010-strategy.md#場面ごとに閉じる)
 /// が、呼ぶ側の注意だけで守られることになる。
 ///
-/// <strong>欄で分けたうえで、[`assemble`]は [`others`](Self::others) を人らしさの較正にしか
-/// 渡さない。</strong> 型が全部を守るわけではないが、跨ぐ道が 1 本に絞られる。
+/// 欄で分けたうえで、[`assemble`]は [`others`](Self::others) を人らしさの較正にしか
+/// 渡さない。 型が全部を守るわけではないが、跨ぐ道が 1 本に絞られる。
 #[derive(Debug, Clone, Copy)]
 pub struct Material<'a> {
-    /// <strong>1 つの場面の</strong>本人の単位。
+    /// 1 つの場面の本人の単位。
     pub person: &'a [Sample<'a>],
-    /// <strong>同じ場面の</strong>基準の単位。
+    /// 同じ場面の基準の単位。
     pub baseline: &'a [Sample<'a>],
-    /// 他人の文書。<strong>場面を跨いでよい唯一の素材である。</strong>
+    /// 他人の文書。場面を跨いでよい唯一の素材である。
     ///
     /// [人らしさの較正の人の側](../../../docs/spec/200-extract.md#人らしさの境目は同じ材料から出る)
-    /// にだけ足す。<strong>帯の側には足さない</strong>——足せば、帯の点の数が本人と基準で
+    /// にだけ足す。帯の側には足さない——足せば、帯の点の数が本人と基準で
     /// 釣り合わなくなる。
     pub others: &'a [Sample<'a>],
 }
 
 /// 組み立てる。
 ///
-/// <strong>作れないことは失敗ではない。</strong> 素材が足りなければ目盛りを作らず、検めが
+/// 作れないことは失敗ではない。 素材が足りなければ目盛りを作らず、検めが
 /// 判定できないを返す——それが正しい振る舞いである。
 pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scale, ScaleError> {
     let (person, baseline) = (m.person, m.baseline);
-    // <strong>2 度測る。</strong> 1 度目でコーパスから語を見つけ、2 度目でその語を畳んで測る。
+    // 2 度測る。 1 度目でコーパスから語を見つけ、2 度目でその語を畳んで測る。
     //
-    // <strong>辞書に無い語は割れる。</strong> 書き手の名前も、その分野の言い回しも、解析器の
+    // 辞書に無い語は割れる。 書き手の名前も、その分野の言い回しも、解析器の
     // 辞書は知らない——割れたままだと、その語のところで機能語も品詞 bigram も型も
     // 狂う（[語](kakiburi_metrics::lexicon)）。
     //
-    // <strong>見つけるのは本人の素材からである。</strong> 基準から見つければ、基準の書きぶりが
+    // 見つけるのは本人の素材からである。 基準から見つければ、基準の書きぶりが
     // 本人の測り方を決めることになる。
     let lexicon = lexicon_of(person, analyzer);
     let measured: BTreeMap<String, Measurements> = person
@@ -237,9 +237,9 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     let person_split = split::split(&person_units).map_err(ScaleError::Split)?;
     let baseline_split = split::split(&baseline_units).map_err(ScaleError::Split)?;
 
-    // 2. 長さの範囲。<strong>指標ごとではなく、その場面まるごと止める。</strong>
+    // 2. 長さの範囲。指標ごとではなく、その場面まるごと止める。
     //
-    // <strong>見るのは実際に使う単位の範囲である。</strong> 除外に掛かって目盛りに入らない単位を
+    // 見るのは実際に使う単位の範囲である。 除外に掛かって目盛りに入らない単位を
     // 混ぜれば、比べていないものの長さで止まったり通ったりする。
     let chars = |s: &split::Split| -> Vec<usize> {
         s.partners
@@ -250,7 +250,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     };
     length_range_ok(&chars(&person_split), &chars(&baseline_split))?;
 
-    // 3. <strong>割る前に語彙を固定する。</strong> 全体から選ぶ——側ごとに違う語彙を使えば、
+    // 3. 割る前に語彙を固定する。 全体から選ぶ——側ごとに違う語彙を使えば、
     //    側ごとに次元の意味が変わる。
     let used: Vec<&Unit> = person_split
         .partners
@@ -265,9 +265,9 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
             .iter()
             .filter_map(|u| measured[&u.name].parts.get(&s).cloned())
             .collect();
-        // <strong>平均と標準偏差は基準から取る。</strong> 本人を含む素材で標準化すると、
+        // 平均と標準偏差は基準から取る。 本人を含む素材で標準化すると、
         // 本人の単位が過半を占めるぶん平均が本人のところに来て、
-        // <strong>本人の記事は原点に置かれる</strong>——z 得点に残るのは 1 本ごとの雑音だけになる。
+        // 本人の記事は原点に置かれる——z 得点に残るのは 1 本ごとの雑音だけになる。
         let reference: Vec<Vec<Counts>> = baseline_split
             .partners
             .iter()
@@ -280,11 +280,11 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         ));
     }
 
-    // <strong>他人は系統が測れたものだけを使う。</strong> 投影できない単位を対にしても捨てられる。
+    // 他人は系統が測れたものだけを使う。 投影できない単位を対にしても捨てられる。
     //
-    // <strong>語彙には入れない。</strong> 固定するのは本人と基準からで、他人はその語彙へ投影する
+    // 語彙には入れない。 固定するのは本人と基準からで、他人はその語彙へ投影する
     // ——検めるときの草稿と同じ扱いである。他人の語で次元を決めれば、
-    // <strong>他人が何人来たかで本人の測り方が変わる。</strong>
+    // 他人が何人来たかで本人の測り方が変わる。
     let other_units: Vec<Unit> = m
         .others
         .iter()
@@ -309,13 +309,13 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         }
     }
 
-    // 4. 対を割り当てる。<strong>作り手を 1 つにしたうえで、それでも確かめる。</strong>
+    // 4. 対を割り当てる。作り手を 1 つにしたうえで、それでも確かめる。
     let pairing = pair(&person_split, &baseline_split, &other_units);
     if pairing.shares_pairs() {
         return Err(ScaleError::SharedPairs);
     }
 
-    // 系統ごとの距離。<strong>片方でも投影できなければ対を捨てる。</strong>
+    // 系統ごとの距離。片方でも投影できなければ対を捨てる。
     let system_names: Vec<String> = frozen.iter().map(|(n, _)| n.clone()).collect();
     let distance = |system: &str, p: &Pair| -> Option<f64> {
         let a = projected.get(&(system.to_owned(), p.left.clone()))?;
@@ -341,7 +341,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     }
     let calibration = Calibration::fit(&system_names, &rows, &labels);
 
-    // 5. 天井と床。<strong>1 本につき 1 点</strong>——相手集合との照合値の中央値である。
+    // 5. 天井と床。1 本につき 1 点——相手集合との照合値の中央値である。
     let point = |pairs: &[Pair]| -> Option<f64> {
         let values: Vec<f64> = pairs
             .iter()
@@ -369,7 +369,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         }))
     })?;
 
-    // 人らしさ。<strong>対ではなく単位で割る</strong>——1 本ごとに出る値で、対を作らない。
+    // 人らしさ。対ではなく単位で割る——1 本ごとに出る値で、対を作らない。
     let rows_of = |us: &[Unit]| -> Vec<Vec<f64>> {
         us.iter()
             .map(|u| {
@@ -382,17 +382,17 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
             })
             .collect()
     };
-    // <strong>他人の文書は較正の側にだけ足す。</strong> 人らしさの人の側は「誰の文章でも人が
+    // 他人の文書は較正の側にだけ足す。 人らしさの人の側は「誰の文章でも人が
     // 書いたものは人の側に落ちる」ので、素材が足りなければ混ぜてよい——
-    // <strong>場面は人と機械の別を跨がない。</strong>
+    // 場面は人と機械の別を跨がない。
     //
-    // <strong>較正には、帯に使う分を除いた全部を渡す。</strong>
+    // 較正には、帯に使う分を除いた全部を渡す。
     //
-    // 帯の端を各側 5 点に固定したのは、<strong>最小・最大が n とともに外へ広がる</strong>から
-    // である。<strong>回帰は漂わない</strong>ので、同じ縛りを較正に掛ける理由が無い——
+    // 帯の端を各側 5 点に固定したのは、最小・最大が n とともに外へ広がるから
+    // である。回帰は漂わないので、同じ縛りを較正に掛ける理由が無い——
     // 10 単位で 4 つの重みを当てはめると、標本外で当たらない。
     //
-    // <strong>帯の点は除く。</strong> 較正に使った単位で帯を作れば、分離するように合わせた
+    // 帯の点は除く。 較正に使った単位で帯を作れば、分離するように合わせた
     // ものの分離具合を見ることになる。
     let for_calibration = |all: &[Unit], points: &[Unit]| -> Vec<Unit> {
         all.iter()
@@ -403,7 +403,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     let human_units = for_calibration(&person_units, &person_split.points);
     let machine_units = for_calibration(&baseline_units, &baseline_split.points);
 
-    // <strong>測れなかったものは落とす。</strong> 次元が揃わない行を混ぜれば、列の数が
+    // 測れなかったものは落とす。 次元が揃わない行を混ぜれば、列の数が
     // 行ごとに変わる。
     let mut human_rows = rows_of(&human_units);
     for s in m.others {
@@ -426,7 +426,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     };
     let human = side(&person_split.points);
     let machine = side(&baseline_split.points);
-    // <strong>重なりでは止めない。</strong> 人らしさの帯が全体を覆うのは設計どおりの結果で、
+    // 重なりでは止めない。 人らしさの帯が全体を覆うのは設計どおりの結果で、
     // 当てはまらないことが判定不能として出る。止めれば自己診断が消える。
     let humanness_band = Band::build_humanness(&human, &machine).map_err(|source| {
         ScaleError::Band(Box::new(crate::BandStop {
@@ -434,12 +434,12 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
             which: "人らしさ値",
             ceiling: human.clone(),
             floor: machine.clone(),
-            // <strong>照合の帯は作れている。</strong> 止まったのは人らしさの側である。
+            // 照合の帯は作れている。 止まったのは人らしさの側である。
             built: Some(band),
         }))
     })?;
 
-    // <strong>本人の代表値を先に作る。</strong> 効く量を数える相手である。
+    // 本人の代表値を先に作る。 効く量を数える相手である。
     let humanness_target: Vec<(String, f64)> = {
         let rows: Vec<Vec<(&str, f64)>> = person_units
             .iter()
@@ -467,9 +467,9 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
             .collect()
     };
 
-    // <strong>相手集合のベクトルを取り置く。</strong> 検めるときに本文が無くても照合値を
-    // 出せるようにするためである——<strong>ここで作らなければ、素材を持っている瞬間が
-    // 二度と来ない。</strong>
+    // 相手集合のベクトルを取り置く。 検めるときに本文が無くても照合値を
+    // 出せるようにするためである——ここで作らなければ、素材を持っている瞬間が
+    // 二度と来ない。
     let partner_vectors: Vec<crate::PartnerVector> = person_split
         .partners
         .iter()
@@ -486,7 +486,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         })
         .collect();
 
-    // <strong>実例も取り置く。</strong> 検めるときに本文へ読みに行く道が無い。
+    // 実例も取り置く。 検めるときに本文へ読みに行く道が無い。
     let partner_samples: Vec<Sample<'_>> = m
         .person
         .iter()
@@ -512,11 +512,11 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         },
         humanness,
         humanness_band,
-        // <strong>作るのはここだけである。</strong> 検めが作り直せる形にしておくと、検める文書を
+        // 作るのはここだけである。 検めが作り直せる形にしておくと、検める文書を
         // 見てから言い回しを選び直す経路が書ける。
         humanness_target,
         phrases: phrases_of(&person_units, &measured),
-        // <strong>渡した言い回しには上限も渡す。</strong> 繰り返せとだけ言えば、行きすぎる。
+        // 渡した言い回しには上限も渡す。 繰り返せとだけ言えば、行きすぎる。
         phrase_ceilings: ceilings_of(
             &phrases_of(&person_units, &measured),
             &person_units,
@@ -524,20 +524,20 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         ),
         lexicon,
         katas: katas_of(&person_units, &machine_units, &measured, KATAS),
-        // <strong>役を入れ替えて、もう 1 度回す。</strong> 同じ仕組みで機械の型が出る。
+        // 役を入れ替えて、もう 1 度回す。 同じ仕組みで機械の型が出る。
         machine_katas: katas_of(&machine_units, &person_units, &measured, MACHINE_KATAS),
-        // <strong>並びで割れた癖を、語彙素で拾い直す。</strong>
+        // 並びで割れた癖を、語彙素で拾い直す。
         machine_gois: gois_of(&machine_units, &person_units, &measured, MACHINE_GOIS),
     })
 }
 
-/// 言い回しごとの、本人が 1 本の中で使う上限。<strong>日本語 1,000 字あたりの最大。</strong>
+/// 言い回しごとの、本人が 1 本の中で使う上限。日本語 1,000 字あたりの最大。
 ///
-/// <strong>「繰り返せ」と言うなら、どこまで繰り返してよいかも言う。</strong> 言わなければ、
-/// 受け取った側は本人の何倍も入れる。<strong>日本語は壊れないので検査では止まらない</strong>
+/// 「繰り返せ」と言うなら、どこまで繰り返してよいかも言う。 言わなければ、
+/// 受け取った側は本人の何倍も入れる。日本語は壊れないので検査では止まらない
 /// ——本人の頻度と比べるしかない。
 ///
-/// <strong>本文をそのまま数える。</strong> 形態素の並びではなく文字列として数えるので、
+/// 本文をそのまま数える。 形態素の並びではなく文字列として数えるので、
 /// 検める側が同じ数え方をできる。
 fn ceilings_of(
     phrases: &[String],
@@ -568,7 +568,7 @@ fn ceilings_of(
 
 /// 何本の単位で再来したかで、言い回しを並べる。
 ///
-/// <strong>1 本にしか出ない言い回しは、その文書の題材が作ったものである。</strong> 2 本以上で
+/// 1 本にしか出ない言い回しは、その文書の題材が作ったものである。 2 本以上で
 /// 再来したものだけを、その人の癖として残す。
 fn phrases_of(units: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<String> {
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
@@ -585,7 +585,7 @@ fn phrases_of(units: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<
         .filter(|(_, k)| *k >= 2)
         .map(|(g, k)| (k, g))
         .collect();
-    // <strong>多い順。同じなら短い順、次に文字の順。</strong> 決めておかないと並びが実装で変わる。
+    // 多い順。同じなら短い順、次に文字の順。 決めておかないと並びが実装で変わる。
     out.sort_by(|a, b| {
         b.0.cmp(&a.0)
             .then_with(|| a.1.chars().count().cmp(&b.1.chars().count()))
@@ -595,67 +595,67 @@ fn phrases_of(units: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<
     out.into_iter().map(|(_, g)| g).collect()
 }
 
-/// 残す言い回しの数。<strong>暫定値である。</strong>
+/// 残す言い回しの数。暫定値である。
 pub const PHRASES: usize = 20;
 
-/// 型として見る語の並びの長さ。<strong>暫定値である。</strong>
+/// 型として見る語の並びの長さ。暫定値である。
 ///
-/// <strong>数えるのは[文節](kakiburi_metrics::word)の数である</strong>——形態素の窓ではない。
+/// 数えるのは[文節](kakiburi_metrics::word)の数である——形態素の窓ではない。
 /// 窓で切ると `が地味` `に分け` のような、言葉として立たない断片が候補を埋める。
 ///
 /// 短すぎれば誰でも書く並びになり、長すぎれば 1 本にしか出てこない。
 pub const KATA_N: [usize; 4] = [1, 2, 3, 4];
 
-/// 型と認める、本人の単位に現れる割合。<strong>暫定値である。</strong>
+/// 型と認める、本人の単位に現れる割合。暫定値である。
 pub const KATA_PERSON_MIN: f64 = 0.10;
 
-/// 型と認める、基準の単位に現れる割合の上限。<strong>暫定値である。</strong>
+/// 型と認める、基準の単位に現れる割合の上限。暫定値である。
 ///
-/// <strong>みんなが書く並びは、その人のものではない。</strong>
+/// みんなが書く並びは、その人のものではない。
 pub const KATA_BASE_MAX: f64 = 0.05;
 
-/// 残す型の数。<strong>種類ごとに数える。</strong> 暫定値である。
+/// 残す型の数。種類ごとに数える。 暫定値である。
 ///
-/// <strong>まとめて数えると、場所の型が押し出される</strong>——場所の型は珍しいので割合が低い。
+/// まとめて数えると、場所の型が押し出される——場所の型は珍しいので割合が低い。
 pub const KATAS: usize = 6;
 
-/// 残す機械の型の数。<strong>本人の型よりずっと多く持つ。</strong> 暫定値である。
+/// 残す機械の型の数。本人の型よりずっと多く持つ。 暫定値である。
 ///
-/// <strong>枠の意味が違う。</strong> 本人の型は「この文章に<strong>入っていない</strong>もの」を言うので、
-/// 多く持つほど指摘が薄まる。機械の型は「この文章に<strong>出ている</strong>もの」だけを言うので、
-/// <strong>多く持っても指摘は増えない</strong>——持っていない並びは見つけられないだけである。
+/// 枠の意味が違う。 本人の型は「この文章に入っていないもの」を言うので、
+/// 多く持つほど指摘が薄まる。機械の型は「この文章に出ているもの」だけを言うので、
+/// 多く持っても指摘は増えない——持っていない並びは見つけられないだけである。
 ///
-/// 実測で、6 本に絞ると<strong>割合の高い並びが枠を占め、珍しい言い回しが落ちた</strong>——
+/// 実測で、6 本に絞ると割合の高い並びが枠を占め、珍しい言い回しが落ちた——
 /// 基準 3 本すべてが使う「地味に」は 18 単位中 2 本（11%）で、
 /// 56% の「のではなく、」に押し出されていた。
 pub const MACHINE_KATAS: usize = 200;
 
-/// 残す機械の語の数。<strong>暫定値である。</strong>
+/// 残す機械の語の数。暫定値である。
 ///
-/// [機械の型](MACHINE_KATAS)と同じ理由で多く持つ——この文章に<strong>出ている</strong>ものしか
+/// [機械の型](MACHINE_KATAS)と同じ理由で多く持つ——この文章に出ているものしか
 /// 言わないので、持っても指摘は増えない。
 pub const MACHINE_GOIS: usize = 200;
 
-/// 場所の型と認める、位置のばらつきの上限。<strong>暫定値である。</strong>
+/// 場所の型と認める、位置のばらつきの上限。暫定値である。
 ///
-/// <strong>短い並びは、決まった場所で使うときだけ型である。</strong> どこにでも出てくる短い
+/// 短い並びは、決まった場所で使うときだけ型である。 どこにでも出てくる短い
 /// 並びは、その人の癖ではなく日本語である。
 pub const KATA_TIGHT: f64 = 0.12;
 
-/// 場所を選ばない型と認める、並びの長さの下限（文字）。<strong>暫定値である。</strong>
+/// 場所を選ばない型と認める、並びの長さの下限（文字）。暫定値である。
 ///
-/// <strong>長い並びはそれ自体が珍しいので、位置を問わない。</strong>
+/// 長い並びはそれ自体が珍しいので、位置を問わない。
 ///
-/// <strong>相手側に 1 度も出てこないなら、短くても残す。</strong> 短い並びを落とすのは
+/// 相手側に 1 度も出てこないなら、短くても残す。 短い並びを落とすのは
 /// 「どこにでも出てくる短い並びは日本語であって癖ではない」からだが、
-/// <strong>日本語なら相手側にも出てくる。</strong> 片側にしか出てこない短い並びは、
+/// 日本語なら相手側にも出てくる。 片側にしか出てこない短い並びは、
 /// その側のものである——実測で、基準 3 本すべてが使う「地味に」を本人は
-/// 50 単位で 1 度も使っておらず、<strong>3 文字なので落ちていた。</strong>
+/// 50 単位で 1 度も使っておらず、3 文字なので落ちていた。
 pub const KATA_LONG: usize = 6;
 
 /// その人の型。
 ///
-/// <strong>コーパスから見つける。</strong> 手で並べた定型ではない——道具は書き手を選ばないので、
+/// コーパスから見つける。 手で並べた定型ではない——道具は書き手を選ばないので、
 /// 特定の言い回しを実装に持たない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Kata {
@@ -663,31 +663,31 @@ pub struct Kata {
     pub text: String,
     /// 本人の単位のうち、これが現れた割合。
     pub rate: f64,
-    /// 文書の中での位置の中央。<strong>0 に近ければ書き出しの型である。</strong>
+    /// 文書の中での位置の中央。0 に近ければ書き出しの型である。
     pub at: f64,
-    /// 位置のばらつき。<strong>小さければ決まった場所で使う型である。</strong>
+    /// 位置のばらつき。小さければ決まった場所で使う型である。
     pub spread: f64,
     /// 相手側の単位のうち、これが現れた割合。
     ///
-    /// <strong>短い並びを残してよいかを、これで決める</strong>（[長さの下限](KATA_LONG)）。
+    /// 短い並びを残してよいかを、これで決める（[長さの下限](KATA_LONG)）。
     pub base: f64,
     /// 本人が 1 本の中でこれを使う、日本語 1,000 字あたりの最大。
     ///
-    /// <strong>「本人の言い回しを繰り返せ」には上限が要る。</strong> 繰り返せとだけ言うと、
-    /// 受け取った側は<strong>本人の何倍も入れる</strong>——実測で、本人が 42 本で 25 回しか
+    /// 「本人の言い回しを繰り返せ」には上限が要る。 繰り返せとだけ言うと、
+    /// 受け取った側は本人の何倍も入れる——実測で、本人が 42 本で 25 回しか
     /// 使わない `ことができます` を、直した 1 本に 10 回入れていた。
     ///
-    /// <strong>日本語は壊れないので検査では止まらない。</strong> 止めるならここで測るしかない。
+    /// 日本語は壊れないので検査では止まらない。 止めるならここで測るしかない。
     pub ceiling: f64,
-    /// 穴あきの型なら、後ろの固定部。<strong>間は書き手が埋める。</strong>
+    /// 穴あきの型なら、後ろの固定部。間は書き手が埋める。
     ///
-    /// `どうも、` … `ありすえです。` のように、<strong>固定部が 2 つあって間が変わる</strong>
+    /// `どうも、` … `ありすえです。` のように、固定部が 2 つあって間が変わる
     /// 書き出しは、連続した並びとしては拾えない。
     pub tail: Option<String>,
 }
 
 impl Kata {
-    /// 散文にする。<strong>穴あきなら、間があることを見せる。</strong>
+    /// 散文にする。穴あきなら、間があることを見せる。
     #[must_use]
     pub fn shown(&self) -> String {
         match &self.tail {
@@ -697,15 +697,15 @@ impl Kata {
     }
 }
 
-/// 機械の語。<strong>基準がよく使い、本人が使わない[語](kakiburi_metrics::word::goi)。</strong>
+/// 機械の語。基準がよく使い、本人が使わない[語](kakiburi_metrics::word::goi)。
 ///
-/// <strong>[型](Kata)が取りこぼすものを取る。</strong> 型は表層の並びをそのまま照合するので、
+/// [型](Kata)が取りこぼすものを取る。 型は表層の並びをそのまま照合するので、
 /// 同じ癖が語形ごとに割れて、どの綴りも床を割ることがある——実測で、基準の池 44 本の
 /// うち `地味` は 9 本（20%）に出るのに、`地味に` という綴りは 2 本にしかなく、
-/// 絞った後は 1 単位（5.6%）で<strong>床を割って一度も拾えなかった。</strong>
+/// 絞った後は 1 単位（5.6%）で床を割って一度も拾えなかった。
 ///
-/// <strong>本人の側は作らない。</strong> 型には「入っていない本人の型を使え」と言う向きが
-/// あるが、語にそれは無い——<strong>形容詞を 1 つ足せと言われても直せない。</strong>
+/// 本人の側は作らない。 型には「入っていない本人の型を使え」と言う向きが
+/// あるが、語にそれは無い——形容詞を 1 つ足せと言われても直せない。
 /// 言えるのは「この語はその人のものではない」だけである。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Goi {
@@ -715,27 +715,27 @@ pub struct Goi {
     pub rate: f64,
     /// 本人の単位のうち、これが現れた割合。
     pub base: f64,
-    /// 本人が<strong>同じ品詞で</strong>よく使う語彙素。<strong>置き換える先である。</strong>
+    /// 本人が同じ品詞でよく使う語彙素。置き換える先である。
     ///
-    /// <strong>「別の言い方にする」だけでは直せない。</strong> 受け取った側は道具の外で
-    /// 語を探すことになり、そこで選んだ語が<strong>また本人の使わない語</strong>でありうる。
+    /// 「別の言い方にする」だけでは直せない。 受け取った側は道具の外で
+    /// 語を探すことになり、そこで選んだ語がまた本人の使わない語でありうる。
     ///
-    /// <strong>言い換えの辞書は持たない。</strong> 同義語を出すのではなく、<strong>その人が現に
-    /// その品詞で何を使うか</strong>を並べる——選ぶのは書き手である。
+    /// 言い換えの辞書は持たない。 同義語を出すのではなく、その人が現に
+    /// その品詞で何を使うかを並べる——選ぶのは書き手である。
     pub theirs: Vec<String>,
 }
 
-/// 置き換える先として並べる、本人の語の数。<strong>暫定値である。</strong>
+/// 置き換える先として並べる、本人の語の数。暫定値である。
 ///
-/// <strong>多く出すと選べない。</strong>[渡す軸は 3〜4 本が頂点](../../../docs/references/styleremix-2024.md)
+/// 多く出すと選べない。[渡す軸は 3〜4 本が頂点](../../../docs/references/styleremix-2024.md)
 /// という報告と同じ向きで、ここも絞る。
 pub const GOI_THEIRS: usize = 5;
 
 /// 機械の語を取り出す。
 ///
 /// 条件は[型](katas_of)と同じものを、語彙素に当てる——
-/// <strong>基準の[一定割合以上](KATA_PERSON_MIN)に現れ、本人には[ほとんど現れない](KATA_BASE_MAX)。</strong>
-/// <strong>新しい暫定値を増やさない。</strong> 同じ規則を別の単位に当てているだけである。
+/// 基準の[一定割合以上](KATA_PERSON_MIN)に現れ、本人には[ほとんど現れない](KATA_BASE_MAX)。
+/// 新しい暫定値を増やさない。 同じ規則を別の単位に当てているだけである。
 fn gois_of(
     baseline: &[Unit],
     person: &[Unit],
@@ -756,7 +756,7 @@ fn gois_of(
     };
     let theirs = df(baseline);
     let mine = df(person);
-    // <strong>置き換える先は本人の中から出す。</strong> 品詞ごとに、延べで多い順。
+    // 置き換える先は本人の中から出す。 品詞ごとに、延べで多い順。
     let mut by_pos: BTreeMap<&str, BTreeMap<&str, usize>> = BTreeMap::new();
     for u in person {
         let Some(m) = measured.get(&u.name) else {
@@ -785,11 +785,11 @@ fn gois_of(
         let Some(words) = by_pos.get(pos) else {
             return Vec::new();
         };
-        // <strong>その語自身を候補にしない。</strong> 対象は本人が使う単位の割合で選ぶが、
-        // 候補は延べで並べるので、<strong>1 本に固めて使った語は両方に入る</strong>
+        // その語自身を候補にしない。 対象は本人が使う単位の割合で選ぶが、
+        // 候補は延べで並べるので、1 本に固めて使った語は両方に入る
         // ——「X を言い換える。本人がよく使うのは X」という指示になる。
         let mut v: Vec<(&&str, &usize)> = words.iter().filter(|(w, _)| **w != lemma).collect();
-        // <strong>延べで多い順。同じなら語彙素の順。</strong> 決めておかないと並びが実装で変わる。
+        // 延べで多い順。同じなら語彙素の順。 決めておかないと並びが実装で変わる。
         v.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
         v.into_iter()
             .take(GOI_THEIRS)
@@ -816,7 +816,7 @@ fn gois_of(
             })
         })
         .collect();
-    // <strong>広く使う順。同じなら語彙素の順。</strong> 決めておかないと並びが実装で変わる。
+    // 広く使う順。同じなら語彙素の順。 決めておかないと並びが実装で変わる。
     out.sort_by(|a, b| {
         b.rate
             .partial_cmp(&a.rate)
@@ -829,14 +829,14 @@ fn gois_of(
 
 /// 穴あきの型に繋ぐ。
 ///
-/// <strong>固定部が 2 つあって間が変わる書き出しは、連続した並びとしては拾えない。</strong>
+/// 固定部が 2 つあって間が変わる書き出しは、連続した並びとしては拾えない。
 /// 実測で、ある書き手の挨拶は 11 本の記事で `どうも、`〜`です。` の形をしていたが、
-/// 間に入る一言が毎回違うので、<strong>1 つの並びとしては一度も繰り返されていなかった。</strong>
+/// 間に入る一言が毎回違うので、1 つの並びとしては一度も繰り返されていなかった。
 ///
-/// > 2 つの型が、本人の単位の[一定割合以上](KATA_PERSON_MIN)で<strong>同じ node に
-/// > この順で</strong>現れるなら、繋げて 1 つの穴あきの型とする。
+/// > 2 つの型が、本人の単位の[一定割合以上](KATA_PERSON_MIN)で同じ node に
+/// > この順で現れるなら、繋げて 1 つの穴あきの型とする。
 ///
-/// <strong>繋いだら、部品は落とす。</strong> 3 本に分けて渡せば、受け取った側は 3 か所に
+/// 繋いだら、部品は落とす。 3 本に分けて渡せば、受け取った側は 3 か所に
 /// 挿しこむことになる。
 fn frames_of(
     katas: &mut Vec<Kata>,
@@ -880,7 +880,7 @@ fn frames_of(
     let mut frames: Vec<(usize, usize, f64)> = Vec::new();
     for a in 0..katas.len() {
         for b in 0..katas.len() {
-            // <strong>重なっている 2 つを繋がない。</strong> 同じ型の切り出し方が違うだけのものを
+            // 重なっている 2 つを繋がない。 同じ型の切り出し方が違うだけのものを
             // 繋ぐと、`ご無沙汰して`〜`しております` のような穴あきができる。
             if a == b
                 || overlaps(&katas[a].text, &katas[b].text)
@@ -913,9 +913,9 @@ fn frames_of(
             rate,
             at: katas[a].at,
             spread: katas[a].spread.min(katas[b].spread),
-            // <strong>穴あきは 2 つとも相手側に出ないものから作る。</strong>
+            // 穴あきは 2 つとも相手側に出ないものから作る。
             base: katas[a].base.max(katas[b].base),
-            // <strong>穴あきは前の固定部の上限で見る。</strong>
+            // 穴あきは前の固定部の上限で見る。
             ceiling: katas[a].ceiling,
         });
     }
@@ -940,7 +940,7 @@ fn frames_of(
 
 /// 前の終わりと後ろの始まりが重なっているか。
 ///
-/// <strong>繋がっている 1 つの言い回しを、穴あきの型にしない。</strong>
+/// 繋がっている 1 つの言い回しを、穴あきの型にしない。
 /// `ご無沙汰して` と `しております` は `して` で繋がっていて、間に何も入らない。
 fn chains(a: &str, b: &str) -> bool {
     let touching = |a: &str, b: &str| {
@@ -948,12 +948,12 @@ fn chains(a: &str, b: &str) -> bool {
         let y: Vec<char> = b.chars().collect();
         (2..=x.len().min(y.len())).any(|n| x[x.len() - n..] == y[..n])
     };
-    // <strong>どちら向きでも見る。</strong> 同じ地の文から切り出した 2 つは、順番を入れ替えても
+    // どちら向きでも見る。 同じ地の文から切り出した 2 つは、順番を入れ替えても
     // 同じ node に現れる。
     touching(a, b) || touching(b, a)
 }
 
-/// 位置のばらつき。<strong>母標準偏差である。</strong>
+/// 位置のばらつき。母標準偏差である。
 fn spread_of(ats: &[f64]) -> f64 {
     if ats.len() < 2 {
         return 0.0;
@@ -966,12 +966,12 @@ fn spread_of(ats: &[f64]) -> f64 {
 
 /// 2 つの並びが同じ型の切り出しか。
 ///
-/// 片方がもう片方を含むか、<strong>端どうしが半分以上重なっている</strong>なら同じものとみなす。
+/// 片方がもう片方を含むか、端どうしが半分以上重なっているなら同じものとみなす。
 fn overlaps(a: &str, b: &str) -> bool {
     if a.contains(b) || b.contains(a) {
         return true;
     }
-    // <strong>共通する並びが短いほうの半分を超えるなら、同じ型である。</strong>
+    // 共通する並びが短いほうの半分を超えるなら、同じ型である。
     // 端どうしだけを見ると、真ん中で重なっているものを取りこぼす。
     let (x, y): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     let want = x.len().min(y.len()) / 2 + 1;
@@ -989,10 +989,10 @@ fn overlaps(a: &str, b: &str) -> bool {
 /// > 本人の単位の[一定割合以上](KATA_PERSON_MIN)に現れ、
 /// > 基準の単位には[ほとんど現れない](KATA_BASE_MAX)語の並び。
 ///
-/// <strong>2 つとも要る。</strong> 前者だけなら「ています。」のような誰でも書く並びが並び、
+/// 2 つとも要る。 前者だけなら「ています。」のような誰でも書く並びが並び、
 /// 後者だけなら 1 本にしかない偶然が並ぶ。
 ///
-/// <strong>長い並びを先に採り、その一部になる短い並びは落とす。</strong> 同じ型を長短で二重に
+/// 長い並びを先に採り、その一部になる短い並びは落とす。 同じ型を長短で二重に
 /// 数えない。
 fn katas_of(
     person: &[Unit],
@@ -1018,9 +1018,9 @@ fn katas_of(
         }
         out
     };
-    // <strong>1 本の中で何回使うか。</strong> 何本に出るか（df）とは別の量である——
-    // <strong>「繰り返せ」と言うなら、どこまで繰り返してよいかを言わなければ、
-    // 受け取った側は本人の何倍も入れる。</strong>
+    // 1 本の中で何回使うか。 何本に出るか（df）とは別の量である——
+    // 「繰り返せ」と言うなら、どこまで繰り返してよいかを言わなければ、
+    // 受け取った側は本人の何倍も入れる。
     let per_1000 = |units: &[Unit]| -> BTreeMap<String, f64> {
         let mut out: BTreeMap<String, f64> = BTreeMap::new();
         for u in units {
@@ -1060,14 +1060,14 @@ fn katas_of(
             if rate < KATA_PERSON_MIN || base > KATA_BASE_MAX {
                 return None;
             }
-            // <strong>ひらがなを 1 つも含まない並びは題材である。</strong>
+            // ひらがなを 1 つも含まない並びは題材である。
             //
-            // <strong>付属語も活用もひらがなで書かれる。</strong> 漢字とカタカナだけの並びは、
-            // 言い方ではなく<strong>語そのもの</strong>——実測で、繰り返し出ている順に並べたとたん
+            // 付属語も活用もひらがなで書かれる。 漢字とカタカナだけの並びは、
+            // 言い方ではなく語そのもの——実測で、繰り返し出ている順に並べたとたん
             // `フロントエンド` が上位に来た。8 回出ていたが、それはその記事の題材である。
             //
             // [識別子を伏せる](kakiburi_doc::prose::mask_identifiers)のと同じ理由で、
-            // <strong>題材が書きぶりの指摘に混ざるのを止める。</strong>
+            // 題材が書きぶりの指摘に混ざるのを止める。
             if !text.chars().any(|c| ('\u{3041}'..='\u{309f}').contains(&c)) {
                 return None;
             }
@@ -1083,10 +1083,10 @@ fn katas_of(
             })
         })
         .collect();
-    // <strong>広く使う順。同じなら長さ、次に文字の順。</strong> 決めておかないと並びが実装で変わる。
+    // 広く使う順。同じなら長さ、次に文字の順。 決めておかないと並びが実装で変わる。
     //
-    // <strong>長さを先に見てはいけない。</strong> 長い順に採ると、<strong>短くて頻度の高い型が枠から
-    // 押し出される</strong>——実測で、11 本の記事に出てくる挨拶の書き出しが落ちていた。
+    // 長さを先に見てはいけない。 長い順に採ると、短くて頻度の高い型が枠から
+    // 押し出される——実測で、11 本の記事に出てくる挨拶の書き出しが落ちていた。
     //
     cands.sort_by(|a, b| {
         b.rate
@@ -1095,26 +1095,26 @@ fn katas_of(
             .then_with(|| b.text.chars().count().cmp(&a.text.chars().count()))
             .then_with(|| a.text.cmp(&b.text))
     });
-    // <strong>2 種類を別々に数える。</strong>
+    // 2 種類を別々に数える。
     //
     // | | 何を型とするか |
     // | --- | --- |
-    // | <strong>場所の型</strong> | 位置が偏っているもの。短くてもよい |
-    // | <strong>言い回しの型</strong> | 長いもの。位置は問わない |
+    // | 場所の型 | 位置が偏っているもの。短くてもよい |
+    // | 言い回しの型 | 長いもの。位置は問わない |
     //
-    // <strong>まとめて数えると、場所の型が押し出される</strong>——場所の型は珍しいので割合が低い。
+    // まとめて数えると、場所の型が押し出される——場所の型は珍しいので割合が低い。
     let mut out: Vec<Kata> = Vec::new();
     let (mut tight, mut loose) = (0usize, 0usize);
     for k in cands {
         let is_tight = k.spread <= KATA_TIGHT;
         let slot = if is_tight { &mut tight } else { &mut loose };
-        // <strong>相手側に 1 度も出てこないなら、短くても残す。</strong>
+        // 相手側に 1 度も出てこないなら、短くても残す。
         let only_here = k.base <= 0.0;
         if *slot >= cap || (!is_tight && !only_here && k.text.chars().count() < KATA_LONG) {
             continue;
         }
-        // <strong>重なっている型を二重に持たない。</strong> 入っている場合だけでなく、
-        // <strong>端が重なっているだけでも落とす</strong>——`ご無沙汰しており` と
+        // 重なっている型を二重に持たない。 入っている場合だけでなく、
+        // 端が重なっているだけでも落とす——`ご無沙汰しており` と
         // `無沙汰しております` は同じ型の切り出し方が違うだけである。
         if out.iter().any(|kept| overlaps(&kept.text, &k.text)) {
             continue;
@@ -1132,26 +1132,26 @@ fn katas_of(
     out
 }
 
-/// 名指しする「繰り返しすぎ」の数。<strong>暫定値である。</strong>
+/// 名指しする「繰り返しすぎ」の数。暫定値である。
 pub const OVERUSED: usize = 3;
 
-/// 名指しする「一度きりの語」の数。<strong>暫定値である。</strong>
+/// 名指しする「一度きりの語」の数。暫定値である。
 pub const ONCE_ONLY: usize = 8;
 
 /// 検める 1 本を、作り終えた目盛りに載せる。
 ///
-/// <strong>目盛りは作り直さない。</strong> 語彙も重みも受け取ったものを使う——検める文書を見てから
+/// 目盛りは作り直さない。 語彙も重みも受け取ったものを使う——検める文書を見てから
 /// 作り直せる経路を持たない。
 ///
-/// <strong>相手集合は目盛りが持っている</strong>（[取り置いたベクトル](Scale::partner_vectors)）。
-/// 照合値は相手集合との中央値で、<strong>本文は要らない</strong>——投影し終えた値だけで足りる。
+/// 相手集合は目盛りが持っている（[取り置いたベクトル](Scale::partner_vectors)）。
+/// 照合値は相手集合との中央値で、本文は要らない——投影し終えた値だけで足りる。
 #[must_use]
 pub fn measure_against(
     scale: &Scale,
     target: Sample<'_>,
     analyzer: Option<&dyn Analyzer>,
 ) -> Measured {
-    // <strong>カセットが持つ辞書で測る。</strong> 作ったときと違う割り方をすれば、
+    // カセットが持つ辞書で測る。 作ったときと違う割り方をすれば、
     // 比べたものに意味が無い。
     let t = Measurements::of(target, analyzer, &scale.lexicon);
 
@@ -1177,13 +1177,13 @@ pub fn measure_against(
     Measured {
         matching: median(&values),
         humanness: scale.humanness.value(&t.humanness.flat()).ok(),
-        // <strong>合算した 1 つの値では直し方を渡せない。</strong>「機械の側にある」としか
+        // 合算した 1 つの値では直し方を渡せない。「機械の側にある」としか
         // 言えず、どこをどうすればよいかが出てこない。
         //
-        // <strong>寄せる向きは較正から読む。</strong> 定義に固定すると、素材がその向きを
-        // 支えていないカセットで<strong>直し方に従うほど人らしさが下がる</strong>。
+        // 寄せる向きは較正から読む。 定義に固定すると、素材がその向きを
+        // 支えていないカセットで直し方に従うほど人らしさが下がる。
         //
-        // <strong>次元の向きが割れている指標は渡さない。</strong> どちらへ動かせばよいかを
+        // 次元の向きが割れている指標は渡さない。 どちらへ動かせばよいかを
         // 言えないものを指示にしない。
         humanness_by_metric: {
             let toward = scale.humanness.toward_human();
@@ -1192,17 +1192,17 @@ pub fn measure_against(
                 .by_metric(&t.humanness.flat())
                 .unwrap_or_default();
             let values: Vec<f64> = all.iter().map(|(_, v)| *v).collect();
-            // <strong>いまの合算。</strong> 差を取る相手である。
+            // いまの合算。 差を取る相手である。
             let now = scale.humanness.fuse(&values, None);
             all.iter()
                 .enumerate()
                 .filter_map(|(j, (n, v))| {
                     let (_, up) = toward.iter().find(|(m, _)| m == n)?;
-                    // <strong>その指標だけを本人の代表値へ置いて、合算し直す。</strong>
+                    // その指標だけを本人の代表値へ置いて、合算し直す。
                     //
-                    // <strong>直し方は 2 本以上出て、互いに正反対を指すことがある</strong>
+                    // 直し方は 2 本以上出て、互いに正反対を指すことがある
                     // ——語彙を散らせと言う指標と、言い換えるなと言う指標が同時に
-                    // 出る。<strong>どちらが勝つかを言わなければ、受け取った側は逆を選ぶ。</strong>
+                    // 出る。どちらが勝つかを言わなければ、受け取った側は逆を選ぶ。
                     let target = scale
                         .humanness_target
                         .iter()
@@ -1213,10 +1213,10 @@ pub fn measure_against(
                         name: (*n).to_owned(),
                         value: *v,
                         raise: *up,
-                        // <strong>減らす側では、この文章が繰り返しすぎているものを名指す。</strong>
+                        // 減らす側では、この文章が繰り返しすぎているものを名指す。
                         // 増やす側で本人の言い回しを渡すのと表裏である。
                         overused: if *up { Vec::new() } else { t.overused.clone() },
-                        // <strong>散らすなと言う側でだけ渡す。</strong> 散らせと言う側に
+                        // 散らすなと言う側でだけ渡す。 散らせと言う側に
                         // 「これが散らしている」を見せても使い道がない。
                         once_only: if *up { Vec::new() } else { t.once_only.clone() },
                         effect,
@@ -1236,43 +1236,43 @@ pub fn measure_against(
 
 /// 指標 1 本ぶんの人らしさ値と、寄せる向き。
 ///
-/// <strong>並びの位置で意味を持たせない。</strong> 3 つ組で渡すと、受け取る側が位置の意味を
-/// コメントで補うことになり、<strong>順番を入れ替えたときに型が何も言わない。</strong>
+/// 並びの位置で意味を持たせない。 3 つ組で渡すと、受け取る側が位置の意味を
+/// コメントで補うことになり、順番を入れ替えたときに型が何も言わない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct HumannessByMetric {
     /// 指標の名前。
     pub name: String,
-    /// その指標だけで見た人らしさ値。<strong>正が人の側、負が機械の側。</strong>
+    /// その指標だけで見た人らしさ値。正が人の側、負が機械の側。
     pub value: f64,
-    /// 人へ寄せる向き。<strong>`true` なら値を上げる。</strong>
+    /// 人へ寄せる向き。`true` なら値を上げる。
     pub raise: bool,
-    /// この文章が繰り返しすぎている言い回し。<strong>減らす側でだけ意味を持つ。</strong>
+    /// この文章が繰り返しすぎている言い回し。減らす側でだけ意味を持つ。
     pub overused: Vec<String>,
-    /// この文章で一度しか出てこない語。<strong>語を散らしている当のものである。</strong>
+    /// この文章で一度しか出てこない語。語を散らしている当のものである。
     pub once_only: Vec<String>,
     /// 本人の代表値へ置いたときに、人らしさ値が動く量。
     ///
-    /// <strong>正反対を指す直し方が同時に出ることがある。</strong> どちらが勝つかは、
+    /// 正反対を指す直し方が同時に出ることがある。 どちらが勝つかは、
     /// 動く量でしか言えない。
     pub effect: f64,
     /// 本人の代表値。
     ///
-    /// <strong>0 と比べてはいけない。</strong> 0 は人と機械の境目であって、その人の
-    /// ところではない——<strong>4 指標とも境目より人の側にいるのに、合算では機械の側</strong>
+    /// 0 と比べてはいけない。 0 は人と機械の境目であって、その人の
+    /// ところではない——4 指標とも境目より人の側にいるのに、合算では機械の側
     /// ということが実際に起きる。
     pub target: f64,
 }
 
 /// 系統の 1 次元ぶんの隔たり。
 ///
-/// <strong>系統そのものは指示にならない</strong>——「何番目かの次元を増やせ」は言葉にならない。
-/// <strong>だが次元が語として読める系統なら、その 1 次元は指示になる</strong>——「あなたは
+/// 系統そのものは指示にならない——「何番目かの次元を増やせ」は言葉にならない。
+/// だが次元が語として読める系統なら、その 1 次元は指示になる——「あなたは
 /// 『〜のだ』をよく使うが、この草稿には出てこない」は直せる。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Divergence {
     /// どの系統か。
     pub system: String,
-    /// どの次元か。<strong>語・記号・字種など、読める形である。</strong>
+    /// どの次元か。語・記号・字種など、読める形である。
     pub dim: String,
     /// この文章の、標準化した値。
     pub mine: f64,
@@ -1284,31 +1284,31 @@ pub struct Divergence {
     pub high: f64,
     /// その系統の、合算での重み。
     pub weight: f64,
-    /// この次元を本人の値に置いたときに照合値が動く量。<strong>正なら近づく。</strong>
+    /// この次元を本人の値に置いたときに照合値が動く量。正なら近づく。
     pub effect: f64,
-    /// <strong>この文章の、直す場所。</strong>
+    /// この文章の、直す場所。
     ///
-    /// <strong>「減らせ」と言うなら、どれを減らすのかを言う。</strong> 実測で、間隔の次元は
-    /// 場所を渡していなかったため、受け取った側が<strong>道具の外で数え直した</strong>
+    /// 「減らせ」と言うなら、どれを減らすのかを言う。 実測で、間隔の次元は
+    /// 場所を渡していなかったため、受け取った側が道具の外で数え直した
     /// ——しかも数え方を間違えた（道具は日本語の文字だけを数える）。
     pub spots: Vec<String>,
     /// 本人がその次元をどう書いているかの実例。
     ///
-    /// <strong>「増やせ」と言うだけでは、どこに置くのかが分からない。</strong> 実測では、
-    /// 「空白を増やす」という指示を受けた側が<strong>本人の記事を自分で覗いて</strong>
+    /// 「増やせ」と言うだけでは、どこに置くのかが分からない。 実測では、
+    /// 「空白を増やす」という指示を受けた側が本人の記事を自分で覗いて
     /// 打ち方を調べることになった。
     pub examples: Vec<String>,
 }
 
 impl Divergence {
-    /// 本人の幅からのはみ出し。<strong>幅を 1 とした倍数。</strong>
+    /// 本人の幅からのはみ出し。幅を 1 とした倍数。
     ///
-    /// <strong>畳めば消える信号がある。</strong> 系統の距離は数百次元のコサインなので、
+    /// 畳めば消える信号がある。 系統の距離は数百次元のコサインなので、
     /// 1 次元が大きく動いても角度はわずかしか変わらない——実測で、敬体を常体に
     /// 変えた文章は `です` の次元が −12.2（本人 +2.2）まで動いたのに、
-    /// <strong>照合値は 0.23 しか動かなかった。</strong>
+    /// 照合値は 0.23 しか動かなかった。
     ///
-    /// <strong>だから次元の側でも見る。</strong>
+    /// だから次元の側でも見る。
     #[must_use]
     pub fn outside(&self) -> f64 {
         let spread = self.high - self.low;
@@ -1334,29 +1334,29 @@ impl Divergence {
 
     /// この 1 次元を本人の値に置いたとき、照合値が実際に動く量。
     ///
-    /// <strong>当て推量で並べてはいけない。</strong> 隔たりの大きさでも、隔たり × 重みでも、
-    /// <strong>実際に動く量とは一致しない</strong>——次元の数が系統ごとに違うので、10 次元しか
+    /// 当て推量で並べてはいけない。 隔たりの大きさでも、隔たり × 重みでも、
+    /// 実際に動く量とは一致しない——次元の数が系統ごとに違うので、10 次元しか
     /// ない系統の 1 本は 500 次元の系統の 1 本よりずっと大きく効く。実測では、
-    /// <strong>いちばん効く直し（文字種）が一度も上位に出てこなかった。</strong>
+    /// いちばん効く直し（文字種）が一度も上位に出てこなかった。
     ///
-    /// <strong>だから数える。</strong> その次元だけを本人の代表値に置き換えて照合値を出し直し、
-    /// 差を取る。<strong>これは見込みではなく、そのまま効く量である。</strong>
+    /// だから数える。 その次元だけを本人の代表値に置き換えて照合値を出し直し、
+    /// 差を取る。これは見込みではなく、そのまま効く量である。
     #[must_use]
     pub fn effect(&self) -> f64 {
         self.effect
     }
 
-    /// 増やす側か。<strong>相手のほうが大きいなら増やす。</strong>
+    /// 増やす側か。相手のほうが大きいなら増やす。
     #[must_use]
     pub fn raise(&self) -> bool {
         self.theirs > self.mine
     }
 }
 
-/// 照合値を出し直す。<strong>1 次元だけ置き換えられる。</strong>
+/// 照合値を出し直す。1 次元だけ置き換えられる。
 ///
 /// `swap` に `(系統, 次元, 値)` を渡すと、その 1 次元だけを差し替えて測る。
-/// <strong>効く量を数えるための道具である</strong>——見込みではなく、そのまま動く量が出る。
+/// 効く量を数えるための道具である——見込みではなく、そのまま動く量が出る。
 fn matching_of(
     scale: &Scale,
     t: &Measurements,
@@ -1372,11 +1372,11 @@ fn matching_of(
         if s != system {
             return set.project(parts);
         }
-        // <strong>投影した値を書き換えない。数え上げの側で動かす。</strong>
+        // 投影した値を書き換えない。数え上げの側で動かす。
         //
-        // 系統の次元はどれも相対頻度なので、<strong>1 つを減らせば残りの割合が上がる</strong>
-        // ——読点を 1 つ外せば、外さなかった読点の取り分が増える。<strong>投影した値を
-        // 直接書き換えると、実際には書けない直しを見積もることになる。</strong>
+        // 系統の次元はどれも相対頻度なので、1 つを減らせば残りの割合が上がる
+        // ——読点を 1 つ外せば、外さなかった読点の取り分が増える。投影した値を
+        // 直接書き換えると、実際には書けない直しを見積もることになる。
         let mut shifted: Vec<Counts> = parts.clone();
         let mut at = j;
         for (f, c) in set.parts().iter().zip(shifted.iter_mut()) {
@@ -1405,10 +1405,10 @@ fn matching_of(
     median(&values)
 }
 
-/// 相手集合との、系統ごとの距離。<strong>相手ごとの中央値である。</strong>
+/// 相手集合との、系統ごとの距離。相手ごとの中央値である。
 ///
-/// <strong>照合値は 5 つの距離を重みで畳んだものなので、畳む前を見なければどこが動いたか
-/// 分からない。</strong> 判定には使わない——出すだけである。
+/// 照合値は 5 つの距離を重みで畳んだものなので、畳む前を見なければどこが動いたか
+/// 分からない。 判定には使わない——出すだけである。
 #[must_use]
 pub fn distances_against(
     scale: &Scale,
@@ -1441,13 +1441,13 @@ pub fn distances_against(
 
 /// 相手集合からいちばん離れている次元を挙げる。
 ///
-/// <strong>照合値は 1 つの数なので、どこが違うのかを言えない。</strong> 帯の中で止まったときに
+/// 照合値は 1 つの数なので、どこが違うのかを言えない。 帯の中で止まったときに
 /// 何も出さなければ、受け取った側は動きようがない。
 ///
-/// <strong>読める系統だけを見る。</strong> `systems` に渡すのは、次元が語や記号として読める
+/// 読める系統だけを見る。 `systems` に渡すのは、次元が語や記号として読める
 /// ものだけである——品詞 bigram の「名詞-助詞」を増やせとは言えない。
 ///
-/// <strong>相手は中央値で代表する。</strong> 平均だと 1 本の外れ値が代表を引っ張る。
+/// 相手は中央値で代表する。 平均だと 1 本の外れ値が代表を引っ張る。
 #[must_use]
 pub fn diverging(
     scale: &Scale,
@@ -1464,7 +1464,7 @@ pub fn diverging(
         let Some((_, set)) = scale.frozen.iter().find(|(n, _)| n == name) else {
             continue;
         };
-        // <strong>重みを引く。</strong> 重みの小さい系統をいくら直しても照合値は動かない。
+        // 重みを引く。 重みの小さい系統をいくら直しても照合値は動かない。
         let weight = scale
             .calibration
             .systems()
@@ -1472,7 +1472,7 @@ pub fn diverging(
             .position(|n| n == name)
             .and_then(|j| scale.calibration.fusion().slopes().get(j).copied())
             .unwrap_or(0.0);
-        // <strong>重みが 0 の系統は挙げない。</strong> 直しても動かないものを指示にしない。
+        // 重みが 0 の系統は挙げない。 直しても動かないものを指示にしない。
         if weight <= 0.0 {
             continue;
         }
@@ -1493,7 +1493,7 @@ pub fn diverging(
             .flat_map(|f| f.dims())
             .map(String::as_str)
             .collect();
-        // <strong>いまの照合値を控えておく。</strong> 差を取る相手である。
+        // いまの照合値を控えておく。 差を取る相手である。
         let now = matching_of(scale, &t, None);
         for (j, dim) in dims.iter().enumerate() {
             let Some(&m) = mine.get(j) else { continue };
@@ -1503,7 +1503,7 @@ pub fn diverging(
             }
             col.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let theirs_med = col[col.len() / 2];
-            // <strong>その次元だけを本人の代表値に置いて、照合値を出し直す。</strong>
+            // その次元だけを本人の代表値に置いて、照合値を出し直す。
             let fixed = matching_of(scale, &t, Some((*system, j, theirs_med)));
             let (Some(a), Some(b)) = (now, fixed) else {
                 continue;
@@ -1522,9 +1522,9 @@ pub fn diverging(
             });
         }
     }
-    // <strong>動く見込みの大きい順。同じなら系統・次元の名前順。</strong> 決めておかないと、
+    // 動く見込みの大きい順。同じなら系統・次元の名前順。 決めておかないと、
     // 上位が実装ごとに変わる。
-    // <strong>直しても近づかない次元は挙げない。</strong> 効かない指示を出さない。
+    // 直しても近づかない次元は挙げない。 効かない指示を出さない。
     out.retain(|d| d.effect > 0.0);
     out.sort_by(|a, b| {
         b.effect()
@@ -1534,30 +1534,30 @@ pub fn diverging(
             .then_with(|| a.dim.cmp(&b.dim))
     });
     out.truncate(top);
-    // <strong>渡すぶんだけ実例を探す。</strong> 全次元で探すと、使われない実例のために
+    // 渡すぶんだけ実例を探す。 全次元で探すと、使われない実例のために
     // 相手集合を何度も読み直すことになる。
     for d in &mut out {
-        // <strong>目盛りが取り置いた実例を引く。</strong> 本文はもう手元に無い。
+        // 目盛りが取り置いた実例を引く。 本文はもう手元に無い。
         d.examples = scale
             .examples
             .iter()
             .find(|(s, dim, _)| *s == d.system && *dim == d.dim)
             .map(|(_, _, v)| v.clone())
             .unwrap_or_default();
-        // <strong>この文章のどこが、その次元を作っているか。</strong>
+        // この文章のどこが、その次元を作っているか。
         d.spots = spots_of(&d.system, &d.dim, target);
     }
     out
 }
 
-/// 実例を拾う系統。<strong>次元が語や記号として読めるものだけである。</strong>
+/// 実例を拾う系統。次元が語や記号として読めるものだけである。
 ///
 /// 品詞 bigram の「名詞-助詞」を増やせとは言えない。
 pub const EXAMPLE_SYSTEMS: [System; 3] = [System::FunctionWord, System::Comma, System::CharType];
 
 /// 読める系統の次元ごとに、本人の実例を拾っておく。
 ///
-/// <strong>作るのはここだけである。</strong> 検めるときに本文へ読みに行く道が無い——
+/// 作るのはここだけである。 検めるときに本文へ読みに行く道が無い——
 /// カセットは[本文を持たない](../../../docs/spec/200-extract.md#素材を正本にする)。
 fn examples_for(
     scale_frozen: &[(String, crate::vocabulary::FrozenSet)],
@@ -1582,14 +1582,14 @@ fn examples_for(
 
 /// 本人がその次元をどう書いているかを、実際の文から拾う。
 ///
-/// <strong>「増やせ」と言うだけでは、どこに置くのかが分からない。</strong> 数値と向きだけを
+/// 「増やせ」と言うだけでは、どこに置くのかが分からない。 数値と向きだけを
 /// 渡された側は、結局その人の文章を自分で読みに行くことになる。
 ///
-/// <strong>拾えないものは無理に作らない。</strong> 間隔のような、字面に現れない次元がある。
+/// 拾えないものは無理に作らない。 間隔のような、字面に現れない次元がある。
 /// この文章の、その次元を作っている場所。
 ///
-/// <strong>「減らせ」と言うなら、どれを減らすのかを言う。</strong> 本人の実例だけを渡しても、
-/// <strong>自分の文章のどこを直すのかは分からない。</strong>
+/// 「減らせ」と言うなら、どれを減らすのかを言う。 本人の実例だけを渡しても、
+/// 自分の文章のどこを直すのかは分からない。
 fn spots_of(system: &str, dim: &str, target: Sample<'_>) -> Vec<String> {
     const WANT: usize = 3;
     if system != "読点の打ち方" || !(dim.ends_with('字') || dim.ends_with("字以上")) {
@@ -1611,7 +1611,7 @@ fn examples_of(system: &str, dim: &str, partners: &[Sample<'_>]) -> Vec<String> 
     const WANT: usize = 3;
     const AROUND: usize = 6;
 
-    // <strong>どこにでもある字は実例にならない。</strong> ひらがなや漢字を 1 つ抜き出して
+    // どこにでもある字は実例にならない。 ひらがなや漢字を 1 つ抜き出して
     // 見せても、どこをどう直せばよいかは何も伝わらない。
     if matches!((system, dim), ("文字種", "ひらがな" | "漢字" | "その他")) {
         return Vec::new();
@@ -1632,10 +1632,10 @@ fn examples_of(system: &str, dim: &str, partners: &[Sample<'_>]) -> Vec<String> 
         ("文字種", "半角数字") => Box::new(|c: char| c.is_ascii_digit()),
         ("文字種", "半角英字") => Box::new(|c: char| c.is_ascii_alphabetic()),
         _ => {
-            // 字面に現れる次元。<strong>読点の直前・直後は 1 文字、機能語は語である。</strong>
+            // 字面に現れる次元。読点の直前・直後は 1 文字、機能語は語である。
             let needle: String = if system == "読点の打ち方" {
                 if dim.ends_with('字') || dim.ends_with("字以上") {
-                    // <strong>間隔の次元は、字面に現れない。</strong> その間隔を作っている読点を
+                    // 間隔の次元は、字面に現れない。 その間隔を作っている読点を
                     // まわりごと見せる——「増やせ」だけでは直せない。
                     let mut out: Vec<String> = partners
                         .iter()
@@ -1694,7 +1694,7 @@ mod example_tests {
 
     #[test]
     fn 空白の実例は打ち方が分かる形で出る() {
-        // <strong>「増やせ」と言うだけでは、どこに置くのかが分からない。</strong>
+        // 「増やせ」と言うだけでは、どこに置くのかが分からない。
         let d = doc("今回は 2024/1/23 に行われた VimConf の話です。");
         let got = examples_of(
             "文字種",
@@ -1753,7 +1753,7 @@ mod example_tests {
     }
 }
 
-/// 見つけた位置のまわりを切り出す。<strong>文字の境で切る。</strong>
+/// 見つけた位置のまわりを切り出す。文字の境で切る。
 fn snippets(
     partners: &[Sample<'_>],
     find: &dyn Fn(&str) -> Vec<usize>,
@@ -1792,16 +1792,16 @@ fn snippets(
     out
 }
 
-/// 検める 1 本を測った結果。<strong>出なかったものは `None` である。</strong>
+/// 検める 1 本を測った結果。出なかったものは `None` である。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Measured {
-    /// 照合値。<strong>相手集合との中央値。</strong>
+    /// 照合値。相手集合との中央値。
     pub matching: Option<f64>,
     /// 人らしさ値。
     pub humanness: Option<f64>,
-    /// 指標ごとの人らしさ値と、<strong>人へ寄せる向き</strong>。
+    /// 指標ごとの人らしさ値と、人へ寄せる向き。
     ///
-    /// <strong>測れなければ空である。</strong> 直し方を渡す側が、測れていないことと機械の
+    /// 測れなければ空である。 直し方を渡す側が、測れていないことと機械の
     /// 側にあることを取り違えないようにする。
     pub humanness_by_metric: Vec<HumannessByMetric>,
     /// 測れなかった人らしさの次元。
@@ -1816,7 +1816,7 @@ mod tests {
     use kakiburi_doc::node::{Kind, Node};
     use kakiburi_metrics::morph::{Dictionary, Morpheme};
 
-    /// 試験用の解析器。<strong>UniDic を名乗り、字で切る。</strong>
+    /// 試験用の解析器。UniDic を名乗り、字で切る。
     ///
     /// 仕様の手続きを通すためのものであって、日本語を解析するものではない。
     struct Chars;
@@ -1847,19 +1847,19 @@ mod tests {
         }
     }
 
-    /// 1 単位ぶんの文書。<strong>すべての除外を越える長さにする。</strong>
+    /// 1 単位ぶんの文書。すべての除外を越える長さにする。
     ///
-    /// <strong>長さは単位ごとに散らす。</strong> 揃えると広がりが 0 になり、長さの範囲の検査が
+    /// 長さは単位ごとに散らす。 揃えると広がりが 0 になり、長さの範囲の検査が
     /// 「重なり 0」で止まる——両側が同じ範囲に散っている素材でなければ先へ進めない。
     fn document(index: usize, machine: bool) -> Document {
         let seed = index * if machine { 17 } else { 13 };
-        // <strong>畳まれても下限に届く量にする。</strong> 作り物の文は繰り返しが強いので、
+        // 畳まれても下限に届く量にする。 作り物の文は繰り返しが強いので、
         // [コーパスから見つけた語](kakiburi_metrics::lexicon)が実素材より多く畳む。
         let nodes: Vec<Node> = (0..90 + index * 4)
             .map(|i| {
-                // <strong>骨格は両側で同じにする。</strong> 違えば、長さの差が両側の違いに混ざる。
+                // 骨格は両側で同じにする。 違えば、長さの差が両側の違いに混ざる。
                 let (a, b, c, d) = if machine {
-                    // 機械の側。<strong>語を散らす</strong>——繰り返しが足りない側に出る。
+                    // 機械の側。語を散らす——繰り返しが足りない側に出る。
                     (
                         wordy(seed + i),
                         wordy(seed + i * 3),
@@ -1867,10 +1867,10 @@ mod tests {
                         wordy(seed + i * 11),
                     )
                 } else {
-                    // 人の側。<strong>同じ言い回しを繰り返す。</strong>
+                    // 人の側。同じ言い回しを繰り返す。
                     (wordy(seed % 2), wordy(0), wordy(1), wordy(seed % 3))
                 };
-                // 機能語を 5 つ含める。<strong>対象の形態素の下限を越えるためである</strong>——
+                // 機能語を 5 つ含める。対象の形態素の下限を越えるためである——
                 // 越えなければ機能語が測れず、判定に使う系統が揃わない。
                 Node::leaf(Kind::Paragraph, format!("{a}は、{b}の{c}を{d}に{a}が。"))
             })
@@ -1916,7 +1916,7 @@ mod tests {
 
     #[test]
     fn 素材が足りなければ目盛りを作らない() {
-        // 作れないことは失敗ではない。<strong>判定できないが返る。</strong>
+        // 作れないことは失敗ではない。判定できないが返る。
         let m = Fixture::new(4);
         let e = assemble(
             Material {
@@ -1932,7 +1932,7 @@ mod tests {
 
     #[test]
     fn 解析器が無ければ系統が揃わない() {
-        // 一部の系統が形態素を要る。<strong>抜いて合算しない。</strong>
+        // 一部の系統が形態素を要る。抜いて合算しない。
         let m = Fixture::new(10);
         let e = assemble(
             Material {
@@ -1965,13 +1965,13 @@ mod tests {
 
     #[test]
     fn 他人の文書は較正にだけ効き帯には効かない() {
-        // <strong>足せる形を決めておく。</strong> 決めずに置くと、素材だけ入って判定に効かないと
+        // 足せる形を決めておく。 決めずに置くと、素材だけ入って判定に効かないと
         // いういちばん質の悪い状態になる——使う側は効いていると思って集め続ける。
         //
-        // <strong>較正の違う人の側には効く。</strong> 基準だけで学習すると、測っているのは
+        // 較正の違う人の側には効く。 基準だけで学習すると、測っているのは
         // 「その人らしさ」ではなく「この基準との違い」になる。
         //
-        // <strong>帯・割り・語彙には効かない。</strong> 帯の点の数が本人と基準で釣り合わなくなり、
+        // 帯・割り・語彙には効かない。 帯の点の数が本人と基準で釣り合わなくなり、
         // 他人が何人来たかで本人の測り方が変わる。
         let m = Fixture::new(10);
         let extra = Fixture::new(14);
@@ -1999,12 +1999,12 @@ mod tests {
         )
         .expect("目盛りができる");
 
-        // <strong>割りと語彙は 1 ミリも動かない。</strong> 動けば、相手集合か語彙に
+        // 割りと語彙は 1 ミリも動かない。 動けば、相手集合か語彙に
         // 他人が混ざっている。
         assert_eq!(with.selection, bare.selection, "割りが動かない");
         assert_eq!(with.frozen, bare.frozen, "語彙が動かない");
 
-        // <strong>較正は動く。</strong> 動かなければ、入れたものが読まれていない。
+        // 較正は動く。 動かなければ、入れたものが読まれていない。
         assert_ne!(with.calibration, bare.calibration, "照合値の較正は動く");
         assert_ne!(with.humanness, bare.humanness, "人らしさの較正は動く");
     }
@@ -2049,7 +2049,7 @@ mod tests {
             Some(&Chars),
         )
         .unwrap();
-        // <strong>相手集合は目盛りが持っている。</strong> 本文はもう要らない。
+        // 相手集合は目盛りが持っている。 本文はもう要らない。
         assert_eq!(scale.partner_vectors.len(), 5);
         let got = measure_against(&scale, person[9], Some(&Chars));
         assert!(got.matching.is_some(), "照合値が出る");
@@ -2070,7 +2070,7 @@ mod tests {
             Some(&Chars),
         )
         .unwrap();
-        // 短い文書は除外に掛かる。<strong>0 ではなく、出ないである。</strong>
+        // 短い文書は除外に掛かる。0 ではなく、出ないである。
         let short = Document::new(vec![Node::leaf(Kind::Paragraph, "短い。")]);
         let got = measure_against(
             &scale,

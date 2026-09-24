@@ -1,10 +1,10 @@
-//! 定義ファイルを読む。<strong>1 指標 1 ファイルの、その 1 か所である。</strong>
+//! 定義ファイルを読む。1 指標 1 ファイルの、その 1 か所である。
 //!
-//! <strong>名前も札も直し方も、ここから引く。</strong> 実装の側に書き写せば、定義を直したときに
-//! 書き写しが古いまま残り、<strong>エラーにならない。</strong>
+//! 名前も札も直し方も、ここから引く。 実装の側に書き写せば、定義を直したときに
+//! 書き写しが古いまま残り、エラーにならない。
 //!
 //! 検めが返す指摘の文も定義ファイルの[直し方](Definition::remedy)である——
-//! <strong>指摘の文を実装に持つと、仕様と食い違ったことに誰も気づかない。</strong>
+//! 指摘の文を実装に持つと、仕様と食い違ったことに誰も気づかない。
 
 use std::path::{Path, PathBuf};
 
@@ -16,26 +16,26 @@ use crate::tag::Direction;
 pub struct Definition {
     /// ファイル名（拡張子なし）。
     pub file: String,
-    /// 1 行目の見出し。<strong>指標の名前である。</strong>
+    /// 1 行目の見出し。指標の名前である。
     pub name: String,
     /// 札の行。
     pub tag_line: String,
-    /// 直し方の節。<strong>無ければ空である。</strong>
+    /// 直し方の節。無ければ空である。
     pub remedy: String,
-    /// 正規化した本文の digest。<strong>指紋に入る。</strong>
+    /// 正規化した本文の digest。指紋に入る。
     ///
-    /// <strong>本数を指紋にしてはいけない。</strong> 同じ本数のまま数え方・除外・直し方を変えれば、
-    /// 値の意味が変わったのに指紋が動かず、<strong>古い派生値がそのまま使い回される</strong>。
+    /// 本数を指紋にしてはいけない。 同じ本数のまま数え方・除外・直し方を変えれば、
+    /// 値の意味が変わったのに指紋が動かず、古い派生値がそのまま使い回される。
     /// この欄が本文ごと変わる。
     pub digest: u64,
 }
 
 /// 本文を正規化して digest を取る。
 ///
-/// <strong>取る前に正規化する。</strong> 改行や行末の空白の違いで digest が動けば、意味の変わって
+/// 取る前に正規化する。 改行や行末の空白の違いで digest が動けば、意味の変わって
 /// いない編集で全部の値が捨てられる——捨てられるのが嫌になって、指紋を見なくなる。
 fn digest_of(body: &str) -> u64 {
-    // FNV-1a。<strong>暗号のためではない</strong>——同じ本文から同じ値が出ればよい。
+    // FNV-1a。暗号のためではない——同じ本文から同じ値が出ればよい。
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for line in body.lines() {
         for b in line.trim_end().as_bytes() {
@@ -48,21 +48,31 @@ fn digest_of(body: &str) -> u64 {
     h
 }
 
+/// 直し方の向きを分ける印の開き。定義ファイルの書式である。
+const MARK_OPEN: &str = "<strong>";
+/// 上へ寄せる直し方の印。
+const MARK_UPPER: &str = "上</strong>";
+/// 下へ寄せる直し方の印。
+const MARK_LOWER: &str = "下</strong>";
+
 impl Definition {
-    /// 向きに応じた直し方。<strong>書いていなければ `None`。</strong>
+    /// 向きに応じた直し方。書いていなければ `None`。
     ///
-    /// 両側の指標は `<strong>上</strong>:` と `<strong>下</strong>:` で分けて書く。片側だけの指標は
+    /// 両側の指標は「上」と「下」の印で分けて書く。片側だけの指標は
     /// 節の全体がその向きの直し方である。
+    ///
+    /// 印は定義ファイルの書式そのものである。 飾りではないので、
+    /// 見た目を整えるために外してはいけない——外すと直し方が空になる。
     #[must_use]
     pub fn remedy(&self, want: Direction) -> Option<String> {
         let marked = |mark: &str| -> Option<String> {
             self.remedy
-                .split("<strong>")
+                .split(MARK_OPEN)
                 .find_map(|part| part.strip_prefix(mark))
                 .map(|s| trim_remedy(s.trim_start_matches([':', '：']).trim()))
         };
-        let upper = marked("上</strong>");
-        let lower = marked("下</strong>");
+        let upper = marked(MARK_UPPER);
+        let lower = marked(MARK_LOWER);
         if upper.is_some() || lower.is_some() {
             return match want {
                 Direction::Upper => upper,
@@ -82,13 +92,13 @@ impl Definition {
     }
 }
 
-/// 印より後ろを 1 文にする。<strong>指摘は短くする。</strong>
+/// 印より後ろを 1 文にする。指摘は短くする。
 fn trim_remedy(s: &str) -> String {
     let first = s.split("\n\n").next().unwrap_or(s);
     first.replace('\n', "").trim().to_owned()
 }
 
-/// 定義ファイルの置き場を探す。<strong>呼ばれた場所から遡る。</strong>
+/// 定義ファイルの置き場を探す。呼ばれた場所から遡る。
 #[must_use]
 pub fn find_dir(from: impl AsRef<Path>) -> Option<PathBuf> {
     let mut at = from.as_ref().to_path_buf();
@@ -103,7 +113,7 @@ pub fn find_dir(from: impl AsRef<Path>) -> Option<PathBuf> {
     }
 }
 
-/// 定義ファイルを全部読む。<strong>ファイル名の昇順。</strong>
+/// 定義ファイルを全部読む。ファイル名の昇順。
 #[must_use]
 pub fn read(dir: impl AsRef<Path>) -> Vec<Definition> {
     let Ok(entries) = std::fs::read_dir(dir.as_ref()) else {
@@ -256,13 +266,13 @@ mod tests {
 
     #[test]
     fn 片側だけの指標は節の全体を返す() {
-        let d = definition("<strong>下限だけを持つ</strong>——段落の長さに緩急をつける。");
+        let d = definition("下限だけを持つ——段落の長さに緩急をつける。");
         assert!(d.remedy(Direction::Lower).unwrap().contains("緩急をつける"));
     }
 
     #[test]
     fn 書いていなければ返さない() {
-        // 直し方の無い指標は指摘に出ない。<strong>だが判定は止まったままである。</strong>
+        // 直し方の無い指標は指摘に出ない。だが判定は止まったままである。
         assert_eq!(definition("").remedy(Direction::Upper), None);
     }
 
@@ -281,7 +291,7 @@ mod tests {
 
     #[test]
     fn 定義ファイルが実際に読める() {
-        // <strong>置き場を遡って見つける。</strong> 見つからなければ空を返す——試験は落とさない。
+        // 置き場を遡って見つける。 見つからなければ空を返す——試験は落とさない。
         let Some(dir) = find_dir(env!("CARGO_MANIFEST_DIR")) else {
             return;
         };

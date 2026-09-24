@@ -1,9 +1,9 @@
 //! JSON の読み書き。
 //!
-//! <strong>外の crate を持たない。</strong> 使うのはこちらが書いた形だけなので、必要な分だけを
+//! 外の crate を持たない。 使うのはこちらが書いた形だけなので、必要な分だけを
 //! 自分で持つ——依存を足すより、書ける量が小さい。
 //!
-//! <strong>並び順を固定する。</strong>[作り直しても同じものが出る](../../../docs/design/300-test.md#作り直せることを試験する)
+//! 並び順を固定する。[作り直しても同じものが出る](../../../docs/design/300-test.md#作り直せることを試験する)
 //! ためには、バイトまで同じでなければならない。
 
 use std::collections::BTreeMap;
@@ -21,7 +21,7 @@ pub enum Value {
     String(String),
     /// 配列。
     Array(Vec<Value>),
-    /// 対象。<strong>鍵の昇順で持つ</strong>ので、書き出しが決定的になる。
+    /// 対象。鍵の昇順で持つので、書き出しが決定的になる。
     Object(BTreeMap<String, Value>),
 }
 
@@ -83,7 +83,7 @@ impl Value {
         }
     }
 
-    /// 書き出す。<strong>鍵の昇順、余計な空白なし。</strong>
+    /// 書き出す。鍵の昇順、余計な空白なし。
     #[must_use]
     pub fn write(&self) -> String {
         let mut s = String::new();
@@ -96,7 +96,7 @@ impl Value {
             Value::Null => out.push_str("null"),
             Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
             Value::Number(n) => {
-                // <strong>整数は整数として書く。</strong> `1` と `1.0` でバイトが変わる。
+                // 整数は整数として書く。 `1` と `1.0` でバイトが変わる。
                 if n.fract() == 0.0 && n.abs() < 1e15 {
                     out.push_str(&format!("{}", *n as i64));
                 } else {
@@ -132,7 +132,7 @@ impl Value {
 
 /// 文字列を書き出す。
 ///
-/// <strong>非 ASCII をそのまま出す。</strong> 日本語を `\uXXXX` にすると、人が読めなくなる。
+/// 非 ASCII をそのまま出す。 日本語を `\uXXXX` にすると、人が読めなくなる。
 fn escape(s: &str, out: &mut String) {
     out.push('"');
     for c in s.chars() {

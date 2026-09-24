@@ -1,32 +1,32 @@
-//! 指紋。<strong>何で測ったかを残す。</strong>
+//! 指紋。何で測ったかを残す。
 //!
-//! 仕様が「一部だけを混ぜない」と警告している。混ぜ忘れても<strong>エラーにならず、
-//! 古い値が黙って使われる。</strong>
+//! 仕様が「一部だけを混ぜない」と警告している。混ぜ忘れてもエラーにならず、
+//! 古い値が黙って使われる。
 //!
-//! <strong>だから指紋を作る関数は、全部の材料を引数に取る。</strong> 1 つでも欠ければ
+//! だから指紋を作る関数は、全部の材料を引数に取る。 1 つでも欠ければ
 //! 組み立てられない——型がそれを強制する。
 
 use std::collections::BTreeMap;
 
-/// 指紋の材料。<strong>すべての欄が必須である。</strong>
+/// 指紋の材料。すべての欄が必須である。
 ///
 /// `Option` を持たない。持たせれば、混ぜ忘れが `None` として通ってしまう。
-/// <strong>まだ使わないものも、使わないと書いて渡す。</strong>
+/// まだ使わないものも、使わないと書いて渡す。
 ///
-/// <strong>道具の部分と場面の部分に割れる。</strong> 道具と定義が変われば過去の値と
+/// 道具の部分と場面の部分に割れる。 道具と定義が変われば過去の値と
 /// 比べられないが、語彙や基準が変わっただけなら道具は据え置きである。
-/// <strong>割らなければ、どちらが変わったのかを言えない。</strong>
+/// 割らなければ、どちらが変わったのかを言えない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Inputs {
-    /// 共通部分。<strong>道具と定義である。</strong>
+    /// 共通部分。道具と定義である。
     pub common: Common,
-    /// 場面の部分。<strong>1 カセットが 1 場面なので 1 つだけ持つ。</strong>
+    /// 場面の部分。1 カセットが 1 場面なので 1 つだけ持つ。
     pub scene: SceneInputs,
 }
 
 /// 指紋の材料のうち、場面に依らないもの。
 ///
-/// <strong>道具と実装と定義である。</strong> ここが変われば、どのカセットの値も
+/// 道具と実装と定義である。 ここが変われば、どのカセットの値も
 /// 過去と比べられない。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Common {
@@ -36,7 +36,7 @@ pub struct Common {
     pub unit_definitions: String,
     /// 形態素解析器の辞書と版。
     pub morphology: Tool,
-    /// 係り受け解析器の辞書と版。<strong>保留中。使わないなら `Tool::unused`。</strong>
+    /// 係り受け解析器の辞書と版。保留中。使わないなら `Tool::unused`。
     pub dependency: Tool,
     /// 圧縮器と設定。
     pub compressor: Tool,
@@ -53,14 +53,14 @@ pub struct SceneInputs {
     pub vocabulary: BTreeMap<String, Vec<String>>,
     /// 固定した z 得点の平均と標準偏差。
     pub z_scores: BTreeMap<String, Vec<(f64, f64)>>,
-    /// 単位をどう割ったか。<strong>束の構成と並びもここに出る。</strong>
+    /// 単位をどう割ったか。束の構成と並びもここに出る。
     ///
     /// 鍵が割りの名前、値が単位の名前の並びである。
-    /// <strong>[束ねた単位は中身を名前にする](../../../docs/spec/200-extract.md#短い文書は束ねる)</strong>
+    /// [束ねた単位は中身を名前にする](../../../docs/spec/200-extract.md#短い文書は束ねる)
     /// ので、どの文書をどの順で束ねたかがそのまま入る。
     ///
-    /// <strong>割りが変われば帯が変わる。</strong> 入れなければ、同じ語彙のまま別の割りで
-    /// 作った目盛りが<strong>同じ指紋を名乗る。</strong>
+    /// 割りが変われば帯が変わる。 入れなければ、同じ語彙のまま別の割りで
+    /// 作った目盛りが同じ指紋を名乗る。
     pub selection: BTreeMap<String, Vec<String>>,
     /// 基準の LLM の版と推論設定。
     pub baseline: Baseline,
@@ -80,7 +80,7 @@ pub struct Tool {
 }
 
 impl Tool {
-    /// 使わない道具。<strong>「未設定」と「使わない」を分ける。</strong>
+    /// 使わない道具。「未設定」と「使わない」を分ける。
     #[must_use]
     pub fn unused() -> Self {
         Self {
@@ -109,25 +109,25 @@ pub struct Normalization {
 pub struct Baseline {
     /// LLM の名前。
     pub model: String,
-    /// 版。<strong>モデル名だけでは足りない。</strong>
+    /// 版。モデル名だけでは足りない。
     pub version: String,
     /// 推論設定。
     pub params: BTreeMap<String, String>,
-    /// 題材。<strong>言葉づかいだけで帯が動くので、外さない。</strong>
+    /// 題材。言葉づかいだけで帯が動くので、外さない。
     pub topics: Vec<String>,
 }
 
 /// 指紋。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fingerprint {
-    /// 材料。<strong>平文で残す</strong>——ハッシュだけでは、何が変わったかが分からない。
+    /// 材料。平文で残す——ハッシュだけでは、何が変わったかが分からない。
     pub inputs: Inputs,
     /// 材料から作った文字列。比べるのはこれ。
     digest: String,
 }
 
 impl Fingerprint {
-    /// 組み立てる。<strong>材料をすべて受け取る。</strong>
+    /// 組み立てる。材料をすべて受け取る。
     #[must_use]
     pub fn build(inputs: Inputs) -> Self {
         let digest = inputs.canonical();
@@ -142,7 +142,7 @@ impl Fingerprint {
 
     /// 共通部分のどこが違うか。
     ///
-    /// <strong>道具と実装と定義である。</strong> ここが変われば、どのカセットの値も
+    /// 道具と実装と定義である。 ここが変われば、どのカセットの値も
     /// 過去と比べられない。
     #[must_use]
     pub fn common_differences(&self, other: &Self) -> Vec<&'static str> {
@@ -196,7 +196,7 @@ impl Fingerprint {
         out
     }
 
-    /// どの材料が違うか。<strong>変わったことだけでなく、何が変わったかを言う。</strong>
+    /// どの材料が違うか。変わったことだけでなく、何が変わったかを言う。
     #[must_use]
     pub fn differences(&self, other: &Self) -> Vec<String> {
         self.common_differences(other)
@@ -214,7 +214,7 @@ impl Fingerprint {
 }
 
 impl Inputs {
-    /// 決定的な文字列にする。<strong>並び順を固定する</strong>ので、作り直しても同じものが出る。
+    /// 決定的な文字列にする。並び順を固定するので、作り直しても同じものが出る。
     fn canonical(&self) -> String {
         let c = &self.common;
         let mut s = String::new();
@@ -268,8 +268,8 @@ impl Inputs {
             }
             s.push('\n');
         }
-        // <strong>長さを添えて並べる。</strong> 区切り文字で繋ぐと、名前がその文字を
-        // 含んだときに<strong>別の割りが同じ文字列になる</strong>——単位の名前は
+        // 長さを添えて並べる。 区切り文字で繋ぐと、名前がその文字を
+        // 含んだときに別の割りが同じ文字列になる——単位の名前は
         // ファイル名なので、区切りに使える文字はどれも名前に入りうる。
         s.push_str("割り\n");
         for (k, v) in &i.selection {
@@ -406,7 +406,7 @@ mod tests {
             .insert("本人の相手集合".to_owned(), vec!["p01".to_owned()]);
         assert!(!base.matches(&Fingerprint::build(i)), "単位の割り");
 
-        // <strong>名前に区切り文字が入っても、別の割りは別の指紋になる。</strong>
+        // 名前に区切り文字が入っても、別の割りは別の指紋になる。
         // 単位の名前はファイル名なので、区切りに使える文字はどれも名前に入りうる。
         let split_at = |names: Vec<&str>| {
             let mut i = inputs();
@@ -421,7 +421,7 @@ mod tests {
             "区切り文字を含む名前で割りが潰れている"
         );
 
-        // <strong>束ねた単位は中身を名前にする。</strong> 束ね方が変われば名前が変わり、
+        // 束ねた単位は中身を名前にする。 束ね方が変われば名前が変わり、
         // 割りが変わって指紋が動く。
         let mut i = inputs();
         i.scene
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn 共通部分と場面の部分を別に照らせる() {
-        // <strong>道具が変わったのか語彙が変わったのかが、構造で分かれる。</strong>
+        // 道具が変わったのか語彙が変わったのかが、構造で分かれる。
         let base = Fingerprint::build(inputs());
         let mut i = inputs();
         i.scene.baseline.version = "2026-02".into();

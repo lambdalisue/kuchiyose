@@ -1,24 +1,24 @@
 //! 形態素解析の口。
 //!
-//! <strong>辞書を選ぶことは、品詞の体系を選ぶことである。</strong> 記録すれば済む話ではない——
+//! 辞書を選ぶことは、品詞の体系を選ぶことである。 記録すれば済む話ではない——
 //! どの語が接続詞かが辞書で変わり、[接続詞直後の読点](../../../docs/spec/metrics/接続詞直後の読点.md)の
 //! 次元が消える。
 //!
-//! そして<strong>外の表を語彙素で引く指標がある。</strong> 別の体系で解析すれば鍵が合わず、
-//! <strong>0 件として静かに落ちる。</strong>
+//! そして外の表を語彙素で引く指標がある。 別の体系で解析すれば鍵が合わず、
+//! 0 件として静かに落ちる。
 //!
-//! だからここは<strong>解析器を差し替えられる口</strong>にし、<strong>UniDic 以外は断る。</strong>
+//! だからここは解析器を差し替えられる口にし、UniDic 以外は断る。
 
 /// 形態素。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Morpheme {
-    /// 表層形。<strong>機能語はこれで数える</strong>——「は」と「わ」、「けれど」と「けど」を分ける。
+    /// 表層形。機能語はこれで数える——「は」と「わ」、「けれど」と「けど」を分ける。
     pub surface: String,
-    /// 語彙素。<strong>外の表を引く鍵。</strong>
+    /// 語彙素。外の表を引く鍵。
     pub lemma: String,
     /// 品詞の第 1 層。名詞・動詞・助詞……
     pub pos1: String,
-    /// 品詞の第 2 層。<strong>第 1 層で始めるのは暫定なので、持っておく。</strong>
+    /// 品詞の第 2 層。第 1 層で始めるのは暫定なので、持っておく。
     pub pos2: String,
 }
 
@@ -40,7 +40,7 @@ impl Morpheme {
 
     /// 前の語に付く語か。助詞と助動詞。
     ///
-    /// <strong>単独で文節を始められない。</strong> だから読点の直後にこれが来ていたら、
+    /// 単独で文節を始められない。 だから読点の直後にこれが来ていたら、
     /// [語を割っているかもしれない](splitting_commas)。
     #[must_use]
     pub fn is_clinging(&self) -> bool {
@@ -51,31 +51,31 @@ impl Morpheme {
 /// 辞書の体系。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dictionary {
-    /// UniDic の短単位。<strong>仕様が要求する体系。</strong>
+    /// UniDic の短単位。仕様が要求する体系。
     UnidicShort,
-    /// それ以外。<strong>断る。</strong>
+    /// それ以外。断る。
     Other,
 }
 
 /// 解析器。
 ///
-/// <strong>体系を名乗らせる。</strong> 名乗らないものは通さない——黙って別の体系で測れば、
+/// 体系を名乗らせる。 名乗らないものは通さない——黙って別の体系で測れば、
 /// 語彙素で引く指標が 0 件として静かに落ちる。
 pub trait Analyzer {
     /// この解析器の辞書の体系。
     fn dictionary(&self) -> Dictionary;
-    /// 辞書の名前と版。<strong>指紋に入る。</strong>
+    /// 辞書の名前と版。指紋に入る。
     fn dictionary_version(&self) -> (String, String);
     /// 1 本の文字列を解析する。
     fn analyze(&self, text: &str) -> Vec<Morpheme>;
 
     /// まとめて解析する。
     ///
-    /// <strong>外の実行ファイルを呼ぶ解析器は、ここをまとめて速くする。</strong> node ごとに
+    /// 外の実行ファイルを呼ぶ解析器は、ここをまとめて速くする。 node ごとに
     /// 起こせば、200 MB の辞書を node の数だけ読み直すことになる——
     /// [測るのが高ければ周回数が減る](../../../docs/spec/100-metrics.md#測るのを安くする)。
     ///
-    /// <strong>返す並びは渡した並びと同じでなければならない。</strong> ずれれば、node を跨がない
+    /// 返す並びは渡した並びと同じでなければならない。 ずれれば、node を跨がない
     /// はずの指標が別の node の形態素を数える。
     fn analyze_all(&self, texts: &[&str]) -> Vec<Vec<Morpheme>> {
         texts.iter().map(|t| self.analyze(t)).collect()
@@ -108,7 +108,7 @@ impl std::fmt::Display for MorphError {
 
 impl std::error::Error for MorphError {}
 
-/// 体系を確かめる。<strong>測る前に必ず通す。</strong>
+/// 体系を確かめる。測る前に必ず通す。
 pub fn check(analyzer: &dyn Analyzer) -> Result<(), MorphError> {
     if analyzer.dictionary() == Dictionary::UnidicShort {
         return Ok(());
@@ -175,24 +175,24 @@ fn splitting_commas(segments: &[Vec<Morpheme>], analyzer: &dyn Analyzer) -> Vec<
 
 /// 解析し終えた地の文。
 ///
-/// <strong>1 度だけ解析して、指標のあいだで使い回す。</strong> 指標ごとに解析器を呼べば、外の
+/// 1 度だけ解析して、指標のあいだで使い回す。 指標ごとに解析器を呼べば、外の
 /// 実行ファイルを指標の数だけ起こす——[測るのが高ければ周回数が減り、そのまま品質が
 /// 落ちる](../../../docs/spec/100-metrics.md#測るのを安くする)。
 ///
-/// <strong>そして体系の確かめがここで済む。</strong> 作る道が[`Analyzed::of`]しかないので、
-/// 指標ごとに書き忘れられない——<strong>持っていること自体が確かめた証になる。</strong>
+/// そして体系の確かめがここで済む。 作る道が[`Analyzed::of`]しかないので、
+/// 指標ごとに書き忘れられない——持っていること自体が確かめた証になる。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Analyzed {
     segments: Vec<Vec<Morpheme>>,
-    /// 各 node の種類。<strong>並びは `segments` と同じである。</strong>
+    /// 各 node の種類。並びは `segments` と同じである。
     ///
-    /// <strong>文体は node の種類ごとに違う</strong>ので、種類で絞って数える指標がある。
+    /// 文体は node の種類ごとに違うので、種類で絞って数える指標がある。
     kinds: Vec<kakiburi_doc::node::Kind>,
     split_commas: Vec<String>,
 }
 
 impl Analyzed {
-    /// 地の文を解析する。<strong>node ごとに分けて持つ</strong>——跨がない指標があるからである。
+    /// 地の文を解析する。node ごとに分けて持つ——跨がない指標があるからである。
     pub fn of(
         prose: &[kakiburi_doc::prose::Segment],
         analyzer: &dyn Analyzer,
@@ -200,7 +200,7 @@ impl Analyzed {
         Self::with_lexicon(prose, analyzer, &crate::lexicon::Lexicon::default())
     }
 
-    /// 地の文を解析し、<strong>コーパスから見つけた語を畳む。</strong>
+    /// 地の文を解析し、コーパスから見つけた語を畳む。
     ///
     /// 辞書に無い語は複数の語に割れる。割れたままだと、その語のところで
     /// 機能語の分布も品詞 bigram も型も狂う（[語](crate::lexicon)）。
@@ -216,7 +216,7 @@ impl Analyzed {
         for seg in &mut segments {
             lexicon.fold(seg);
         }
-        // <strong>並びがずれたら受け取らない。</strong> ずれれば、node を跨がないはずの指標が
+        // 並びがずれたら受け取らない。 ずれれば、node を跨がないはずの指標が
         // 別の node の形態素を数える——エラーにならず、値だけが違う。
         if segments.len() != texts.len() {
             return Ok(Self {
@@ -242,7 +242,7 @@ impl Analyzed {
         &self.split_commas
     }
 
-    /// node ごとの形態素列。<strong>跨がない指標はこちらを使う。</strong>
+    /// node ごとの形態素列。跨がない指標はこちらを使う。
     #[must_use]
     pub fn segments(&self) -> &[Vec<Morpheme>] {
         &self.segments
@@ -250,7 +250,7 @@ impl Analyzed {
 
     /// その種類の node の形態素列だけ。
     ///
-    /// <strong>文体は node の種類ごとに違う</strong>ので、段落と項目を混ぜて数えると
+    /// 文体は node の種類ごとに違うので、段落と項目を混ぜて数えると
     /// 使い分けが袋の中で消える。
     pub fn segments_of(
         &self,
@@ -263,12 +263,12 @@ impl Analyzed {
             .map(|(_, s)| s)
     }
 
-    /// node を跨いだ 1 つの列。<strong>分布を出す指標はこちらを使う。</strong>
+    /// node を跨いだ 1 つの列。分布を出す指標はこちらを使う。
     pub fn all(&self) -> impl Iterator<Item = &Morpheme> {
         self.segments.iter().flatten()
     }
 
-    /// 延べ語数。<strong>約物と記号の形態素も含める。</strong>
+    /// 延べ語数。約物と記号の形態素も含める。
     #[must_use]
     pub fn tokens(&self) -> usize {
         self.segments.iter().map(Vec::len).sum()
@@ -283,7 +283,7 @@ impl Analyzed {
 
 #[cfg(test)]
 pub(crate) mod stub {
-    //! 試験用の解析器。<strong>UniDic を名乗る。</strong>
+    //! 試験用の解析器。UniDic を名乗る。
     //!
     //! 空白で切り、決めた表で品詞を当てる。仕様の手続きを試すためのものであって、
     //! 日本語を解析するものではない。
@@ -321,7 +321,7 @@ pub(crate) mod stub {
                 ("接続詞", "*")
             }
             "とても" | "やはり" | "すでに" | "ようやく" => ("副詞", "一般"),
-            // <strong>な形容詞の語幹は 形状詞 である。</strong> 学校文法の「形容動詞」を
+            // な形容詞の語幹は 形状詞 である。 学校文法の「形容動詞」を
             // 名詞に寄せると、地味・静か・便利が語として見えなくなる。
             "地味" | "静か" | "便利" => ("形状詞", "一般"),
             "速い" | "古い" | "新しい" => ("形容詞", "一般"),

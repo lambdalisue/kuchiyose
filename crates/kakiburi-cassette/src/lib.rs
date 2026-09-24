@@ -1,15 +1,15 @@
-//! カセット。<strong>1 人の 1 場面ぶんの目盛りである。</strong>
+//! カセット。1 人の 1 場面ぶんの目盛りである。
 //!
 //! | | |
 //! | --- | --- |
-//! | `decided/` | 人が決めたこと。<strong>作り直せない</strong> |
-//! | `derived/` | 派生物。<strong>素材から作り直せる</strong> |
+//! | `decided/` | 人が決めたこと。作り直せない |
+//! | `derived/` | 派生物。素材から作り直せる |
 //!
-//! <strong>本文は持たない</strong>（[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）。
+//! 本文は持たない（[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）。
 //! 素材のフォルダが原本で、カセットはそこから作った目盛りだけを持つ。
 //!
-//! <strong>1 カセットが 1 場面である</strong>（[場面ごとに閉じる](../../../docs/spec/010-strategy.md#場面ごとに閉じる)）。
-//! 入れ物が境界そのものなので、<strong>場面を跨いだ目盛りは書けない。</strong>
+//! 1 カセットが 1 場面である（[場面ごとに閉じる](../../../docs/spec/010-strategy.md#場面ごとに閉じる)）。
+//! 入れ物が境界そのものなので、場面を跨いだ目盛りは書けない。
 
 pub mod fingerprint;
 pub mod json;
@@ -28,7 +28,7 @@ pub enum Role {
     Person,
     /// 基準。LLM の既定出力。
     BaselineOutput,
-    /// 他人の文書。<strong>無くてよい。</strong>
+    /// 他人の文書。無くてよい。
     Other,
 }
 
@@ -46,17 +46,17 @@ impl Role {
 
 /// 場面の名前として使えるか。
 ///
-/// <strong>空を断る</strong>——空の場面は「場面を決めていない」と見分けが付かない。
-/// <strong>1 カセットが 1 場面</strong>になって保存の中の階層名ではなくなったので、
+/// 空を断る——空の場面は「場面を決めていない」と見分けが付かない。
+/// 1 カセットが 1 場面になって保存の中の階層名ではなくなったので、
 /// `/` は断らない。
 #[must_use]
 pub fn scene_name_ok(scene: &str) -> bool {
     !scene.trim().is_empty()
 }
 
-/// 人が決めたこと。<strong>作り直せない原本である。</strong>
+/// 人が決めたこと。作り直せない原本である。
 ///
-/// <strong>場面は持たない。</strong> どの場面のものかは[カセット](Cassette::scene)が言う——
+/// 場面は持たない。 どの場面のものかは[カセット](Cassette::scene)が言う——
 /// 2 か所に置けば、食い違ったときに正本が決まらない。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Decided {
@@ -64,7 +64,7 @@ pub struct Decided {
     pub boilerplate: Vec<String>,
     /// 基準の作り方。
     pub baseline: Baseline,
-    /// 指示して動くか。<strong>直させてみて初めて分かる。</strong>
+    /// 指示して動くか。直させてみて初めて分かる。
     ///
     /// 書いていない指標は「未知」で、前に出す指標に入る。
     pub movement: BTreeMap<String, Movement>,
@@ -75,14 +75,14 @@ pub struct Decided {
 pub enum Movement {
     /// 動く。
     Moves,
-    /// 動かないと分かった。<strong>前に出す指標から外れる。</strong>
+    /// 動かないと分かった。前に出す指標から外れる。
     Stuck,
 }
 
-/// 派生物。<strong>いつでも捨ててよい。</strong>
+/// 派生物。いつでも捨ててよい。
 ///
-/// 型が `Option` なのは「まだ作っていない」を表すためである。<strong>捨てられることが
-/// 型に出ている。</strong>
+/// 型が `Option` なのは「まだ作っていない」を表すためである。捨てられることが
+/// 型に出ている。
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Derived {
     /// 固定した語彙。
@@ -97,11 +97,11 @@ pub struct Derived {
     pub scale: Option<String>,
     /// 効く指標、前に出す指標。
     pub effective: Option<String>,
-    /// 言い回し → 本人の上限。<strong>本文の代わりである。</strong>
+    /// 言い回し → 本人の上限。本文の代わりである。
     ///
     /// [繰り返せと言うなら上限も言う](../../../docs/spec/300-revise.md#繰り返せと言うなら上限も言う)
     /// は、どの言い回しを訊かれるかが検めるまで決まらないので、本文を走査していた。
-    /// <strong>2 つ以上の単位に現れる言い回しと上限だけに畳む。</strong>
+    /// 2 つ以上の単位に現れる言い回しと上限だけに畳む。
     pub phrases: Option<String>,
 }
 
@@ -114,7 +114,7 @@ impl Derived {
 
     /// 目盛りができているか。
     ///
-    /// <strong>できていないカセットは正常な状態である。</strong> 素材が足りずに作れなかったのは
+    /// できていないカセットは正常な状態である。 素材が足りずに作れなかったのは
     /// 異常ではなく、検めが判定できないを返す。
     #[must_use]
     pub fn has_scale(&self) -> bool {
@@ -127,46 +127,46 @@ impl Derived {
 pub struct Cassette {
     /// 版。
     pub version: u32,
-    /// 世代。<strong>書くたびに 1 つ増える。</strong>
+    /// 世代。書くたびに 1 つ増える。
     ///
-    /// 同時に 2 つが書くと、片方の変更が正常終了のまま消える。<strong>落ちるより悪い</strong>
+    /// 同時に 2 つが書くと、片方の変更が正常終了のまま消える。落ちるより悪い
     /// ——誰も気付かない。読んだときの世代と、置き換える直前の世代が同じことを
     /// 確かめて防ぐ。
     ///
-    /// <strong>[指紋](Fingerprint)では検出できない。</strong> 指紋は測った条件を表すもので、
+    /// [指紋](Fingerprint)では検出できない。 指紋は測った条件を表すもので、
     /// 本文を差し替えても条件が同じなら変わらない。
     pub generation: u64,
     /// 指紋。道具・実装・定義の版・取り込み元・語彙・z 得点。
     pub fingerprint: Fingerprint,
     /// 暫定値が立っている箇所。
     ///
-    /// <strong>空でないカセットは、判定に但し書きが付く。</strong> いまは常に立つ。
+    /// 空でないカセットは、判定に但し書きが付く。 いまは常に立つ。
     pub provisional: Vec<String>,
     /// この目盛りが何の場面のものか。
     ///
-    /// <strong>1 カセットが 1 場面である</strong>（[決定](../../../docs/spec/010-strategy.md#場面ごとに閉じる)）。
-    /// 入れ物が境界そのものなので、<strong>場面を跨いだ目盛りは書けない。</strong>
+    /// 1 カセットが 1 場面である（[決定](../../../docs/spec/010-strategy.md#場面ごとに閉じる)）。
+    /// 入れ物が境界そのものなので、場面を跨いだ目盛りは書けない。
     ///
-    /// <strong>名前は人が付ける。中身と合っている保証は無い</strong>——だから
+    /// 名前は人が付ける。中身と合っている保証は無い——だから
     /// [検めるたびに名乗る](../../../docs/spec/300-revise.md#場面を指定させる)。
     /// 道具が当てにいくためのものではない。
     pub scene: String,
-    /// 人が決めたこと。<strong>作り直せない原本である。</strong>
+    /// 人が決めたこと。作り直せない原本である。
     pub decided: Decided,
-    /// 派生物。<strong>素材から作り直せる。</strong>
+    /// 派生物。素材から作り直せる。
     pub derived: Derived,
 }
 
 impl Cassette {
     /// 前に出す指標から外すか。
     ///
-    /// <strong>書いていなければ「未知」で、前に出す指標に入る。</strong> 動かないと分かるまでは使う。
+    /// 書いていなければ「未知」で、前に出す指標に入る。 動かないと分かるまでは使う。
     #[must_use]
     pub fn is_stuck(&self, metric: &str) -> bool {
         self.decided.movement.get(metric) == Some(&Movement::Stuck)
     }
 
-    /// 派生物を捨てる。<strong>決めたことは残る。</strong>
+    /// 派生物を捨てる。決めたことは残る。
     pub fn drop_derived(&mut self) {
         self.derived = Derived::dropped();
     }

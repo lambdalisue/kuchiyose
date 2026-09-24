@@ -1,9 +1,9 @@
-//! 指摘の文の出どころ。<strong>定義ファイルである。</strong>
+//! 指摘の文の出どころ。定義ファイルである。
 //!
-//! <strong>実装に持たない。</strong> 指摘の文を書き写せば、定義を直したときに書き写しが古いまま
-//! 残り、<strong>仕様と食い違ったことに誰も気づかない。</strong>
+//! 実装に持たない。 指摘の文を書き写せば、定義を直したときに書き写しが古いまま
+//! 残り、仕様と食い違ったことに誰も気づかない。
 //!
-//! <strong>向きは札から引く。</strong> 上限だけの指標に「足す」と言わせない——言えば、直す側は
+//! 向きは札から引く。 上限だけの指標に「足す」と言わせない——言えば、直す側は
 //! 指摘を消すために逆へ動く。
 
 use std::path::Path;
@@ -20,7 +20,7 @@ pub struct FromDefinitions {
 }
 
 impl FromDefinitions {
-    /// 置き場を探して読む。<strong>見つからなければ空である</strong>——指摘が出ないだけで、
+    /// 置き場を探して読む。見つからなければ空である——指摘が出ないだけで、
     /// 判定は止まったままになる。
     #[must_use]
     pub fn load() -> Self {
@@ -40,17 +40,17 @@ impl FromDefinitions {
 
     /// 指紋に入れる、定義の集合そのもの。
     ///
-    /// <strong>本数ではない。</strong> 同じ本数のまま数え方・除外・直し方を変えれば、値の意味が
+    /// 本数ではない。 同じ本数のまま数え方・除外・直し方を変えれば、値の意味が
     /// 変わったのに指紋が動かず、古い派生値が使い回される。
     ///
-    /// <strong>1 本も読めなければ、そう書く。</strong> 定義が無い環境では[指摘の文](Self::load)が
+    /// 1 本も読めなければ、そう書く。 定義が無い環境では[指摘の文](Self::load)が
     /// 出ないので、同じ条件で測ったとは言えない。
     #[must_use]
     pub fn digest(&self) -> String {
         if self.defs.is_empty() {
             return "定義を読めない".to_owned();
         }
-        // <strong>本数も添える。</strong> 合わないときに、何が変わったかを人が見当を付けられる。
+        // 本数も添える。 合わないときに、何が変わったかを人が見当を付けられる。
         let mut h: u64 = 0xcbf2_9ce4_8422_2325;
         for d in &self.defs {
             for b in d.file.as_bytes().iter().chain(&d.digest.to_le_bytes()) {
@@ -72,9 +72,9 @@ impl FromDefinitions {
         self.registry.get(name)?.tag.direction()
     }
 
-    /// 下端の見方。<strong>札の単位から引く。</strong>
+    /// 下端の見方。札の単位から引く。
     ///
-    /// <strong>札が読めなければ幅で見る。</strong> 使った割合で見るほうが強い判定なので、
+    /// 札が読めなければ幅で見る。 使った割合で見るほうが強い判定なので、
     /// 分からないときに強い側へ倒さない。
     #[must_use]
     pub fn lower_rule(&self, name: &str, rate: f64) -> kakiburi_review::Lower {
@@ -89,13 +89,13 @@ impl FromDefinitions {
         }
     }
 
-    /// 下端を使った割合で見る指標か。<strong>効くかの判定も同じ分け方に従う。</strong>
+    /// 下端を使った割合で見る指標か。効くかの判定も同じ分け方に従う。
     ///
-    /// 密度や個数では <strong>0 が「使わなかった」を意味する</strong>ので、素の幅は 0 から
-    /// 最大までに広がる。<strong>下端のためにこの規則を置いておきながら、効くかの判定を
-    /// 素の幅で行えば、いちばん指示しやすい指標が門前払いされる。</strong>
+    /// 密度や個数では 0 が「使わなかった」を意味するので、素の幅は 0 から
+    /// 最大までに広がる。下端のためにこの規則を置いておきながら、効くかの判定を
+    /// 素の幅で行えば、いちばん指示しやすい指標が門前払いされる。
     ///
-    /// <strong>札が読めなければ幅で見る。</strong>[下端](Self::lower_rule)と同じく、分からない
+    /// 札が読めなければ幅で見る。[下端](Self::lower_rule)と同じく、分からない
     /// ときに強い側へ倒さない。
     #[must_use]
     pub fn by_appearance(&self, name: &str) -> bool {
@@ -104,12 +104,12 @@ impl FromDefinitions {
             .is_some_and(|e| e.tag.lower_by_appearance())
     }
 
-    /// [層 3](kakiburi_metrics::Layer::Three) か。<strong>指摘にも判定にも使わない。</strong>
+    /// [層 3](kakiburi_metrics::Layer::Three) か。指摘にも判定にも使わない。
     ///
-    /// どの系統から切り出したのかを言えないものである。<strong>止めた理由を言えないものは
-    /// 止めてはいけない</strong>ので、判定の 3 段目から外す。
+    /// どの系統から切り出したのかを言えないものである。止めた理由を言えないものは
+    /// 止めてはいけないので、判定の 3 段目から外す。
     ///
-    /// <strong>札が読めなければ層 3 として扱う。</strong> 分からないものを前に出す側へ倒さない。
+    /// 札が読めなければ層 3 として扱う。 分からないものを前に出す側へ倒さない。
     #[must_use]
     pub fn is_layer_three(&self, name: &str) -> bool {
         self.registry
@@ -117,7 +117,7 @@ impl FromDefinitions {
             .is_none_or(|e| e.tag.layer() == Some(kakiburi_metrics::Layer::Three))
     }
 
-    /// 検査の指標か。<strong>幅ではなく線で見る。</strong>
+    /// 検査の指標か。幅ではなく線で見る。
     ///
     /// 効くかの判定にも指摘にも入れない。比べる先が本人ではないので、
     /// [効くかの 3 条件](kakiburi_scale::effective)が意味を持たない。
@@ -130,7 +130,7 @@ impl FromDefinitions {
 
     /// 検査の一覧。名前・向き・線・超えたときに言うこと。
     ///
-    /// <strong>直し方は定義ファイルが持つ。</strong> 超えたと言うだけでは直せない。
+    /// 直し方は定義ファイルが持つ。 超えたと言うだけでは直せない。
     #[must_use]
     pub fn inspections(&self) -> Vec<(String, bool, f64, String)> {
         self.registry
@@ -154,7 +154,7 @@ impl FromDefinitions {
             .collect()
     }
 
-    /// その向きの直し方。<strong>札が持たない向きは返さない。</strong>
+    /// その向きの直し方。札が持たない向きは返さない。
     fn pick(&self, name: &str, want: Direction) -> Option<String> {
         let declared = self.direction(name)?;
         if declared != Direction::Both && declared != want {

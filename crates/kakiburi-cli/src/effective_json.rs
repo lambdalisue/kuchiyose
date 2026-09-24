@@ -40,7 +40,7 @@ pub fn write_effective(rows: &[Effective]) -> String {
         Value::Array(
             rows.iter()
                 .map(|e| {
-                    // <strong>比べた相手も残す。</strong> 本人の側は幅も出現割合も残っているが、
+                    // 比べた相手も残す。 本人の側は幅も出現割合も残っているが、
                     // 基準が残らなければ、判定が変わったときに「基準が変わったのか、
                     // 閾値を変えたのか」を言えない。
                     let mut fields = vec![
@@ -106,7 +106,7 @@ pub fn read(spread: &str, effective: &str) -> Option<Vec<Effective>> {
                     "出現割合" => Basis::Appearance {
                         rate: j.get("基準の出現割合")?.as_f64()?,
                     },
-                    // <strong>知らない見方は読まない。</strong> 判定の根拠を読めないまま前に出せば、
+                    // 知らない見方は読まない。 判定の根拠を読めないまま前に出せば、
                     // どの規則で選ばれたのかを誰も言えなくなる。
                     _ => return None,
                 },

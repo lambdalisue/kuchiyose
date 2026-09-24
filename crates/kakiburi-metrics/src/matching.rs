@@ -1,9 +1,9 @@
-//! 照合の系統の値を作る。<strong>文字だけで測れる 3 つ。</strong>
+//! 照合の系統の値を作る。文字だけで測れる 3 つ。
 //!
 //! 文字 bigram・文字種・読点の打ち方は形態素解析を要らない。機能語と品詞 bigram は
 //! [語](crate::word)の側にある。
 //!
-//! <strong>系統から部分ベクトルの数え上げを引く道はここ 1 つである</strong>（[`parts`]）。使う側が
+//! 系統から部分ベクトルの数え上げを引く道はここ 1 つである（[`parts`]）。使う側が
 //! 系統ごとに分岐を書けば、系統を足したときに直し忘れた場所が古いまま残る。
 
 use std::collections::BTreeMap;
@@ -15,17 +15,17 @@ use crate::morph::Analyzed;
 use crate::system::System;
 use crate::word::Counts;
 
-/// 文字 bigram の次元。<strong>暫定値であり、指紋に含める。</strong>
+/// 文字 bigram の次元。暫定値であり、指紋に含める。
 ///
-/// 柳・金 2022 は 826〜2,489 を使っている。<strong>語彙を固定する以上、小さい側から始める。</strong>
+/// 柳・金 2022 は 826〜2,489 を使っている。語彙を固定する以上、小さい側から始める。
 pub const CHAR_BIGRAM_DIMS: usize = 500;
 
-/// 読点の直前・直後の次元。<strong>暫定値であり、指紋に含める。</strong>
+/// 読点の直前・直後の次元。暫定値であり、指紋に含める。
 pub const COMMA_NEIGHBOR_DIMS: usize = 50;
 
-/// 機能語の次元。<strong>暫定値であり、指紋に含める。</strong>
+/// 機能語の次元。暫定値であり、指紋に含める。
 ///
-/// <strong>語彙が開いているので上限が要る。</strong> 多く取れば取るほど良いわけではない——
+/// 語彙が開いているので上限が要る。 多く取れば取るほど良いわけではない——
 /// まれな語は標準偏差が小さく、z 得点にすると雑音が暴れる。
 pub const FUNCTION_WORD_DIMS: usize = 300;
 
@@ -35,15 +35,15 @@ pub const COMMA_GAP_MAX: usize = 21;
 /// 読点が分布と呼べる形になる下限。
 pub const COMMA_FLOOR: usize = 10;
 
-/// 文字種を測る下限。<strong>既定より緩い</strong>——10 次元しかないので短くても形になる。
+/// 文字種を測る下限。既定より緩い——10 次元しかないので短くても形になる。
 pub const CHAR_TYPE_FLOOR: usize = 200;
 
 /// 文末を表す番兵。
 ///
-/// <strong>置かなければ、文の最後の `、` が直後の分布からだけ静かに消える。</strong>
+/// 置かなければ、文の最後の `、` が直後の分布からだけ静かに消える。
 pub const SENTINEL: &str = "文末";
 
-/// 文字 bigram。<strong>node を跨がない。</strong>
+/// 文字 bigram。node を跨がない。
 ///
 /// 跨げば、見出しの末尾と次の段落の先頭の組ができる——その隣接は書き手が選んだ
 /// ものではない。
@@ -59,7 +59,7 @@ pub fn char_bigrams(prose: &[Segment]) -> Counts {
     counts
 }
 
-/// 文字種の 10 区分。<strong>どれか 1 つが必ず当たるように閉じる。</strong>
+/// 文字種の 10 区分。どれか 1 つが必ず当たるように閉じる。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CharType {
     /// ひらがな。
@@ -80,7 +80,7 @@ pub enum CharType {
     Punctuation,
     /// 空白。
     Space,
-    /// <strong>上のどれでもない文字すべて。</strong> 記号にかぎらない——`é` `α` キリル文字もここ。
+    /// 上のどれでもない文字すべて。 記号にかぎらない——`é` `α` キリル文字もここ。
     Other,
 }
 
@@ -102,7 +102,7 @@ impl CharType {
         }
     }
 
-    /// 全部。<strong>次元の並びはこの順である。</strong>
+    /// 全部。次元の並びはこの順である。
     pub const ALL: [CharType; 10] = [
         CharType::Hiragana,
         CharType::Katakana,
@@ -118,7 +118,7 @@ impl CharType {
 
     /// 1 文字を振り分ける。
     ///
-    /// <strong>最後の 1 つを真の受け皿にする。</strong> 記号だけを受けると、非日本語の文字が
+    /// 最後の 1 つを真の受け皿にする。 記号だけを受けると、非日本語の文字が
     /// どこにも属さず、割合の和が 1 にならないまま静かに狂う。
     #[must_use]
     pub fn of(c: char) -> Self {
@@ -143,7 +143,7 @@ impl CharType {
     }
 }
 
-/// 約物。<strong>定義の表に挙げたものだけである。</strong>
+/// 約物。定義の表に挙げたものだけである。
 ///
 /// 一般の記号を約物に流し込まない——`é` `α` を「その他」に落とすのが定義の要である。
 fn is_punctuation(c: char) -> bool {
@@ -169,13 +169,13 @@ fn is_punctuation(c: char) -> bool {
     )
 }
 
-/// 文字種。<strong>地の文の全文字を 10 に振り分ける。</strong>
+/// 文字種。地の文の全文字を 10 に振り分ける。
 ///
 /// [日本語の文字](kakiburi_doc::text::is_japanese)に限らない——分母は全文字である。
 #[must_use]
 pub fn char_types(prose: &[Segment]) -> Counts {
     let mut counts: Counts = BTreeMap::new();
-    // <strong>0 の区分も次元として立てる。</strong> 立てなければ、書き手ごとに次元の数が変わる。
+    // 0 の区分も次元として立てる。 立てなければ、書き手ごとに次元の数が変わる。
     for t in CharType::ALL {
         counts.insert(t.name().to_owned(), 0);
     }
@@ -187,17 +187,17 @@ pub fn char_types(prose: &[Segment]) -> Counts {
     counts
 }
 
-/// 読点の打ち方。<strong>3 つを別の部分ベクトルとして返す。</strong>
+/// 読点の打ち方。3 つを別の部分ベクトルとして返す。
 ///
-/// 直前の文字 / 直後の文字 / 間隔。<strong>連結する前に、それぞれの中で相対頻度に直す</strong>——
+/// 直前の文字 / 直後の文字 / 間隔。連結する前に、それぞれの中で相対頻度に直す——
 /// 1 つにまとめて割れば、間隔の分布が文字の分布の分母に混ざる。
 ///
-/// <strong>間隔は「`、` から次の `、` または文末まで」である。</strong> 文頭から最初の読点までは
+/// 間隔は「`、` から次の `、` または文末まで」である。 文頭から最初の読点までは
 /// 数えない——そこは読点が作った間隔ではない。逆に、最後の読点から文末までは
 /// 数える。読点の数と間隔の数が一致する。
 ///
 /// 読点の直後がすぐ文末なら間隔は 0 字になるが、次元は 1 字から始まるので
-/// 1 字に寄せる。<strong>捨てない</strong>——捨てると読点の数と間隔の数がずれる。
+/// 1 字に寄せる。捨てない——捨てると読点の数と間隔の数がずれる。
 #[must_use]
 pub fn comma_position(prose: &[Segment]) -> Vec<Counts> {
     let mut before: Counts = BTreeMap::new();
@@ -261,10 +261,10 @@ fn gap_name(n: usize) -> String {
 
 /// 読点の間隔と、その読点のまわり。
 ///
-/// <strong>「21 字以上を増やせ」だけでは直せない。</strong> どの読点がどの間隔を作っているかを
+/// 「21 字以上を増やせ」だけでは直せない。 どの読点がどの間隔を作っているかを
 /// 言わなければ、受け取った側は自分で数えることになる——実際にそうなった。
 ///
-/// 数え方は[読点の打ち方](comma_position)と同じである。<strong>日本語の文字だけを数える</strong>
+/// 数え方は[読点の打ち方](comma_position)と同じである。日本語の文字だけを数える
 /// ので、英数字を挟む文は見た目より短く出る。
 #[must_use]
 pub fn comma_gaps(prose: &[Segment]) -> Vec<(String, String)> {
@@ -302,7 +302,7 @@ pub fn comma_gaps(prose: &[Segment]) -> Vec<(String, String)> {
     out
 }
 
-/// 文の終わりの記号か。<strong>間隔はここで切る。</strong>
+/// 文の終わりの記号か。間隔はここで切る。
 fn is_sentence_end(c: char) -> bool {
     matches!(c, '。' | '！' | '？' | '!' | '?')
 }
@@ -318,10 +318,10 @@ pub fn comma_count(prose: &[Segment]) -> usize {
 
 /// 系統ごとの部分ベクトルの数え上げ。
 ///
-/// <strong>使う側は系統の一覧を持たない。</strong> ここが唯一の分岐である。
+/// 使う側は系統の一覧を持たない。 ここが唯一の分岐である。
 ///
 /// 形態素解析を要る系統は `analyzed` が `None` なら `None` を返す——
-/// <strong>0 を返さない。</strong> 0 は「測って 0 だった」という値である。
+/// 0 を返さない。 0 は「測って 0 だった」という値である。
 #[must_use]
 pub fn parts(
     system: System,
@@ -335,7 +335,7 @@ pub fn parts(
         System::CharBigram => enough(vec![char_bigrams(prose)], crate::floor::BIGRAMS),
         System::CharType => Some(vec![char_types(prose)]),
         System::Comma => Some(comma_position(prose)),
-        // <strong>語の側は延べ語数の下限を別に持つ。</strong> 字数で足りていても語で足りないことがある。
+        // 語の側は延べ語数の下限を別に持つ。 字数で足りていても語で足りないことがある。
         System::FunctionWord => analyzed.filter(|a| a.enough_tokens()).and_then(|a| {
             enough(
                 vec![crate::word::function_words(a)],
@@ -345,7 +345,7 @@ pub fn parts(
         System::PosBigram => analyzed
             .filter(|a| a.enough_tokens())
             .and_then(|a| enough(vec![crate::word::pos_bigrams(a)], crate::floor::BIGRAMS)),
-        // 判定に使わない系統。<strong>ここから値を出さない。</strong>
+        // 判定に使わない系統。ここから値を出さない。
         System::BunsetsuPattern
         | System::Embedding
         | System::SentenceEnding
@@ -356,7 +356,7 @@ pub fn parts(
     }
 }
 
-/// 系統ごとの部分ベクトルの次元の上限。<strong>並びは[`parts`]と同じである。</strong>
+/// 系統ごとの部分ベクトルの次元の上限。並びは[`parts`]と同じである。
 ///
 /// `None` は絞らないことを表す（文字種・品詞 bigram のように次元が固定の系統）。
 #[must_use]
@@ -369,16 +369,16 @@ pub fn limits(system: System) -> Vec<Option<usize>> {
             Some(COMMA_NEIGHBOR_DIMS),
             None, // 間隔は 1〜20 と 21 以上で固定である
         ],
-        // 機能語は語彙が開いている。<strong>暫定値であり、指紋に含める。</strong>
+        // 機能語は語彙が開いている。暫定値であり、指紋に含める。
         System::FunctionWord => vec![Some(FUNCTION_WORD_DIMS)],
         System::PosBigram => vec![None],
         _ => vec![],
     }
 }
 
-/// 実際に割る分母が下限に届いているか。届かなければ <strong>測れない</strong>。
+/// 実際に割る分母が下限に届いているか。届かなければ 測れない。
 ///
-/// 見るのは素材の量ではなく、<strong>その系統が実際に数えた事象の数</strong>である。0 のベクトルを
+/// 見るのは素材の量ではなく、その系統が実際に数えた事象の数である。0 のベクトルを
 /// 返してはいけない——返せば距離が計算でき、値が出て、判定が回る。そして
 /// [0 と測れないの区別](../../../docs/spec/100-metrics.md#除外の既定)がそこで崩れる。
 fn enough(parts: Vec<Counts>, floor: usize) -> Option<Vec<Counts>> {
@@ -386,7 +386,7 @@ fn enough(parts: Vec<Counts>, floor: usize) -> Option<Vec<Counts>> {
     (total >= floor).then_some(parts)
 }
 
-/// この単位でこの系統を測れるか。<strong>除外はここで 1 度だけ決める。</strong>
+/// この単位でこの系統を測れるか。除外はここで 1 度だけ決める。
 #[must_use]
 pub fn measurable(system: System, prose: &[Segment]) -> bool {
     let ja = kakiburi_doc::prose::japanese_chars(prose);
@@ -397,7 +397,7 @@ pub fn measurable(system: System, prose: &[Segment]) -> bool {
     }
 }
 
-/// 判定に使う系統。<strong>この 5 つが揃わなければ照合値を出さない。</strong>
+/// 判定に使う系統。この 5 つが揃わなければ照合値を出さない。
 pub const FOR_VERDICT: [System; 5] = [
     System::CharBigram,
     System::FunctionWord,
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn 上限の並びは部分ベクトルの並びと同じ() {
         // 食い違えば、絞る先を 1 つずれて当てる。
-        // <strong>全系統の除外を越える素材</strong>——字数・読点の数・延べ語数。
+        // 全系統の除外を越える素材——字数・読点の数・延べ語数。
         let prose: Vec<Segment> = (0..200).map(|_| seg("これ は 、 そう だ 。")).collect();
         let analyzed =
             crate::morph::Analyzed::of(&prose, &crate::morph::stub::Stub::unidic()).unwrap();

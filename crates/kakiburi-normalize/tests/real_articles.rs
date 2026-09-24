@@ -1,7 +1,7 @@
 //! 実際の記事で通るかを見る。
 //!
 //! 素材は `.spike/` に置いてある（追跡していない）。無ければ飛ばす——
-//! <strong>飛ばしたことを黙らない。</strong>
+//! 飛ばしたことを黙らない。
 
 use kakiburi_normalize::{normalize, Source};
 

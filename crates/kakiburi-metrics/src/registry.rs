@@ -1,7 +1,7 @@
-//! 登録簿。<strong>このクレートの本体である。</strong>
+//! 登録簿。このクレートの本体である。
 //!
 //! 「使う側は一覧を持たない」を守る唯一の場所。名前を 2 か所に書けば、片方を
-//! 直したときにもう片方が古いまま残り、<strong>エラーにならない。</strong>
+//! 直したときにもう片方が古いまま残り、エラーにならない。
 
 use crate::tag::{Tag, TagError};
 
@@ -88,7 +88,7 @@ impl Registry {
         self.entries.iter().find(|e| e.name == n)
     }
 
-    /// 種別で絞る。<strong>使う側は一覧を持たず、ここに来る。</strong>
+    /// 種別で絞る。使う側は一覧を持たず、ここに来る。
     pub fn by_kind<'a>(
         &'a self,
         pick: impl Fn(&Tag) -> bool + 'a,
