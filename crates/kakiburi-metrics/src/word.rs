@@ -189,6 +189,54 @@ pub fn grams_with_position(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<(St
     out
 }
 
+/// 語として数える品詞。<strong>評価と程度を言う語だけを取る。</strong>
+///
+/// 名詞と動詞を入れない。<strong>あれは題材が決める</strong>——`Terraform` を使ったことが
+/// 無い書き手の文章に `Terraform` が出ても、書きぶりの話にはならない。
+/// 形容詞・形状詞・副詞は<strong>何をどう評価するかを言う語</strong>で、題材が変わっても
+/// 書き手ごとにほぼ閉じている。
+///
+/// 実測で、本人 49 本のこの族の語彙素は 341 種。<strong>1 本を外して残り 48 本と比べると、
+/// その 1 本にしか無い語彙素は中央値 2 種</strong>である。名詞を入れれば固有名詞が全部出る。
+pub const GOI_POS: [&str; 3] = ["形容詞", "形状詞", "副詞"];
+
+/// その単位に現れる[語](GOI_POS)の語彙素と、その品詞と回数。
+///
+/// <strong>品詞も返す。</strong>「別の言い方にする」とだけ言っても直せない——
+/// <strong>同じ品詞で本人が何を使うか</strong>が言えて初めて、置き換える語が選べる。
+///
+/// <strong>[並び](grams_with_position)では拾えないものを拾う。</strong> 並びは表層形をそのまま
+/// 照合するので、<strong>同じ癖が語形ごとに割れる</strong>——実測で、基準の池 44 本のうち
+/// `地味` は 9 本に出るのに、`地味に` という綴りは 2 本にしかなく、
+/// <strong>並びとしては床を割って一度も拾えなかった。</strong>
+///
+/// 語彙素まで畳めば `地味な` `地味だ` `地味に` が 1 つに合流する。
+#[must_use]
+pub fn goi(analyzed: Option<&Analyzed>) -> BTreeMap<String, (String, usize)> {
+    let mut out: BTreeMap<String, (String, usize)> = BTreeMap::new();
+    let Some(a) = analyzed else {
+        return out;
+    };
+    for m in a.all() {
+        if !GOI_POS.contains(&m.pos1.as_str()) {
+            continue;
+        }
+        // <strong>伏せ字と英数字は語ではない。</strong>[並び](grams_with_position)と同じ理由で、
+        // 識別子を畳んだ跡や題材そのものを書きぶりの指摘に混ぜない。
+        if m.lemma
+            .chars()
+            .any(|c| kakiburi_doc::prose::SENTINEL.contains(c))
+            || m.lemma.chars().any(|c| c.is_ascii_alphanumeric())
+        {
+            continue;
+        }
+        out.entry(m.lemma.clone())
+            .or_insert_with(|| (m.pos1.clone(), 0))
+            .1 += 1;
+    }
+    out
+}
+
 /// 自立語か。<strong>単独で文節を始められる語。</strong>
 ///
 /// <strong>UniDic の体系をそのまま使う。</strong> 学校文法の「名詞」「形容動詞」を当てはめると
@@ -522,5 +570,30 @@ mod tests {
     fn 語を割る読点は解析器が無ければ測らない() {
         // **0 を返さない。** 0 は「数えて 0 だった」という値である。
         assert_eq!(splitting_commas(None), Measured::ToolMissing);
+    }
+
+    #[test]
+    fn 語は評価と程度を言う品詞だけを取る() {
+        // 名詞と動詞を入れない。**あれは題材が決める。**
+        let a = analyzed(&["地味 に 便利 な 機能 で ある 。 とても 速い 。"]);
+        let g = goi(Some(&a));
+        assert_eq!(g.get("地味").map(|x| x.0.as_str()), Some("形状詞"));
+        assert_eq!(g.get("便利").map(|x| x.0.as_str()), Some("形状詞"));
+        assert_eq!(g.get("とても").map(|x| x.0.as_str()), Some("副詞"));
+        assert_eq!(g.get("速い").map(|x| x.0.as_str()), Some("形容詞"));
+        assert!(!g.contains_key("機能"), "名詞は取らない: {g:?}");
+    }
+
+    #[test]
+    fn 語は語形が散っても_1_つに合流する() {
+        // **並びでは拾えないものを拾う。** `地味に` という綴りだけを照合すると、
+        // 同じ癖が語形ごとに割れて、どの綴りも床を割る。
+        let a = analyzed(&["地味 な 話 。 地味 に 効く 。 地味 だ 。"]);
+        assert_eq!(goi(Some(&a)).get("地味").map(|x| x.1), Some(3));
+    }
+
+    #[test]
+    fn 語は解析器が無ければ空() {
+        assert!(goi(None).is_empty());
     }
 }
