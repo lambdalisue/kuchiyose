@@ -1427,6 +1427,20 @@ fn build(args: &[String]) -> Exit {
         }
     };
 
+    // 素材を先に確かめる。 入れ物を作ってから断ると、使えないカセットが
+    // 置き去りになる——次に打つと「作り直す」と言われ、作った覚えのないものを
+    // 作り直したことになる。
+    let person_files = readable_files(&person_dir);
+    if person_files.is_empty() {
+        eprintln!("記事が 1 本も見つからない: {person_dir}");
+        return Exit::Unreadable;
+    }
+    let pool_files = readable_files(&baseline_dir);
+    if pool_files.is_empty() {
+        eprintln!("基準が 1 本も見つからない: {baseline_dir}");
+        return Exit::Unreadable;
+    }
+
     // 無ければ作る。在れば人が決めたことを引き継ぐ。
     //
     // 在るものを消さない。[人が決めたこと](kakiburi_cassette::Decided)は
@@ -1456,17 +1470,6 @@ fn build(args: &[String]) -> Exit {
         kakiburi_metrics::lindera::DICT_NAME,
         kakiburi_metrics::lindera::DICT_VERSION
     ));
-
-    let person_files = readable_files(&person_dir);
-    if person_files.is_empty() {
-        eprintln!("記事が 1 本も見つからない: {person_dir}");
-        return Exit::Unreadable;
-    }
-    let pool_files = readable_files(&baseline_dir);
-    if pool_files.is_empty() {
-        eprintln!("基準が 1 本も見つからない: {baseline_dir}");
-        return Exit::Unreadable;
-    }
 
     let person = match load_units(&person_files, &[]) {
         Ok(v) => v,
@@ -4496,6 +4499,36 @@ mod tests {
             after.fingerprint.matches(&before.fingerprint),
             "指紋も同じ"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 素材が無ければカセットを作らない() {
+        // 入れ物を作ってから断ると、使えないカセットが置き去りになる——
+        // 次に打つと「作り直す」と言われ、作った覚えのないものを作り直したことになる。
+        let dir = temp_dir("no-material");
+        let person = dir.join("空");
+        let baseline = dir.join("基準");
+        std::fs::create_dir_all(&person).expect("作れる");
+        std::fs::create_dir_all(&baseline).expect("作れる");
+        std::fs::write(baseline.join("b.md"), "これは、そうだ。\n").expect("書ける");
+        let c = dir.join("c.kb");
+        assert_eq!(
+            run(&[
+                "build".to_owned(),
+                person.to_string_lossy().into_owned(),
+                "--cassette".to_owned(),
+                c.to_string_lossy().into_owned(),
+                "--baseline".to_owned(),
+                baseline.to_string_lossy().into_owned(),
+                "--model".to_owned(),
+                "m".to_owned(),
+                "--version".to_owned(),
+                "v1".to_owned(),
+            ]),
+            Exit::Unreadable
+        );
+        assert!(!c.exists(), "断ったのにカセットが残っている");
         std::fs::remove_dir_all(&dir).ok();
     }
 
