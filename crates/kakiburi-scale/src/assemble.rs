@@ -653,6 +653,17 @@ pub const KATA_TIGHT: f64 = 0.12;
 /// 50 単位で 1 度も使っておらず、3 文字なので落ちていた。
 pub const KATA_LONG: usize = 6;
 
+/// 穴あきの型に繋いでよい、部品の割合に対する下限。暫定値である。
+///
+/// 繋ぐと割合は必ず下がる。 穴あきは 2 つが同じ node に現れた回数でしか
+/// 数えられないので、部品が単独でそれより広く出ていれば、繋ぐことは
+/// その分を捨てることである。
+///
+/// 実測で、出現割合 0.706 の `僕は` が 0.176 の `思います。`〜`僕は` に
+/// 食われていた。繋いだ先は型として意味をなさず、いちばん広く使われていた
+/// 一人称が表から消えた。
+pub const FRAME_KEEP: f64 = 0.5;
+
 /// その人の型。
 ///
 /// コーパスから見つける。 手で並べた定型ではない——道具は書き手を選ばないので、
@@ -892,7 +903,10 @@ fn frames_of(
             let rate = mine.iter().filter(|s| s.contains(&(a, b))).count() as f64 / np;
             #[allow(clippy::cast_precision_loss)]
             let base = theirs.iter().filter(|s| s.contains(&(a, b))).count() as f64 / nb;
-            if rate >= KATA_PERSON_MIN && base <= KATA_BASE_MAX {
+            if rate >= KATA_PERSON_MIN
+                && base <= KATA_BASE_MAX
+                && frame_keeps(rate, katas[a].rate, katas[b].rate)
+            {
                 frames.push((a, b, rate));
             }
         }
@@ -936,6 +950,15 @@ fn frames_of(
             .then_with(|| a.text.cmp(&b.text))
     });
     *katas = kept;
+}
+
+/// 穴あきに繋いで、部品を落としてよいか。
+///
+/// 繋ぐと割合は必ず下がる。 穴あきは 2 つが同じ node に現れた回数でしか
+/// 数えられないので、部品が単独でそれより広く出ているぶんは、繋いだ時点で
+/// 捨てている。
+fn frame_keeps(frame: f64, a: f64, b: f64) -> bool {
+    frame >= a * FRAME_KEEP && frame >= b * FRAME_KEEP
 }
 
 /// 前の終わりと後ろの始まりが重なっているか。
@@ -1912,6 +1935,17 @@ mod tests {
                 })
                 .collect()
         }
+    }
+
+    #[test]
+    fn 広く使う型を狭い穴あきに食わせない() {
+        // 実測で、出現割合 0.706 の `僕は` が 0.176 の `思います。`〜`僕は` に
+        // 食われ、いちばん広く使われていた一人称が表から消えた。
+        assert!(!frame_keeps(0.176, 0.551, 0.706));
+        // 挨拶の穴あきは残る。 部品が単独で出るぶんは半分ほどである。
+        assert!(frame_keeps(0.163, 0.306, 0.306));
+        // 部品が穴あきの外に出ないなら、繋いで何も捨てていない。
+        assert!(frame_keeps(0.3, 0.3, 0.3));
     }
 
     #[test]
