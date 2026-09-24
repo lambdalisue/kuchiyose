@@ -33,7 +33,7 @@ pub const FUNCTION_WORD_DIMS: usize = 300;
 pub const COMMA_GAP_MAX: usize = 21;
 
 /// 読点が分布と呼べる形になる下限。
-pub const COMMA_FLOOR: usize = 10;
+pub const COMMA_FLOOR: usize = 5;
 
 /// 文字種を測る下限。既定より緩い——10 次元しかないので短くても形になる。
 pub const CHAR_TYPE_FLOOR: usize = 200;

@@ -28,16 +28,33 @@ pub use tag::{Class, Direction, Tag, TagError};
 /// 既定と違うときだけである。
 pub mod floor {
     /// 日本語の文字。
-    pub const JAPANESE_CHARS: usize = 1000;
-    /// 延べ語数。字数と同じ値だが単位が違う——揃えて 1 つにしてはいけない。
-    pub const TOKENS: usize = 1000;
-    /// 生成した bigram の数。
     ///
-    /// 素材の下限とは別に掛かる。 bigram は
+    /// [財津・金](../../../docs/references/zaitsu-2018.md) /
+    /// [尤度比](../../../docs/references/fusing-lr-2026.md) /
+    /// [金 2013](../../../docs/references/jin-2013.md) が揃って採っている長さ。
+    /// ここだけが先行研究由来で、ほかの下限はこの長さの文書が通るように決める。
+    pub const JAPANESE_CHARS: usize = 1000;
+
+    /// 1 語あたりの日本語の文字数を 100 倍したもの。実素材の中央値。
+    const CHARS_PER_TOKEN_X100: usize = 137;
+
+    /// 延べ語数。
+    ///
+    /// 字数と単位が違うので、同じ値を置くと字数の下限より厳しくなる——
+    /// 1,000 を置いていたときは実際には約 1,370 字を要求していた。
+    pub const TOKENS: usize = JAPANESE_CHARS * 100 / CHARS_PER_TOKEN_X100;
+
+    /// 語の並びの再来を数える最も長い次数。
+    const LONGEST_NGRAM: usize = 5;
+
+    /// 生成した n-gram の数。
+    ///
+    /// 素材の下限とは別に掛かる。 n-gram は
     /// [node を跨がない](../../../docs/spec/020-document.md#地の文は-1-本の文字列ではない)ので、
     /// 形態素が 1,000 個あっても node がすべて 1 形態素なら 1 つも作られない。
-    /// 分母が 0 の分布は、0 が並んだ分布ではない。
-    pub const BIGRAMS: usize = 1000;
+    ///
+    /// 語数と同じ値にはできない。 n 語から作れる 5-gram は n-4 個しか無い。
+    pub const BIGRAMS: usize = TOKENS - LONGEST_NGRAM;
     /// 対象の品詞に当たった形態素の数。
     ///
     /// 延べ 1,000 形態素あっても、機能語が 1 つも無ければ分布にならない。
