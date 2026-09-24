@@ -14,16 +14,12 @@
 
 ```mermaid
 flowchart LR
-  subgraph make["作る——たまに"]
-    direction TB
-    new["new<br/>1 場面ぶんの入れ物"] --> build["build<br/>素材を読んで目盛りを作る"]
-  end
+  src["素材のフォルダ"] --> build["build<br/>素材から目盛りを作る"]
   subgraph loop["回す——毎周"]
     direction TB
     review["review<br/>検める"] --> fix["外で直す"]
     fix --> review
   end
-  src["素材のフォルダ"] --> build
   build ==> review
 ```
 
@@ -32,30 +28,27 @@ flowchart LR
 <strong>素材を 1 本ずつ入れるコマンドを持たない。</strong>[カセットは本文を持たない](100-cassette.md#中身)
 ので、入れる先が無い——<strong>素材はフォルダのまま `build` に渡す。</strong>
 
-### new
+### 入れ物を別に作らせない
 
-```
-kakiburi new <カセット> <場面>
-```
+<strong>作る段は 1 つである。</strong> 素材をフォルダに置く形にした時点で、
+「入れ物を作る」と「目盛りを作る」は分ける意味を失った。
 
-<strong>1 カセットが 1 場面である</strong>（[構造](100-cassette.md#1-カセット-1-場面)）。
-<strong>場面は人が指定する</strong>（[決定](../spec/010-strategy.md#場面ごとに閉じる)）——文章から
-当てにいかないので、ここで必ず訊く。
+<strong>空のカセットにできることは[人が決めたこと](#decide)を書くことだけで、それは
+目盛りができた後でも打てる</strong>——むしろ、出てきた指摘を見てから決めるほうが順として
+自然である。
 
-<strong>場面はここで決まり、以後変わらない。</strong> 変えるなら別のファイルを作る
-——<strong>入れ物が境界そのものである。</strong>
+> <strong>ここは作り直した決定である。</strong> 素材を 1 本ずつ `add` していた頃は、
+> 入れ物を先に作る段に意味があった。<strong>`add` が消えた時点で、その段も消えていた</strong>
+> ——気付かずに形だけ残していた。
 
-<strong>空の名前は断る。</strong> 空の場面は「場面を決めていない」と見分けが付かない。
-<strong>`/` は断らない</strong>——保存の中の階層名ではなくなったので、断る理由が消えた。
-
-<strong>既に在れば断る。</strong>[人が決めたことは作り直せない](100-cassette.md#何を収めるか)
-——上書きすれば、そこで消える。<strong>この道具はほかの場所で「黙って一部を落として
-通さない」を徹底している</strong>ので、ここだけ守りが無いのは方針からの取りこぼしである。
+<strong>毎回打つものに、何をするかの名前を付ける。</strong> よく打つものが `quick`（速さ＝
+どう動くか）で、ほぼ打たないものが `new` を取っていた。<strong>名前は頻度ではなく
+中身に付ける。</strong>
 
 ### 素材はフォルダで渡す
 
 ```
-kakiburi build <カセット> --person <フォルダ> [--baseline <フォルダ>] [--other <フォルダ>]
+kakiburi build <本人の記事のフォルダ> [--baseline <フォルダ>] [--other <フォルダ>]
 ```
 
 <strong>フォルダの中の読める文書を、名前の昇順で全部読む。</strong> 1 本ずつ名指しする道を
@@ -224,12 +217,24 @@ kakiburi decide <カセット> movement <指標> moves|stuck
 ### build
 
 ```
-kakiburi build <カセット> --person <フォルダ> [--baseline <フォルダ>]
-                          [--other <フォルダ>] [--json]
+kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--scene <場面>]
+                                      [--baseline <フォルダ>] [--other <フォルダ>]
+                                      [--model <名前> --version <版>] [--json]
 ```
 
-<strong>素材を読む → 語彙 → 値 → 較正 → 帯 → 効く指標</strong> を一度に作る。分けて呼べる
-ようにしない——途中まで作った状態を人が持つと、指紋の合わない派生物が混ざる。
+<strong>入れ物を作る → 素材を読む → 語彙 → 値 → 較正 → 帯 → 効く指標</strong> を一度に作る。
+分けて呼べるようにしない——途中まで作った状態を人が持つと、指紋の合わない派生物が混ざる。
+
+<strong>カセットが無ければ作り、在れば作り直す。</strong> 経路の既定は `<フォルダ>.kb`、
+場面の既定は `default` である——<strong>道具が勝手に作る名前を日本語にしない。</strong>
+
+<strong>在るものを消さない。</strong> カセットとして読めないものを指されたら、それは人の
+別のファイルである——消さずに断る。<strong>カセットだったとしても消さない</strong>：
+[人が決めたこと](100-cassette.md#何を収めるか)は作り直せないので、消せば落とす定型も
+動かない指標もそこで消える。<strong>目盛りは入れ替えるので、消す理由がそもそも無い。</strong>
+
+<strong>場面の食い違いは断る。</strong> 名乗りだけ据え置いて中身を作り直せば、
+<strong>中身と名前が合わないカセットになる。</strong>
 
 <strong>[素材はフォルダで渡す](#素材はフォルダで渡す)。</strong> カセットは本文を持たないので、
 作り直すたびにフォルダを読み直す——<strong>素材が変わっていれば、目盛りも変わる。</strong>
@@ -281,22 +286,6 @@ kakiburi build <カセット> --person <フォルダ> [--baseline <フォルダ>
 
 <strong>止めない。</strong> 疑わしいと言うだけである——何を壊れと呼ぶかの線がまだ暫定値なので、
 [骨格が通るまで閾値を手で決めない](../spec/010-strategy.md#それでも骨格を先に通す)。
-
-### quick
-
-```
-kakiburi quick <本人の記事のフォルダ> [--cassette <カセット>] [--scene <場面>]
-                                      [--baseline <基準の池>]
-```
-
-<strong>フォルダを指すだけで目盛りまで作る。</strong>`new` と `build` をそのまま呼ぶ——
-<strong>新しい経路を作らない</strong>ので、別の道だけが古くなることがない。
-
-<strong>場面の名前は `default` である。</strong> 道具が勝手に作る名前を日本語にしない
-——<strong>打ちにくい名前は道具の側の落ち度である。</strong>
-
-<strong>作り直すのは自分が作ったものだけである。</strong> 入れ物から作るので、同じ経路に
-在るカセットは消してから作り直す。
 
 ## 回す
 
@@ -415,17 +404,12 @@ kakiburi は書かせる側を持たないので防げない。<strong>だから
 ```
 kakiburi measure <ファイル> --source <取り込み元> [--cassette <カセット>] [--json]
 kakiburi compare <ファイル>... --source <取り込み元> [--cassette <カセット>]
-kakiburi show <カセット>
 ```
 
-<strong>`measure` は 1 本を測り、`compare` は並べて比べ、`show` はカセットの中身を出す。</strong>
+<strong>`measure` は 1 本を測り、`compare` は並べて比べる。</strong> カセットの中身を覗くのは
+[`doctor`](#doctor) である——<strong>覗くことと検めることを分けない。</strong>
 
-<strong>`show` は素材の分布を出さない。</strong> カセットは本文を持たないので、出せるのは
-<strong>作り終えた目盛りそのもの</strong>である——場面・世代・暫定値・帯・語彙の大きさ・割り・
-効く指標・[言い回しの表](100-cassette.md#phrasesjsonl--本文の代わり)。
-<strong>素材がどう散らばっていたかは `build` が読んだその場でしか言えない。</strong>
-
-<strong>文書を取るものには `--source` が要る</strong>——`show` は目盛りを読むので要らない。
+<strong>文書を取るものには `--source` が要る。</strong>
 <strong>`compare` の複数のファイルは、同じ取り込み元でなければならない</strong>：違えば
 [升目が単位ごとに変わり](../spec/030-normalize.md#対応表は取り込み元ごとに持つ)、
 測れないの出方が揃わない。
@@ -434,8 +418,10 @@ kakiburi show <カセット>
 
 | | カセット無し | カセット有り |
 | --- | --- | --- |
-| 指示できる指標・人らしさ | 出る | 出る |
+| 指示できる指標 | 出る | 出る |
+| <strong>照合値・人らしさ値</strong> | <strong>出ない</strong> | 出る |
 | <strong>系統の距離</strong> | <strong>出ない</strong> | 出る |
+| <strong>帯</strong> | <strong>出ない</strong> | 出る |
 
 <strong>系統を出さないのは、[語彙が無い](../spec/200-extract.md#語彙は先に決めて固定する)から
 である。</strong> 頻度で次元を選ぶ系統は、渡された 2 本からその場で選べば <strong>違う軸のベクトル
@@ -444,8 +430,18 @@ kakiburi show <カセット>
 <strong>黙ってスカラーだけ出さない。</strong> 系統を出せないことを言う——言わなければ、比べたつもり
 で比べていない。
 
-`compare` が 3 本以上を取るのは、[周回ごとの散らばり](100-cassette.md#周回のあいだの観測は外でやる)
-を見るためである。n 周した A・B・C を並べて渡す。
+<strong>`compare` が 3 本以上を取るのは、[周回ごとの散らばり](100-cassette.md#周回のあいだの観測は外でやる)
+を見るためである。</strong> n 周した A・B・C を並べて渡す。
+
+<strong>それにはカセットが要る。</strong> 散らばりを見るとは<strong>天井と比べる</strong>ことであり、
+天井は目盛りの中にある——<strong>指示できる指標だけを並べても、近づいているのかは読めない。</strong>
+
+> <strong>ここは文書が先に書かれて、実装が追いついていなかった。</strong>`--cassette` は
+> 表にも書式にもあったが、受け取る側が無かった——<strong>`compare` は仕様が与えた仕事を
+> できないまま、できるように見えていた。</strong>
+
+<strong>判定はしない。</strong> 3 段で判定するのは [`review`](#review) である——混ぜれば、
+指摘の出ない「通る」が別の口から出ることになる。
 
 ## 検査
 
@@ -454,6 +450,18 @@ kakiburi show <カセット>
 ```
 kakiburi doctor <カセット>
 ```
+
+<strong>中身を出して、検める。</strong> 場面・世代・人が決めたこと・帯・語彙の大きさ・割り・
+効く指標・[言い回しの表](100-cassette.md#phrasesjsonl--本文の代わり)を出し、そのうえで
+矛盾していないかを言う。
+
+<strong>覗くことと検めることを分けない。</strong> 分けていたときは中身の大半が両方に出ていて、
+<strong>利用者はどちらを打つかを毎回選ばされていた</strong>——選ばせるだけの違いしか無いなら、
+分ける理由が無い。
+
+<strong>素材の分布は出ない。</strong> カセットは本文を持たないので、出せるのは
+<strong>作り終えた目盛りそのもの</strong>である——素材がどう散らばっていたかは `build` が
+読んだその場でしか言えない。
 
 <strong>カセット単体で矛盾していないかを見る。</strong>
 

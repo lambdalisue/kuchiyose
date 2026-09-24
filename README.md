@@ -45,7 +45,7 @@ export KAKIBURI_BASELINES=/path/to/kakiburi/baselines  # 省くと作業ディ�
 
 比べる相手——<strong>基準</strong>——は用意しなくてよい。<strong>基準は機械がどう書くかであって、
 書き手ごとに変わらない</strong>ので、題材を広く取った池が `baselines/` に同梱してある。
-本人の題材に近い分は `quick` が選ぶ。
+本人の題材に近い分は `build` が選ぶ。
 
 ## 使ってみる
 
@@ -53,7 +53,7 @@ export KAKIBURI_BASELINES=/path/to/kakiburi/baselines  # 省くと作業ディ�
 K=./target/release/kakiburi
 
 # フォルダを指すだけで目盛りまで作る
-$K quick ~/articles
+$K build ~/articles
 
 # 草稿を検める
 $K review draft.md --cassette ~/articles.kb --source directive-markdown
@@ -63,7 +63,10 @@ $K review draft.md --cassette ~/articles.kb --source directive-markdown
 
 <strong>1 カセットが 1 場面である。</strong> 場面を分けるならファイルを分ける——
 <strong>どのカセットを渡すかが、そのまま場面の指定になる</strong>ので、`review` は場面を訊かない。
-`quick` が作る場面の名前は `default` である。
+場面の名前の既定は `default`（`--scene` で変えられる）。
+
+<strong>素材が増えたら同じ `build` をもう一度打つ。</strong> カセットが無ければ作り、在れば
+<strong>人が決めたことを引き継いで目盛りだけ作り直す</strong>。作る段はこれ 1 つである。
 
 <strong>カセットは本文を持たない。</strong> 素材のフォルダが原本で、カセットはそこから作った
 目盛りだけを持つ——<strong>作り直すたびにフォルダを読む</strong>ので、素材は消さずに置いておく。
@@ -102,14 +105,26 @@ directive-markdown。
 <strong>判定できないは正常な状態である。</strong> 仮説が成り立たない書き手や場面では、
 それが判定不能として表に出る設計になっている。
 
-### 目盛りが壊れていないか確かめる
+### カセットを覗く・検める
 
 ```sh
 $K doctor ~/articles.kb
 ```
 
-指紋が環境と合っているか、派生物が揃っているか、帯が全体を覆っていないかを見る。
-<strong>素材は要らない</strong>ので、フォルダを消したあとでも打てる。
+<strong>中身を出して、そのうえで検める。</strong> 場面・世代・決めたこと・帯・語彙の大きさ・
+割り・効く指標・言い回しの表を出し、指紋が環境と合っているか、派生物が揃っているか、
+帯が全体を覆っていないかを言う。<strong>素材は要らない</strong>ので、フォルダを消したあとでも打てる。
+
+### 周回の散らばりを見る
+
+```sh
+# n 周した草稿を並べて、天井と比べる
+$K compare draft-1.md draft-2.md draft-3.md \
+  --source directive-markdown --cassette ~/articles.kb
+```
+
+<strong>カセットを渡さないと指示できる指標しか出ない。</strong> 照合値も人らしさ値も帯も
+目盛りの中にあるので、渡さなければ<strong>近づいているのかが読めない。</strong>
 
 <strong>本人がいちばん高く出るかは `build` が出す。</strong> それを測るには素材が要り、
 カセットは本文を持たないので、<strong>測れる瞬間は目盛りを作るときしかない。</strong>
@@ -119,20 +134,20 @@ $K doctor ~/articles.kb
 | | どれくらい | 何回 |
 | --- | --- | --- |
 | 記事を 1 つのフォルダに集める | 数分 | 1 人につき 1 回 |
-| `quick`（`build` を含む） | 数十秒 | 素材を足したときだけ |
+| `build` | 数十秒 | 素材を足したときだけ |
 | `review` | 数秒 | 毎回 |
 
-### 1 段ずつ組む
+### 場面を分ける、基準を替える
 
-場面を分けたいときや、基準を自分で用意したいときは、`quick` がまとめている段を
-そのまま順に打てる。
+<strong>段を増やさない。</strong> どれも同じ `build` に足すだけである。
 
 ```sh
-$K new alisue.kb 技術記事
+# 場面ごとにファイルを分ける
+$K build ~/articles --cassette 技術記事.kb --scene 技術記事
+$K build ~/minutes  --cassette 議事録.kb   --scene 議事録
 
 # 基準を自分で用意するなら、版と推論設定も渡す。指紋に入る
-$K build alisue.kb --person articles --baseline baseline \
-  --model claude --version 2026-08
+$K build ~/articles --baseline ~/baseline --model claude --version 2026-08
 ```
 
 <strong>素材は 1 本ずつではなくフォルダで渡す。</strong> カセットが本文を持たないので、
@@ -217,20 +232,17 @@ LLM は、プラグイン名もコマンド名も版番号もほとんど書か�
 | `指紋が環境と合わない` | 辞書か版が変わった。`build` し直す。過去の値とは比べられない |
 | `日本語以外が主` | `--source` の取り違えか、日本語の文章ではない |
 
-いまどこまで来ているかは `show`、目盛りが壊れていないかは `doctor` で見る。
+いまどこまで来ているかも、目盛りが壊れていないかも `doctor` で見る。
 
 ## コマンド
 
 ```
-quick     フォルダを指すだけで目盛りまで作る
-measure   1 本を測る。カセットが無くても動く
-compare   3 本以上を並べて比べる
-new       1 場面ぶんの入れ物を作る
-decide    素材から導けないものを人が書く
-build     素材のフォルダを読んで目盛りを作る
+build     素材のフォルダから目盛りを作る。無ければ作り、在れば作り直す
 review    検める。3 値と指摘を返す
-show      カセットの中身を出す
-doctor    カセットを検査する
+decide    素材から導けないものを人が書く
+measure   1 本を測る。--cassette で照合値・人らしさ値・系統の距離も出る
+compare   3 本以上を並べて比べる。--cassette で天井と比べられる
+doctor    カセットの中身を出して検める
 metrics   指標の一覧を出す
 ```
 

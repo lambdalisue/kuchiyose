@@ -57,13 +57,10 @@ fn run(args: &[String]) -> Exit {
         }
         Some("measure") => measure(&args[1..]),
         Some("metrics") => metrics(&args[1..]),
-        Some("new") => new_cassette(&args[1..]),
         Some("decide") => decide(&args[1..]),
-        Some("show") => show(&args[1..]),
         Some("compare") => compare(&args[1..]),
         Some("doctor") => doctor(&args[1..]),
         Some("build") => build(&args[1..]),
-        Some("quick") => quick(&args[1..]),
         Some("review") => review(&args[1..]),
         Some("help" | "--help" | "-h") | None => {
             print_help();
@@ -83,13 +80,10 @@ fn run(args: &[String]) -> Exit {
 fn section(name: &str) -> Option<&'static str> {
     Some(match name {
         "measure" => MEASURE,
-        "new" => NEW,
         "decide" => DECIDE,
         "build" => BUILD,
-        "quick" => QUICK,
         "review" => REVIEW,
         "compare" => COMPARE,
-        "show" => SHOW,
         "doctor" => DOCTOR,
         "metrics" => METRICS,
         "help" => return None,
@@ -98,16 +92,12 @@ fn section(name: &str) -> Option<&'static str> {
 }
 
 const MEASURE: &str = "\
-kakiburi measure <ファイル> --source <取り込み元> [--json]
+kakiburi measure <ファイル> --source <取り込み元> [--cassette <カセット>] [--json]
     1 本を測る。カセットが無くても動く。
-    <strong>系統の距離は出ない</strong>——語彙が無いので、その場で選べば違う軸のベクトル
-    どうしの距離になる。";
-
-const NEW: &str = "\
-kakiburi new <カセット> <場面>
-    入れ物を作る。<strong>既に在れば断る。</strong>
-    <strong>1 カセットが 1 場面である。</strong> 場面を分けるならファイルを分ける。
-    <strong>場面は人が指定する</strong>——文章から当てにいかない。";
+    <strong>カセットを渡すと、照合値・人らしさ値・系統の距離も出る。</strong>
+    渡さなければ指示できる指標だけ——語彙が無いので、その場で選べば違う軸の
+    ベクトルどうしの距離になる。
+    <strong>判定はしない。</strong> 3 段で判定するのは review である。";
 
 const DECIDE: &str = "\
 kakiburi decide <カセット> boilerplate <文字列...>
@@ -117,32 +107,28 @@ kakiburi decide <カセット> movement <指標> moves|stuck
     <strong>落とす定型は渡した一覧で置き換える</strong>——足していく形にしない。";
 
 const BUILD: &str = "\
-kakiburi build <カセット> --person <フォルダ> [--baseline <フォルダ>]
-                          [--other <フォルダ>] [--json]
-    素材のフォルダを読んで目盛りを作る。<strong>カセットは本文を持たない</strong>ので、
-    作り直すたびにフォルダを読む。
+kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--scene <場面>]
+                                      [--baseline <フォルダ>] [--other <フォルダ>]
+                                      [--model <名前> --version <版>] [--json]
+    素材のフォルダから目盛りを作る。<strong>これを毎回打つ。</strong>
+    <strong>カセットが無ければ作り、在れば人が決めたことを引き継いで作り直す。</strong>
+    カセットの経路の既定は <フォルダ>.kb、場面の既定は default。
+
+    <strong>カセットは本文を持たない</strong>ので、作り直すたびにフォルダを読む。
     <strong>取り込み元は拡張子から決める</strong>——.html は html、ほかは directive-markdown。
     <strong>作らずに終わる条件を持つ</strong>——止まっても失敗ではない。作れたら割りを出す。
 
     フォルダは 3 つある。
-      --person    本人の文書。照合の相手集合と天井になる
-      --baseline  基準。LLM の既定出力。床になる。省くと同梱の池
+      位置引数      本人の文書。照合の相手集合と天井になる
+      --baseline  基準。LLM の既定出力。床になる。<strong>省くと同梱の池</strong>
       --other     <strong>他人の文書。</strong> 人らしさの人の側の較正にだけ効く
+
+    <strong>同梱でない基準には --model と --version が要る</strong>（--param / --topic も取る）。
+    記録の無い基準で作った値は、次に測ったときに比べられない。
 
     <strong>基準の束ね方は build が決める。</strong> 池の 1 本は地の文 4,500 字あたりで
     頭打ちになるので、本人に長い記事があると長さの範囲の防護柵に当たる。
     届かない分は池の記事を束ねて 1 単位にし、<strong>断られたら束ね方を変えて作り直す。</strong>";
-
-const QUICK: &str = "\
-kakiburi quick <本人の記事のフォルダ> [--cassette <カセット>] [--scene <場面>]
-                                      [--baseline <基準の池>]
-    フォルダを指すだけで目盛りまで作る。new と build をまとめて回す。
-    <strong>場面の名前は default</strong>（--scene で変えられる）。検めるたびに打つ名前を
-    道具が日本語で付けない。
-
-    基準は<strong>同梱の池から取る</strong>。基準は機械がどう書くかであって書き手ごとに
-    変わらないので、あらかじめ作ったものでよい——題材の統制は対ではなく素材全体に
-    効かせる。";
 
 const REVIEW: &str = "\
 kakiburi review <ファイル> --cassette <カセット> --source <取り込み元> [--json]
@@ -153,21 +139,21 @@ kakiburi review <ファイル> --cassette <カセット> --source <取り込み�
     かったのは正常な状態である。";
 
 const COMPARE: &str = "\
-kakiburi compare <ファイル>... --source <取り込み元>
-    並べて比べる。<strong>系統の距離は出ない</strong>——語彙が無いためである。
-    <strong>3 本以上を取る</strong>——n 周した草稿を並べて散らばりを見るためである。";
-
-const SHOW: &str = "\
-kakiburi show <カセット>
-    中身を出す。場面・世代・暫定値・帯・語彙の大きさ・効く指標・言い回しの表。
-    <strong>本文は持たないので、素材の分布は出ない</strong>——それは build が出す。";
+kakiburi compare <ファイル>... --source <取り込み元> [--cassette <カセット>]
+    並べて比べる。<strong>3 本以上を取る</strong>——n 周した草稿を並べて散らばりを見る。
+    <strong>カセットを渡すと、照合値・人らしさ値・系統の距離と帯も出る。</strong>
+    渡さなければ指示できる指標だけ——<strong>それでは天井と比べられない。</strong>";
 
 const DOCTOR: &str = "\
 kakiburi doctor <カセット>
-    <strong>カセットを検査する。</strong> 指紋が環境と合っているか、派生物が揃っているか、
-    帯が全体を覆っていないか、暫定値が立っていないか。
+    <strong>中身を出して、検める。</strong> 場面・世代・決めたこと・帯・語彙の大きさ・割り・
+    効く指標・言い回しの表と、指紋が環境と合っているか、派生物が揃っているか、
+    帯が全体を覆っていないか。
+    <strong>覗くことと検めることを分けない</strong>——中身の大半が両方に出るので、
+    分ければ打つほうを毎回選ばされる。
     <strong>素材は要らない。</strong> 本人がいちばん高く出るかは build が測る——
-    そちらは素材を持っているときにしか言えない。";
+    そちらは素材を持っているときにしか言えない。
+    <strong>本文は持たないので、素材の分布は出ない</strong>——それは build が出す。";
 
 const METRICS: &str = "\
 kakiburi metrics
@@ -189,16 +175,12 @@ const ENVIRONMENT: &str = "\
 fn print_help() {
     println!("kakiburi — どこがその人と違うかを、言えるようにする");
     println!();
-    println!("{QUICK}");
-    println!();
-    println!("{MEASURE}");
-    println!();
-    println!("作る——たまに動かす");
+    println!("作る——素材が増えたとき");
     println!();
     println!("  <strong>1 カセットが 1 場面である。</strong> 語彙も重みも帯も 1 場面ぶんで、");
     println!("  場面を分けるならファイルを分ける。");
     println!("  <strong>カセットは本文を持たない。</strong> 素材のフォルダが正本である。");
-    for s in [NEW, DECIDE, BUILD] {
+    for s in [BUILD, DECIDE] {
         println!();
         println!("{s}");
     }
@@ -207,8 +189,10 @@ fn print_help() {
     println!();
     println!("{REVIEW}");
     println!();
+    println!("{MEASURE}");
+    println!();
     println!("覗く");
-    for s in [COMPARE, SHOW, DOCTOR, METRICS] {
+    for s in [COMPARE, DOCTOR, METRICS] {
         println!();
         println!("{s}");
     }
@@ -224,60 +208,6 @@ fn print_help() {
     println!();
     println!("<コマンド> --help でその節だけを出せる。");
 }
-
-/// カセットを作る。
-///
-/// <strong>1 カセットが 1 場面である。</strong> 場面はここで決まり、以後変わらない——
-/// 場面を分けるならファイルを分ける。
-fn new_cassette(args: &[String]) -> Exit {
-    let (Some(path), Some(scene)) = (args.first(), args.get(1)) else {
-        eprintln!("new <カセット> <場面>");
-        eprintln!("<strong>場面は人が指定する。</strong> 文章から当てにいかない");
-        return Exit::Usage;
-    };
-    if let Some(other) = args.get(2) {
-        eprintln!("知らない引数: {other}");
-        return Exit::Usage;
-    }
-    if !kakiburi_cassette::scene_name_ok(scene) {
-        eprintln!("断る: 場面の名前に使えない: {scene}");
-        return Exit::Usage;
-    }
-
-    let mut c = Cassette {
-        version: store::VERSION,
-        // <strong>置き換えるたびに増える。</strong> 作った時点では 0 で、書けば 1 になる。
-        generation: 0,
-        fingerprint: current_fingerprint(),
-        // <strong>いまは常に暫定値が立つ。</strong> 閾値がまだ導き直されていない。
-        provisional: vec!["除外の既定".into(), "帯の端".into(), "語彙の大きさ".into()],
-        scene: scene.clone(),
-        decided: Decided::default(),
-        derived: Derived::dropped(),
-    };
-    // <strong>場面は指紋の材料である。</strong> 組み直さなければ、作った直後から
-    // 「環境と合わない」になる——<strong>1 度も使えないカセットが出来上がる。</strong>
-    refresh(&mut c);
-
-    // <strong>既に在れば断る。</strong> 素材の取り込みには時間が掛かるうえ、原本は作り直せない
-    // ——上書きすれば、取り込んだ単位はそこで消える。
-    //
-    // <strong>ここで `exists()` を見てから書かない。</strong> 見てから書くまでのあいだに割り込ま
-    // れれば同じことが起きる。<strong>錠の中で確かめるのは保存の側の仕事である</strong>——
-    // `expected` に `None` を渡すことが「作るつもりだ」という申告になる。
-    if let Err(e) = save::save(path, &c, None) {
-        eprintln!("断る: {e}");
-        if matches!(e, save::SaveError::Exists { .. }) {
-            eprintln!("<strong>人が決めたことは戻らない</strong>");
-            return Exit::Usage;
-        }
-        return Exit::Unreadable;
-    }
-    println!("作った: {path}（場面: {scene}）");
-    println!("素材のフォルダを指して build する");
-    Exit::Pass
-}
-
 /// カセットを読む。<strong>残った一時ファイルを片づけてから開く。</strong>
 ///
 /// 置き換えの途中まで進んだ zip を放っておくと、ディレクトリに溜まる。
@@ -341,78 +271,6 @@ fn refresh(c: &mut Cassette) {
     c.fingerprint = fingerprint_with(c, analyzer::resolved().as_ref());
 }
 
-/// カセットの中身を出す。
-///
-/// <strong>素材の分布は出ない。</strong> カセットは本文を持たないので、ここで出せるのは
-/// <strong>作り終えた目盛りそのもの</strong>である——素材がどう散らばっていたかは
-/// `build` が読んだその場でしか言えない。
-fn show(args: &[String]) -> Exit {
-    let Some(path) = args.first() else {
-        eprintln!("カセットの経路を渡す");
-        return Exit::Usage;
-    };
-    let (c, _) = match open(path) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    println!("場面: {}", c.scene);
-    println!("世代: {}", c.generation);
-    if !c.provisional.is_empty() {
-        println!("暫定値: {}", c.provisional.join("、"));
-    }
-    if !c.decided.boilerplate.is_empty() {
-        println!("落とす定型: {}", c.decided.boilerplate.join("、"));
-    }
-    let stuck: Vec<&str> = c
-        .decided
-        .movement
-        .iter()
-        .filter(|(_, m)| **m == kakiburi_cassette::Movement::Stuck)
-        .map(|(k, _)| k.as_str())
-        .collect();
-    if !stuck.is_empty() {
-        println!("動かないと分かった指標: {}", stuck.join("、"));
-    }
-
-    println!();
-    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
-        println!("目盛り: 無い。素材のフォルダを指して build する");
-        return Exit::Pass;
-    };
-    println!("目盛り: ある");
-    for (name, set) in &scale.frozen {
-        println!("  {name:<12} {:>5} 次元", set.len());
-    }
-    println!(
-        "照合値の帯: 天井 {:.3}〜{:.3} / 床 {:.3}〜{:.3}",
-        scale.band.ceiling.low, scale.band.ceiling.high, scale.band.floor.low, scale.band.floor.high
-    );
-    println!(
-        "人らしさの帯: 人 {:.3}〜{:.3} / 機械 {:.3}〜{:.3}",
-        scale.humanness_band.ceiling.low,
-        scale.humanness_band.ceiling.high,
-        scale.humanness_band.floor.low,
-        scale.humanness_band.floor.high
-    );
-    for line in selection_lines(&scale.selection) {
-        println!("{line}");
-    }
-    if let Some(effective) = c
-        .derived
-        .spread
-        .as_deref()
-        .zip(c.derived.effective.as_deref())
-        .and_then(|(s, e)| effective_json::read(s, e))
-    {
-        let works = effective.iter().filter(|e| e.works()).count();
-        println!("効く指標: {works} / {} 本", effective.len());
-    }
-    // <strong>言い回しの表は本文の代わりである。</strong> 何本畳んであるかを出さなければ、
-    // 繰り返しの上限が言えるかどうかが読めない。
-    println!("言い回しの表: {} 本", phrase_table_len(&c));
-    Exit::Pass
-}
-
 /// 言い回しの表に入っている本数。
 fn phrase_table_len(c: &Cassette) -> usize {
     c.derived
@@ -431,6 +289,7 @@ fn phrase_table_len(c: &Cassette) -> usize {
 fn compare(args: &[String]) -> Exit {
     let mut files: Vec<String> = Vec::new();
     let mut source: Option<Source> = None;
+    let mut cassette: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         if args[i] == "--source" {
@@ -439,6 +298,15 @@ fn compare(args: &[String]) -> Exit {
                 return Exit::Usage;
             };
             source = Some(s);
+            i += 2;
+            continue;
+        }
+        if args[i] == "--cassette" {
+            let Some(v) = args.get(i + 1) else {
+                eprintln!("--cassette にカセットを渡す");
+                return Exit::Usage;
+            };
+            cassette = Some(v.clone());
             i += 2;
             continue;
         }
@@ -453,11 +321,29 @@ fn compare(args: &[String]) -> Exit {
         return missing_source();
     };
 
+    // <strong>目盛りがあれば、目盛りに載せた値も出す。</strong> 指示できる指標だけでは
+    // [周回ごとの散らばりを天井と比べる](../../../docs/design/100-cassette.md#周回のあいだの観測は外でやる)
+    // ことができない——<strong>何周しても、近づいているのかが読めない。</strong>
+    let scale = match &cassette {
+        Some(p) => match open(p) {
+            Ok((c, _)) => match c.derived.scale.as_deref().and_then(scale_json::read) {
+                Some(s) => Some(s),
+                None => {
+                    eprintln!("目盛りが無いカセットである。素材のフォルダを指して build する");
+                    return Exit::Unknown;
+                }
+            },
+            Err(e) => return e,
+        },
+        None => None,
+    };
+
     let mecab = analyzer::resolved();
     let a = mecab
         .as_ref()
         .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
     let mut columns: Vec<(String, Vec<(String, Measured)>)> = Vec::new();
+    let mut docs: Vec<(String, kakiburi_doc::Document)> = Vec::new();
     for f in &files {
         let Ok(body) = std::fs::read_to_string(f) else {
             eprintln!("読めない: {f}");
@@ -473,6 +359,7 @@ fn compare(args: &[String]) -> Exit {
         let prose = doc.prose();
         let analyzed = analyzed_of(&prose, a);
         columns.push((stem_of(f), measured_with(&doc, analyzed.as_ref())));
+        docs.push((stem_of(f), doc));
     }
 
     print!("{:<28}", "指標");
@@ -494,10 +381,84 @@ fn compare(args: &[String]) -> Exit {
     }
     println!("{}", "-".repeat(28 + 12 * columns.len()));
     println!("`—` は測っていない。<strong>0 ではない。</strong>");
+
+    let Some(scale) = scale else {
+        println!(
+            "<strong>系統の距離は出していない。</strong> カセットが無いと語彙が決まらないためである"
+        );
+        println!("  --cassette を渡すと、照合値・人らしさ値・系統の距離も出る");
+        return Exit::Pass;
+    };
+
+    // <strong>目盛りに載せた値を並べる。</strong> ここが「天井と比べる」の実体である。
+    println!();
+    print!("{:<28}", "目盛りに載せた値");
+    for (name, _) in &columns {
+        print!("{:>12}", cut(name, 11));
+    }
+    println!();
+    println!("{}", "-".repeat(28 + 12 * columns.len()));
+    let mut rows: BTreeMap<String, Vec<Option<f64>>> = BTreeMap::new();
+    for (name, doc) in &docs {
+        let got = measure_against(
+            &scale,
+            Sample {
+                name,
+                document: doc,
+            },
+            a,
+        );
+        rows.entry("照合値".to_owned()).or_default().push(got.matching);
+        rows.entry("人らしさ値".to_owned())
+            .or_default()
+            .push(got.humanness);
+        for (system, d) in kakiburi_scale::assemble::distances_against(
+            &scale,
+            Sample {
+                name,
+                document: doc,
+            },
+            a,
+        ) {
+            rows.entry(format!("  {system}")).or_default().push(Some(d));
+        }
+    }
+    // <strong>照合値と人らしさ値を先に出す。</strong> 判定はその 2 つで決まり、
+    // 系統の距離はその内訳である。
+    for key in ["照合値", "人らしさ値"] {
+        print_row(key, rows.get(key).map_or(&[][..], Vec::as_slice));
+    }
+    for (name, vs) in &rows {
+        if name.starts_with("  ") {
+            print_row(name, vs);
+        }
+    }
+    println!("{}", "-".repeat(28 + 12 * columns.len()));
     println!(
-        "<strong>系統の距離は出していない。</strong> カセットが無いと語彙が決まらないためである"
+        "照合値の帯: 天井 {:.3}〜{:.3} / 床 {:.3}〜{:.3}",
+        scale.band.ceiling.low, scale.band.ceiling.high, scale.band.floor.low, scale.band.floor.high
     );
+    println!(
+        "人らしさの帯: 人 {:.3}〜{:.3} / 機械 {:.3}〜{:.3}",
+        scale.humanness_band.ceiling.low,
+        scale.humanness_band.ceiling.high,
+        scale.humanness_band.floor.low,
+        scale.humanness_band.floor.high
+    );
+    println!("<strong>系統の距離は小さいほど相手集合に近い。</strong> 照合値はその重み付き合算である");
     Exit::Pass
+}
+
+/// 1 行を並べる。<strong>測れていないものは `—` である。</strong>
+fn print_row(name: &str, values: &[Option<f64>]) {
+    print!("{name:<28}");
+    for v in values {
+        match v {
+            Some(x) => print!("{x:>12.3}"),
+            None => print!("{:>12}", "—"),
+        }
+    }
+    println!();
 }
 
 /// 表示のために縮める。
@@ -505,7 +466,11 @@ fn cut(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-/// カセットを検査する。
+/// カセットを開いて、中身と検査を出す。
+///
+/// <strong>覗くことと検めることを分けない。</strong> 分けていたときは、中身の大半が両方に
+/// 出ていて、<strong>利用者はどちらを打つかを毎回選ばされていた</strong>——選ばせるだけの
+/// 違いしか無いなら、分ける理由が無い。
 ///
 /// <strong>素材は要らない。</strong> 本人がいちばん高く出るかは [`build`] が測る——
 /// そちらは素材を持っているときにしか言えない。ここで見るのは、<strong>カセット単体で
@@ -521,6 +486,23 @@ fn doctor(args: &[String]) -> Exit {
     };
     let mut bad = 0usize;
     println!("場面: {}", c.scene);
+    println!("世代: {}", c.generation);
+
+    // <strong>人が決めたことを先に出す。</strong> 落とす定型は値を動かすので、
+    // 何が落ちているかを知らずに数字だけ見ても読めない。
+    if !c.decided.boilerplate.is_empty() {
+        println!("落とす定型: {}", c.decided.boilerplate.join("、"));
+    }
+    let stuck: Vec<&str> = c
+        .decided
+        .movement
+        .iter()
+        .filter(|(_, m)| **m == kakiburi_cassette::Movement::Stuck)
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if !stuck.is_empty() {
+        println!("動かないと分かった指標: {}", stuck.join("、"));
+    }
 
     // 1. 指紋が現在の環境と合っているか。<strong>共通部分だけを見る。</strong>
     match check_fingerprint(&c) {
@@ -557,6 +539,12 @@ fn doctor(args: &[String]) -> Exit {
         return if bad == 0 { Exit::Pass } else { Exit::Unknown };
     };
 
+    // <strong>語彙の大きさを出す。</strong> 次元の数が変われば値が変わるので、
+    // 別のカセットと数字を見比べるときに要る。
+    for (name, set) in &scale.frozen {
+        println!("  {name:<12} {:>5} 次元", set.len());
+    }
+
     // 4. 帯が全体を覆っていないか。<strong>覆っていれば「判定できない」しか返らない。</strong>
     //    仮説が成り立っていない書き手・場面では、それがここに出る。
     for (name, band) in [
@@ -571,6 +559,23 @@ fn doctor(args: &[String]) -> Exit {
             println!("  <strong>帯が重なっている。</strong> 本人と基準が分かれていない");
             bad += 1;
         }
+    }
+
+    // <strong>割りを出す。</strong> 単位名の昇順で取るので、名前に年や媒体が入っていれば
+    // 割りがその境目で分かれる——<strong>出さなければ、帯が「ある時期 対 別の時期」に
+    // なっていることに気付けない。</strong>
+    for line in selection_lines(&scale.selection) {
+        println!("{line}");
+    }
+    if let Some(effective) = c
+        .derived
+        .spread
+        .as_deref()
+        .zip(c.derived.effective.as_deref())
+        .and_then(|(s, e)| effective_json::read(s, e))
+    {
+        let works = effective.iter().filter(|e| e.works()).count();
+        println!("効く指標: {works} / {} 本", effective.len());
     }
 
     // 5. 相手集合のベクトルが噛み合っているか。<strong>本数だけでは足りない。</strong>
@@ -826,108 +831,8 @@ fn stem_of(f: &str) -> String {
         .map_or_else(|| f.to_owned(), |s| s.to_string_lossy().into_owned())
 }
 
-/// フォルダを指すだけで目盛りまで作る。
-///
-/// <strong>新しい経路を作らない。</strong>`new` と `build` をそのまま呼ぶ——別の道を作れば、
-/// そちらだけが古くなる。
-fn quick(args: &[String]) -> Exit {
-    let Some(dir) = args.first() else {
-        eprintln!("本人の記事が入ったフォルダを渡す");
-        return Exit::Usage;
-    };
-    let mut cassette: Option<String> = None;
-    // <strong>言われた場面と、既定の場面を分けて持つ。</strong> 既にあるカセットの場面と
-    // 食い違ったときに、<strong>人が名乗ったのか道具が埋めたのかで扱いが違う。</strong>
-    let mut scene_name: Option<String> = None;
-    let mut pool_dir: Option<String> = None;
-    // <strong>基準の来歴はそのまま通す。</strong> 外から池を渡すなら `build` が版を要求する
-    // ので、<strong>quick に渡す道が無ければ `--baseline` が必ず落ちる。</strong>
-    let mut provenance: Vec<String> = Vec::new();
-    let mut i = 1;
-    while i < args.len() {
-        let Some(v) = args.get(i + 1) else {
-            eprintln!("{} に値を渡す", args[i]);
-            return Exit::Usage;
-        };
-        match args[i].as_str() {
-            "--cassette" => cassette = Some(v.clone()),
-            "--scene" => scene_name = Some(v.clone()),
-            "--baseline" => pool_dir = Some(v.clone()),
-            flag @ ("--model" | "--version" | "--param" | "--topic") => {
-                provenance.extend([flag.to_owned(), v.clone()]);
-            }
-            other => {
-                eprintln!("知らない引数: {other}");
-                return Exit::Usage;
-            }
-        }
-        i += 2;
-    }
-    let cassette = cassette.unwrap_or_else(|| format!("{dir}.kb"));
-    if readable_files(dir).is_empty() {
-        eprintln!("記事が 1 本も見つからない: {dir}");
-        return Exit::Unreadable;
-    }
 
-    // <strong>在るものを消さない。</strong> 消してよいかは、読んでみるまで分からない
-    // ——カセットでないファイルを指されたら、<strong>それは人の別のファイルである。</strong>
-    //
-    // <strong>カセットだったとしても消さない。</strong>[人が決めたこと](kakiburi_cassette::Decided)は
-    // 作り直せないので、落とす定型も動かない指標もそこで消える。<strong>目盛りは
-    // `build` が入れ替える</strong>ので、消す理由がそもそも無い。
-    if std::path::Path::new(&cassette).exists() {
-        let (existing, _) = match open(&cassette) {
-            Ok(v) => v,
-            Err(_) => {
-                eprintln!("断る: 既に在るが、カセットとして読めない: {cassette}");
-                eprintln!("<strong>消さない。</strong> 別の経路を --cassette で渡す");
-                return Exit::Usage;
-            }
-        };
-        // <strong>場面の食い違いは断る。</strong> 別の場面の目盛りを、名乗りだけ
-        // 据え置いて作り直せば、<strong>中身と名前が合わないカセットになる。</strong>
-        if let Some(asked) = &scene_name {
-            if asked != &existing.scene {
-                eprintln!(
-                    "断る: 既に在るカセットの場面が違う（{} / 言われたのは {asked}）",
-                    existing.scene
-                );
-                eprintln!("<strong>場面はファイルで分ける。</strong> --cassette で別の経路を渡す");
-                return Exit::Usage;
-            }
-        }
-        say_reuse(&cassette, &existing.scene);
-    } else if run(&[
-        "new".to_owned(),
-        cassette.clone(),
-        scene_name.unwrap_or_else(|| DEFAULT_SCENE.to_owned()),
-    ]) != Exit::Pass
-    {
-        return Exit::Usage;
-    }
-
-    let mut a = vec![
-        "build".to_owned(),
-        cassette,
-        "--person".to_owned(),
-        dir.clone(),
-    ];
-    // <strong>池は build に探させる。</strong> ここで解決して渡すと、同梱の池まで
-    // 「外から渡された基準」になり、版を名乗れと言われる。
-    if let Some(pool) = pool_dir {
-        a.extend(["--baseline".to_owned(), pool]);
-    }
-    a.extend(provenance);
-    run(&a)
-}
-
-/// 作り直すときに、何を引き継ぐかを言う。
-fn say_reuse(cassette: &str, scene: &str) {
-    println!("既に在るカセットに作り直す: {cassette}（場面: {scene}）");
-    println!("人が決めたことは引き継ぐ。目盛りだけ作り直す");
-}
-
-/// `quick` が作る場面の名前。
+/// 場面を名乗らなかったときの名前。
 ///
 /// <strong>半角で名付ける。</strong> 道具が勝手に作る名前を日本語にしない
 /// ——<strong>打ちにくい名前は道具の側の落ち度である。</strong>
@@ -1364,19 +1269,25 @@ fn overlap_score(person: &[usize], baseline: &[usize]) -> f64 {
     (overlap / (phi - plo).max(1.0)).min(overlap / (bhi - blo).max(1.0))
 }
 
-/// 目盛りを作る。
+/// 素材のフォルダから目盛りを作る。
 ///
-/// <strong>素材のフォルダを読む。</strong> カセットは本文を持たないので、作り直すたびに
-/// フォルダから読み直す（[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）。
+/// <strong>入れ物を別に作らせない。</strong> 素材をフォルダに置く形にした時点で、
+/// 段は「作る」と「測る」の 2 つではなくなった——<strong>空のカセットにできることは
+/// [人が決めたこと](decide)を書くことだけで、それは目盛りができた後でも打てる。</strong>
+///
+/// <strong>カセットは本文を持たない</strong>ので、作り直すたびにフォルダから読み直す
+/// （[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）。
 ///
 /// <strong>作らずに終わる条件を持つ。</strong> 止まっても失敗ではない——目盛りの無いカセットが
 /// 出来上がり、`0` で終わる。
 fn build(args: &[String]) -> Exit {
-    let Some(path) = args.first() else {
-        eprintln!("カセットの経路を渡す");
+    let Some(person_dir) = args.first().cloned() else {
+        eprintln!("本人の記事が入ったフォルダを渡す");
+        eprintln!("<strong>カセットは本文を持たない。</strong> 作り直すたびに素材を読む");
         return Exit::Usage;
     };
-    let mut person_dir: Option<String> = None;
+    let mut cassette: Option<String> = None;
+    let mut scene_name: Option<String> = None;
     let mut baseline_dir: Option<String> = None;
     let mut other_dir: Option<String> = None;
     // 基準の作り方。<strong>記録の無い基準で作った値は、次に測ったときに比べられない。</strong>
@@ -1397,7 +1308,8 @@ fn build(args: &[String]) -> Exit {
             return Exit::Usage;
         };
         match args[i].as_str() {
-            "--person" => person_dir = Some(v.clone()),
+            "--cassette" => cassette = Some(v.clone()),
+            "--scene" => scene_name = Some(v.clone()),
             "--baseline" => baseline_dir = Some(v.clone()),
             "--other" => other_dir = Some(v.clone()),
             "--model" => model = Some(v.clone()),
@@ -1417,11 +1329,7 @@ fn build(args: &[String]) -> Exit {
         }
         i += 2;
     }
-    let Some(person_dir) = person_dir else {
-        eprintln!("--person に本人の記事が入ったフォルダを渡す");
-        eprintln!("<strong>カセットは本文を持たない。</strong> 作り直すたびに素材を読む");
-        return Exit::Usage;
-    };
+    let path = &cassette.unwrap_or_else(|| format!("{person_dir}.kb"));
     // <strong>作り方を知っているのは同梱の池だけである。</strong> ほかはどこから来たか
     // 分からないので、<strong>版まで名乗らせる</strong>——モデル名だけでは足りない。
     // 版が変われば出力が変わり、[記録の無い基準で作った値は次に測ったときに
@@ -1456,7 +1364,12 @@ fn build(args: &[String]) -> Exit {
         }
     };
 
-    let (mut c, generation) = match open(path) {
+    // <strong>無ければ作る。在れば人が決めたことを引き継ぐ。</strong>
+    //
+    // <strong>在るものを消さない。</strong>[人が決めたこと](kakiburi_cassette::Decided)は
+    // 作り直せないので、消せば落とす定型も動かない指標もそこで消える——
+    // <strong>目盛りは入れ替えるので、消す理由がそもそも無い。</strong>
+    let (mut c, generation) = match open_or_create(path, scene_name.as_deref()) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -1625,6 +1538,61 @@ fn check_names(
         }
     }
     Ok(())
+}
+
+/// カセットを開く。<strong>無ければ作る。</strong>
+///
+/// <strong>在るものを消さない。</strong> カセットとして読めないものを指されたら、それは
+/// 人の別のファイルである——<strong>消さずに断る。</strong>
+///
+/// <strong>場面は作るときだけ決まる。</strong> 在るカセットの場面と食い違う名乗りは断る
+/// ——名乗りだけ据え置いて中身を作り直せば、<strong>中身と名前が合わないカセットになる。</strong>
+fn open_or_create(path: &str, scene: Option<&str>) -> Result<(Cassette, u64), Exit> {
+    if std::path::Path::new(path).exists() {
+        let (c, generation) = open(path)?;
+        if let Some(asked) = scene {
+            if asked != c.scene {
+                eprintln!(
+                    "断る: 既に在るカセットの場面が違う（{} / 言われたのは {asked}）",
+                    c.scene
+                );
+                eprintln!("<strong>場面はファイルで分ける。</strong> --cassette で別の経路を渡す");
+                return Err(Exit::Usage);
+            }
+        }
+        println!("作り直す: {path}（場面: {}）", c.scene);
+        println!("人が決めたことは引き継ぐ。目盛りだけ作り直す");
+        return Ok((c, generation));
+    }
+
+    let scene = scene.unwrap_or(DEFAULT_SCENE);
+    if !kakiburi_cassette::scene_name_ok(scene) {
+        eprintln!("断る: 場面の名前に使えない: {scene}");
+        return Err(Exit::Usage);
+    }
+    let mut c = Cassette {
+        version: store::VERSION,
+        // <strong>置き換えるたびに増える。</strong> 作った時点では 0 で、書けば 1 になる。
+        generation: 0,
+        fingerprint: current_fingerprint(),
+        // <strong>いまは常に暫定値が立つ。</strong> 閾値がまだ導き直されていない。
+        provisional: vec!["除外の既定".into(), "帯の端".into(), "語彙の大きさ".into()],
+        scene: scene.to_owned(),
+        decided: Decided::default(),
+        derived: Derived::dropped(),
+    };
+    // <strong>場面は指紋の材料である。</strong> 組み直さなければ、作った直後から
+    // 「環境と合わない」になる。
+    refresh(&mut c);
+    // <strong>`expected` に `None` を渡すことが「作るつもりだ」という申告になる。</strong>
+    // 見てから書くまでのあいだに割り込まれても、錠の中で断られる。
+    if let Err(e) = save::save(path, &c, None) {
+        eprintln!("断る: {e}");
+        return Err(Exit::Unreadable);
+    }
+    println!("作った: {path}（場面: {scene}）");
+    // 作った直後は世代 1 である。<strong>次に書くときはそれと照らす。</strong>
+    Ok((c, 1))
 }
 
 /// 素材のファイルを単位にする。
@@ -3198,6 +3166,7 @@ fn measure(args: &[String]) -> Exit {
         return Exit::Usage;
     };
     let mut source: Option<Source> = None;
+    let mut cassette: Option<String> = None;
     let mut json = false;
     let mut i = 1;
     while i < args.len() {
@@ -3211,6 +3180,15 @@ fn measure(args: &[String]) -> Exit {
                 return Exit::Usage;
             };
             source = Some(s);
+            i += 2;
+            continue;
+        }
+        if args[i] == "--cassette" {
+            let Some(v) = args.get(i + 1) else {
+                eprintln!("--cassette にカセットを渡す");
+                return Exit::Usage;
+            };
+            cassette = Some(v.clone());
             i += 2;
             continue;
         }
@@ -3320,7 +3298,43 @@ fn measure(args: &[String]) -> Exit {
     println!("`—` は測っていない。<strong>0 ではない。</strong>");
     println!("理由が「道具が無い」「道具が失敗した」なら、<strong>直すのは素材ではなく環境である。</strong>");
     println!();
-    println!("系統の距離は出していない。カセットが無いと語彙が決まらないためである。");
+
+    let Some(path_to_cassette) = cassette else {
+        println!("系統の距離は出していない。カセットが無いと語彙が決まらないためである。");
+        println!("--cassette を渡すと、照合値・人らしさ値・系統の距離も出る。");
+        return Exit::Pass;
+    };
+    let (c, _) = match open(&path_to_cassette) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
+        println!("目盛りが無いカセットである。素材のフォルダを指して build する。");
+        return Exit::Unknown;
+    };
+    let a = mecab
+        .as_ref()
+        .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
+    let sample = Sample {
+        name: path,
+        document: &doc,
+    };
+    let got = measure_against(&scale, sample, a);
+    println!("目盛りに載せた値（場面: {}）", c.scene);
+    println!("{}", "-".repeat(46));
+    println!("  {:<28} {:>10}", "照合値", shown(got.matching));
+    println!("  {:<28} {:>10}", "人らしさ値", shown(got.humanness));
+    for (system, d) in kakiburi_scale::assemble::distances_against(&scale, sample, a) {
+        println!("  {:<28} {d:>10.3}", format!("  {system}"));
+    }
+    println!("{}", "-".repeat(46));
+    println!(
+        "照合値の帯: 天井 {:.3}〜{:.3} / 床 {:.3}〜{:.3}",
+        scale.band.ceiling.low, scale.band.ceiling.high, scale.band.floor.low, scale.band.floor.high
+    );
+    // <strong>判定はしない。</strong> 3 段の判定は検めの仕事で、ここは測るだけである
+    // ——混ぜれば、指摘の出ない「通る」が別の口から出ることになる。
+    println!("<strong>判定はしない。</strong> 3 段で判定するのは review である");
     Exit::Pass
 }
 
@@ -3794,14 +3808,41 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 空のカセットを 1 つ作る。
+    /// 目盛りの無いカセットを 1 つ作る。<strong>素材が足りないので止まる。</strong>
+    ///
+    /// <strong>入れ物だけを作るコマンドはもう無い。</strong>`build` が作って、素材が
+    /// 足りずに目盛りを作らずに終わる——それが正常な状態である。
     fn empty_cassette(dir: &std::path::Path) -> String {
         let p = dir.join("c.kbc").to_string_lossy().into_owned();
-        assert_eq!(
-            run(&["new".to_owned(), p.clone(), "試験".to_owned()]),
-            Exit::Pass
-        );
+        assert_eq!(run(&build_args(dir, &p, "試験")), Exit::Pass);
         p
+    }
+
+    /// 目盛りの作れない素材で `build` を呼ぶ引数。
+    ///
+    /// <strong>基準も渡す。</strong> 試験は作業ディレクトリがクレートの下なので、
+    /// 同梱の池が見つからない——省くと「基準が見つからない」で落ちる。
+    fn build_args(dir: &std::path::Path, cassette: &str, scene: &str) -> Vec<String> {
+        let person = dir.join("b-person");
+        let baseline = dir.join("b-baseline");
+        for (d, name) in [(&person, "p"), (&baseline, "b")] {
+            std::fs::create_dir_all(d).expect("作れる");
+            std::fs::write(d.join(format!("{name}.md")), "これは、そうだ。\n").expect("書ける");
+        }
+        vec![
+            "build".to_owned(),
+            person.to_string_lossy().into_owned(),
+            "--cassette".to_owned(),
+            cassette.to_owned(),
+            "--scene".to_owned(),
+            scene.to_owned(),
+            "--baseline".to_owned(),
+            baseline.to_string_lossy().into_owned(),
+            "--model".to_owned(),
+            "m".to_owned(),
+            "--version".to_owned(),
+            "v1".to_owned(),
+        ]
     }
 
     /// 入れる 1 本を書く。
@@ -3812,26 +3853,24 @@ mod tests {
     }
 
     #[test]
-    fn 場面を名乗らなければ作らない() {
-        // <strong>場面は人が指定する。</strong> 文章から当てにいかない。
-        let dir = temp_dir("new-needs-scene");
-        let p = dir.join("c.kbc").to_string_lossy().into_owned();
-        assert_eq!(run(&["new".to_owned(), p.clone()]), Exit::Usage);
+    fn 場面の名前が空なら断る() {
+        // 空の場面は「場面を決めていない」と見分けが付かない。
+        let dir = temp_dir("scene-name");
+        let person = dir.join("person");
+        std::fs::create_dir_all(&person).expect("作れる");
+        std::fs::write(person.join("x.md"), "これは、そうだ。\n").expect("書ける");
         assert_eq!(
-            run(&["new".to_owned(), p, "   ".to_owned()]),
-            Exit::Usage,
-            "空白だけの名前も断る"
+            run(&[
+                "build".to_owned(),
+                person.to_string_lossy().into_owned(),
+                "--scene".to_owned(),
+                "   ".to_owned(),
+            ]),
+            Exit::Usage
         );
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    #[test]
-    fn 中身を出す() {
-        let dir = temp_dir("show");
-        let cassette = cassette_with_scale(&dir);
-        assert_eq!(run(&["show".to_owned(), cassette]), Exit::Pass);
-        std::fs::remove_dir_all(&dir).ok();
-    }
 
     #[test]
     fn 並べて比べる() {
@@ -3846,6 +3885,51 @@ mod tests {
             "plain-markdown".to_owned(),
         ];
         assert_eq!(run(&args), Exit::Pass);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn カセットを渡せば目盛りに載せた値も出る() {
+        // <strong>指示できる指標だけでは天井と比べられない。</strong> n 周した草稿を
+        // 並べても、近づいているのかが読めない。
+        let dir = temp_dir("compare-cassette");
+        let cassette = cassette_with_scale(&dir);
+        let a = a_document(&dir, "a");
+        let b = a_document(&dir, "b");
+        for name in ["compare", "measure"] {
+            let mut args = vec![name.to_owned(), a.clone()];
+            if name == "compare" {
+                args.push(b.clone());
+            }
+            args.extend([
+                "--source".to_owned(),
+                "plain-markdown".to_owned(),
+                "--cassette".to_owned(),
+                cassette.clone(),
+            ]);
+            assert_eq!(run(&args), Exit::Pass, "{name}");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 目盛りの無いカセットでは比べられない() {
+        // <strong>空と欠けを分ける。</strong> 目盛りが無いカセットを渡されて、
+        // 指示できる指標だけ出して「通った」ことにしない。
+        let dir = temp_dir("compare-no-scale");
+        let c = empty_cassette(&dir);
+        let a = a_document(&dir, "a");
+        assert_eq!(
+            run(&[
+                "measure".to_owned(),
+                a,
+                "--source".to_owned(),
+                "plain-markdown".to_owned(),
+                "--cassette".to_owned(),
+                c,
+            ]),
+            Exit::Unknown
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -3966,21 +4050,6 @@ mod tests {
     }
 
     #[test]
-    fn 既に在るところには作らない() {
-        // 人が決めたことは作り直せない。上書きすれば、そこで消える。
-        let dir = temp_dir("new-exists");
-        let c = empty_cassette(&dir);
-        assert_eq!(
-            run(&["new".to_owned(), c.clone(), "別の場面".to_owned()]),
-            Exit::Usage,
-            "既に在れば断る"
-        );
-        let (got, _) = open(&c).expect("読める");
-        assert_eq!(got.scene, "試験", "断ったのだから中身は変わらない");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
     fn 場面が違えば指紋が違う() {
         // <strong>場面は指紋の材料である。</strong> 入れなければ、どの場面として検めても
         // 指紋が通ってしまう。
@@ -3988,10 +4057,7 @@ mod tests {
         let mut made = Vec::new();
         for (name, scene) in [("a", "技術記事"), ("b", "議事録")] {
             let p = dir.join(name).to_string_lossy().into_owned();
-            assert_eq!(
-                run(&["new".to_owned(), p.clone(), scene.to_owned()]),
-                Exit::Pass
-            );
+            assert_eq!(run(&build_args(&dir, &p, scene)), Exit::Pass);
             made.push(open(&p).expect("読める").0);
         }
         assert_eq!(
@@ -4011,8 +4077,7 @@ mod tests {
         // 位置引数がファイルなので、そのまま渡すと `--help` がファイル名として
         // 解釈され、<strong>「読めない（65）」で終わる。</strong>
         for name in [
-            "measure", "new", "decide", "build", "quick", "review", "compare", "show", "doctor",
-            "metrics",
+            "measure", "decide", "build", "review", "compare", "doctor", "metrics",
         ] {
             assert_eq!(
                 run(&[name.to_owned(), "--help".to_owned()]),
@@ -4036,7 +4101,7 @@ mod tests {
     fn 消したコマンドは知らないコマンドである() {
         // <strong>黙って別の意味で受けない。</strong> 素材はフォルダを指して渡すように
         // なったので、単位を 1 本ずつ入れる道はもう無い。
-        for name in ["scene", "add", "replace"] {
+        for name in ["scene", "add", "replace", "new", "quick", "show"] {
             assert_eq!(run(&[name.to_owned()]), Exit::Usage, "{name}");
             assert!(section(name).is_none(), "{name}");
         }
@@ -4154,9 +4219,11 @@ mod tests {
         let c = dir.join("c.kb").to_string_lossy().into_owned();
         let build = vec![
             "build".to_owned(),
-            c.clone(),
-            "--person".to_owned(),
             person.to_string_lossy().into_owned(),
+            "--cassette".to_owned(),
+            c.clone(),
+            "--scene".to_owned(),
+            "試験".to_owned(),
             "--baseline".to_owned(),
             baseline.to_string_lossy().into_owned(),
             // <strong>同梱の池ではないので、作り方を名乗る。</strong>
@@ -4165,10 +4232,6 @@ mod tests {
             "--version".to_owned(),
             "v1".to_owned(),
         ];
-        assert_eq!(
-            run(&["new".to_owned(), c.clone(), "試験".to_owned()]),
-            Exit::Pass
-        );
         assert_eq!(run(&build), Exit::Pass);
         let before = open(&c).expect("読める").0;
         assert!(before.derived.has_scale(), "目盛りができている");
@@ -4190,24 +4253,14 @@ mod tests {
     }
 
     #[test]
-    fn quick_はカセットでないファイルを消さない() {
-        // <strong>在るものを消さない。</strong> 消してよいかは読んでみるまで分からない
-        // ——カセットでないファイルは、人の別のファイルである。
-        let dir = temp_dir("quick-not-a-cassette");
-        let person = dir.join("person");
-        std::fs::create_dir_all(&person).expect("作れる");
-        std::fs::write(person.join("a.md"), "これは、そうだ。\n").expect("書ける");
+    fn カセットでないファイルは踏まない() {
+        // <strong>在るものを消さない。</strong> カセットとして読めないものを指されたら、
+        // それは人の別のファイルである。
+        let dir = temp_dir("not-a-cassette");
         let victim = dir.join("大事.txt");
         std::fs::write(&victim, "消えてはいけない").expect("書ける");
-        assert_eq!(
-            run(&[
-                "quick".to_owned(),
-                person.to_string_lossy().into_owned(),
-                "--cassette".to_owned(),
-                victim.to_string_lossy().into_owned(),
-            ]),
-            Exit::Usage
-        );
+        let c = victim.to_string_lossy().into_owned();
+        assert_eq!(run(&build_args(&dir, &c, "試験")), Exit::Unreadable);
         assert_eq!(
             std::fs::read_to_string(&victim).expect("在る"),
             "消えてはいけない",
@@ -4217,18 +4270,12 @@ mod tests {
     }
 
     #[test]
-    fn quick_は人が決めたことを引き継ぐ() {
-        // <strong>カセットだったとしても消さない。</strong> 人が決めたことは作り直せない
-        // ので、消せば落とす定型も動かない指標もそこで消える。
-        let dir = temp_dir("quick-keeps-decided");
-        let person = dir.join("person");
-        std::fs::create_dir_all(&person).expect("作れる");
-        std::fs::write(person.join("a.md"), "これは、そうだ。\n").expect("書ける");
+    fn 作り直しても人が決めたことは残る() {
+        // <strong>人が決めたことは作り直せない。</strong> 消せば落とす定型も動かない指標も
+        // そこで消える——目盛りは入れ替えるので、消す理由がそもそも無い。
+        let dir = temp_dir("rebuild-keeps-decided");
         let c = dir.join("c.kb").to_string_lossy().into_owned();
-        assert_eq!(
-            run(&["new".to_owned(), c.clone(), "default".to_owned()]),
-            Exit::Pass
-        );
+        assert_eq!(run(&build_args(&dir, &c, "試験")), Exit::Pass);
         assert_eq!(
             run(&[
                 "decide".to_owned(),
@@ -4238,19 +4285,25 @@ mod tests {
             ]),
             Exit::Pass
         );
-        // 素材が足りないので目盛りは作れないが、<strong>作れなくても消してはいけない。</strong>
-        run(&[
-            "quick".to_owned(),
-            person.to_string_lossy().into_owned(),
-            "--cassette".to_owned(),
-            c.clone(),
-        ]);
+        assert_eq!(run(&build_args(&dir, &c, "試験")), Exit::Pass, "作り直せる");
         let (got, _) = open(&c).expect("読める");
         assert_eq!(
             got.decided.boilerplate,
             vec!["お世話になっており"],
             "人が決めたことが消えている"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 場面が食い違えば作り直さない() {
+        // 名乗りだけ据え置いて中身を作り直せば、中身と名前が合わないカセットになる。
+        let dir = temp_dir("rebuild-scene-mismatch");
+        let c = dir.join("c.kb").to_string_lossy().into_owned();
+        assert_eq!(run(&build_args(&dir, &c, "試験")), Exit::Pass);
+        assert_eq!(run(&build_args(&dir, &c, "別の場面")), Exit::Usage);
+        let (got, _) = open(&c).expect("読める");
+        assert_eq!(got.scene, "試験", "断ったのだから変わらない");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4270,15 +4323,11 @@ mod tests {
         }
         let c = dir.join("c.kb").to_string_lossy().into_owned();
         assert_eq!(
-            run(&["new".to_owned(), c.clone(), "試験".to_owned()]),
-            Exit::Pass
-        );
-        assert_eq!(
             run(&[
                 "build".to_owned(),
-                c,
-                "--person".to_owned(),
                 person.to_string_lossy().into_owned(),
+                "--cassette".to_owned(),
+                c,
                 "--baseline".to_owned(),
                 baseline.to_string_lossy().into_owned(),
                 "--model".to_owned(),
@@ -4318,15 +4367,11 @@ mod tests {
         std::fs::write(person.join("p.md"), "これは、そうだ。\n").expect("書ける");
         std::fs::write(baseline.join("b.md"), "これは、そうだ。\n").expect("書ける");
         let c = dir.join("c.kb").to_string_lossy().into_owned();
-        assert_eq!(
-            run(&["new".to_owned(), c.clone(), "試験".to_owned()]),
-            Exit::Pass
-        );
         let base = vec![
             "build".to_owned(),
-            c,
-            "--person".to_owned(),
             person.to_string_lossy().into_owned(),
+            "--cassette".to_owned(),
+            c,
             "--baseline".to_owned(),
             baseline.to_string_lossy().into_owned(),
         ];
@@ -4393,7 +4438,8 @@ mod tests {
         // 世代が進まなければ、同時に書いた片方の変更が正常終了のまま消える。
         let dir = temp_dir("generation");
         let c = empty_cassette(&dir);
-        assert_eq!(save::generation_of(&c), 1, "作った時点で 1");
+        // <strong>build は 2 度書く。</strong> 入れ物を作るときと、目盛りを入れるときである。
+        assert_eq!(save::generation_of(&c), 2, "作って目盛りを入れた時点で 2");
         assert_eq!(
             run(&[
                 "decide".to_owned(),
@@ -4403,7 +4449,7 @@ mod tests {
             ]),
             Exit::Pass
         );
-        assert_eq!(save::generation_of(&c), 2);
+        assert_eq!(save::generation_of(&c), 3);
         std::fs::remove_dir_all(&dir).ok();
     }
 

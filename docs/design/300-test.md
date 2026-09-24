@@ -319,10 +319,13 @@
 | <strong>相手集合のベクトルが欠けた目盛り</strong> | <strong>使う前の問題として断る</strong>（[理由](100-cassette.md#scalejson-は相手集合も持つ)） |
 | <strong>`decide` のあとに `review`</strong> | <strong>判定できないを返す。</strong> 古い派生物を読まない |
 | 2 つの書き込みを同時に走らせる | <strong>片方が断られる。</strong> どちらの変更も消えない |
-| <strong>既に在るところへ `new`</strong> | <strong>断る。</strong> 中身が変わらない |
+| <strong>カセットでないファイルへ `build`</strong> | <strong>断る。</strong> 消さない |
+| <strong>目盛りの在るカセットへ `build`</strong> | <strong>人が決めたことが残る</strong> |
+| <strong>場面の違うカセットへ `build`</strong> | <strong>断る。</strong> 中身が変わらない |
 
-<strong>`new` の 1 行が、この表でいちばん失うものが大きい。</strong>
-[人が決めたことは作り直せない](100-cassette.md#何を収めるか)。
+<strong>下の 3 行が、この表でいちばん失うものが大きい。</strong>
+[人が決めたことは作り直せない](100-cassette.md#何を収めるか)ので、
+<strong>消してしまえば打ち直すしかない。</strong>
 
 <strong>どれも、通らなければ原本が黙って消える種類の失敗である。</strong> 値が変わるまで誰も
 気付かない。
