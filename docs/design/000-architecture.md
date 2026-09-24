@@ -204,7 +204,6 @@ flowchart TB
     scale --> doc
     rev --> met
     cas --> doc
-    met --> norm
     met --> doc
     norm --> doc
 ```
@@ -213,10 +212,13 @@ flowchart TB
 当てはめる関数が視界に入らないので、<strong>検める対象を見てから作り直す経路が、そのクレートの
 中には書けない。</strong>
 
-<strong>`kakiburi-metrics` から `kakiburi-normalize` への線がある。</strong> 取り込み元ごとの
-[書ける・書けないの升目](../spec/030-normalize.md#対応表は取り込み元ごとに持つ)を引くため
-である——[書けない記法](../spec/100-metrics.md#測れない理由を分けて返す)を返せなければ、
-0 と測れないが混ざる。<strong>向きは逆にしない</strong>：正規化は指標を知らないまま木を作る。
+<strong>`kakiburi-metrics` から `kakiburi-normalize` への線は無い。</strong> 取り込み元ごとの
+[書ける・書けないの升目](../spec/030-normalize.md#対応表は取り込み元ごとに持つ)は
+`kakiburi-normalize` が持ち、[書けない記法](../spec/100-metrics.md#測れない理由を分けて返す)
+として渡すのは組み立て層である——指標は「どの取り込み元で測っているか」を知らない。
+
+<strong>知らせる向きを逆にしない。</strong> 正規化は指標を知らないまま木を作り、指標は取り込み元を
+知らないまま数える。<strong>升目を引き当てるのは、両方を見ている 1 か所だけである。</strong>
 
 ### カセットは中身の形を知らない
 
