@@ -82,10 +82,14 @@ impl Analyzer for Lindera {
     }
 
     fn analyze(&self, text: &str) -> Vec<Morpheme> {
-        let Ok(mut tokens) = self.segmenter.segment(Cow::Borrowed(text)) else {
-            // 呼べなかった。 形態素 0 なので除外に掛かる。
-            return Vec::new();
-        };
+        // 空で返さない。 空は「短くて測れない」と見分けが付かず、
+        // 道具の壊れが素材の不足という顔で出る——外の実行ファイルを
+        // 呼んでいた頃はそう畳むしかなかったが、いまは辞書ごと同梱していて、
+        // ここが失敗するのは実行ファイルが壊れているときだけである。
+        let mut tokens = self
+            .segmenter
+            .segment(Cow::Borrowed(text))
+            .expect("同梱の辞書で解析できる");
         tokens
             .iter_mut()
             .map(|t| {

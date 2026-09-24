@@ -259,6 +259,66 @@ fn refresh(c: &mut Cassette) {
     c.fingerprint = fingerprint_with(c);
 }
 
+/// 目盛りを載せられる形で開く。検める側と同じ検査を通す。
+///
+/// 口ごとに検査を書かない。 書き分ければ、同じカセットが口によって
+/// 通ったり断られたりする——実際そうなっていて、`review` だけが指紋と相手集合を
+/// 確かめ、`compare` と `measure` は確かめずに値を出していた。
+///
+/// 落とす定型も一緒に返す。 掛け忘れれば、同じ文書が口によって違う照合値に
+/// なる（[同じ測り方で測る](../../../docs/spec/300-revise.md#同じ測り方で測る)）。
+///
+/// 目盛りが無いことは失敗ではない。 素材が足りずに作れなかったのは
+/// [正常な状態](../../../docs/spec/010-strategy.md#届かないときは判定できないと言う)なので、
+/// `None` で返して呼ぶ側に決めさせる——エラーとして畳むと、道具向けの
+/// 出口が何も出さずに終わる。
+fn scale_of(path: &str) -> Result<(Cassette, Option<Scale>), Exit> {
+    let (c, _) = open(path)?;
+    // 目盛りを先に読む。 読めないまま指紋を照らすと、語彙が空のまま
+    // 組み直されて「指紋が合わない」として返る——壊れているのは目盛りの
+    // ほうなので、そう言えなくなる。
+    let scale = read_scale(&c)?;
+    // 指紋を照らす。 合わないカセットで測れば、比べたものに意味が無い。
+    if let Err(diff) = check_fingerprint(&c) {
+        eprintln!("指紋が環境と合わない: {}", diff.join("、"));
+        eprintln!("素材のフォルダを指して build し直す。過去の値とは比べられない");
+        return Err(Exit::FingerprintMismatch);
+    }
+    let Some(scale) = scale else {
+        return Ok((c, None));
+    };
+    // 本数だけでは足りない。 次元がずれていても距離は短いほうまでで
+    // 計算されるので、エラーにならずに違う値が出る。
+    if !scale.partner_vectors_ok() {
+        eprintln!("相手集合が目盛りと噛み合わない。目盛りが壊れている");
+        eprintln!("素材のフォルダを指して build し直す");
+        return Err(Exit::FingerprintMismatch);
+    }
+    Ok((c, Some(scale)))
+}
+
+/// 目盛りを読む。まだ無いことと、在るのに読めないことを分ける。
+///
+/// 畳むと壊れが正常に見える。 素材が足りずに作れなかったのは
+/// [正常な状態](../../../docs/spec/010-strategy.md#届かないときは判定できないと言う)だが、
+/// 書いてあるのに読めないのは壊れている——[版は読む前に確かめて](kakiburi_cassette::store)
+/// いるので、そこを抜けて読めないなら道具かカセットの側の異常である。
+///
+/// 同じ顔で返せば、素材を足せと言われる。 足しても直らない。
+fn read_scale(c: &Cassette) -> Result<Option<Scale>, Exit> {
+    let Some(text) = c.derived.scale.as_deref() else {
+        return Ok(None);
+    };
+    match scale_json::read(text) {
+        Some(s) => Ok(Some(s)),
+        None => {
+            eprintln!("目盛りが書いてあるのに読めない。カセットが壊れている");
+            eprintln!("素材の問題ではない。 素材のフォルダを指して build し直す");
+            Err(Exit::Unreadable)
+        }
+    }
+}
+
 /// 言い回しの表に入っている本数。
 fn phrase_table_len(c: &Cassette) -> usize {
     c.derived
@@ -312,15 +372,9 @@ fn compare(args: &[String]) -> Exit {
     // 目盛りがあれば、目盛りに載せた値も出す。 指示できる指標だけでは
     // [周回ごとの散らばりを天井と比べる](../../../docs/design/100-cassette.md#周回のあいだの観測は外でやる)
     // ことができない——何周しても、近づいているのかが読めない。
-    let scale = match &cassette {
-        Some(p) => match open(p) {
-            Ok((c, _)) => match c.derived.scale.as_deref().and_then(scale_json::read) {
-                Some(s) => Some(s),
-                None => {
-                    eprintln!("目盛りが無いカセットである。素材のフォルダを指して build する");
-                    return Exit::Unknown;
-                }
-            },
+    let loaded = match &cassette {
+        Some(p) => match scale_of(p) {
+            Ok(v) => Some(v),
             Err(e) => return e,
         },
         None => None,
@@ -328,6 +382,10 @@ fn compare(args: &[String]) -> Exit {
 
     let mecab = analyzer::resolve();
     let a = Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer);
+    // 測る本文を 1 度だけ決める。 落とす定型を片方にだけ掛ければ、
+    // 1 つの出力の中で別の本文を測ったことになる——定型に読点や文末が
+    // 入っていれば、指示できる指標と目盛りに載せた値が食い違う。
+    let boilerplate: &[String] = loaded.as_ref().map_or(&[], |(c, _)| &c.decided.boilerplate);
     let mut columns: Vec<(String, Vec<(String, Measured)>)> = Vec::new();
     let mut docs: Vec<(String, kakiburi_doc::Document)> = Vec::new();
     for f in &files {
@@ -342,6 +400,7 @@ fn compare(args: &[String]) -> Exit {
                 return Exit::Unreadable;
             }
         };
+        let doc = doc.without_boilerplate(boilerplate);
         let prose = doc.prose();
         let analyzed = analyzed_of(&prose, a);
         columns.push((stem_of(f), measured_with(&doc, analyzed.as_ref())));
@@ -368,12 +427,20 @@ fn compare(args: &[String]) -> Exit {
     println!("{}", "-".repeat(28 + 12 * columns.len()));
     println!("`—` は測っていない。0 ではない。");
 
-    let Some(scale) = scale else {
-        println!(
-            "系統の距離は出していない。 カセットが無いと語彙が決まらないためである"
-        );
-        println!("  --cassette を渡すと、照合値・人らしさ値・系統の距離も出る");
-        return Exit::Pass;
+    let scale = match loaded {
+        None => {
+            println!(
+                "系統の距離は出していない。 カセットが無いと語彙が決まらないためである"
+            );
+            println!("  --cassette を渡すと、照合値・人らしさ値・系統の距離も出る");
+            return Exit::Pass;
+        }
+        Some((_, None)) => {
+            // 素材が足りずに作れなかったのは正常な状態である。
+            println!("目盛りが無いカセットである。素材のフォルダを指して build する");
+            return Exit::Unknown;
+        }
+        Some((_, Some(scale))) => scale,
     };
 
     // 目盛りに載せた値を並べる。 ここが「天井と比べる」の実体である。
@@ -384,31 +451,7 @@ fn compare(args: &[String]) -> Exit {
     }
     println!();
     println!("{}", "-".repeat(28 + 12 * columns.len()));
-    let mut rows: BTreeMap<String, Vec<Option<f64>>> = BTreeMap::new();
-    for (name, doc) in &docs {
-        let got = measure_against(
-            &scale,
-            Sample {
-                name,
-                document: doc,
-            },
-            a,
-        );
-        rows.entry("照合値".to_owned()).or_default().push(got.matching);
-        rows.entry("人らしさ値".to_owned())
-            .or_default()
-            .push(got.humanness);
-        for (system, d) in kakiburi_scale::assemble::distances_against(
-            &scale,
-            Sample {
-                name,
-                document: doc,
-            },
-            a,
-        ) {
-            rows.entry(format!("  {system}")).or_default().push(Some(d));
-        }
-    }
+    let rows = scale_rows(&scale, &docs, a);
     // 照合値と人らしさ値を先に出す。 判定はその 2 つで決まり、
     // 系統の距離はその内訳である。
     for key in ["照合値", "人らしさ値"] {
@@ -445,6 +488,39 @@ fn print_row(name: &str, values: &[Option<f64>]) {
         }
     }
     println!();
+}
+
+/// 目盛りに載せた値を、行ごと・文書ごとに並べる。
+///
+/// 列を先に空けてから埋める。 測れた系統だけを順に足していくと、
+/// 測れなかった文書のぶん値が前へ詰まり、別の文書の値として並ぶ
+/// ——値は出るしエラーにもならないので、出力を見ても取り違えに気付けない。
+fn scale_rows(
+    scale: &Scale,
+    docs: &[(String, kakiburi_doc::Document)],
+    a: Option<&dyn kakiburi_metrics::morph::Analyzer>,
+) -> BTreeMap<String, Vec<Option<f64>>> {
+    let mut rows: BTreeMap<String, Vec<Option<f64>>> = BTreeMap::new();
+    let n = docs.len();
+    // 目盛りが持つ系統を先に並べる。 測れたものだけで行を作ると、どの文書でも
+    // 測れなかった系統は行ごと消える——「測れなかった」と「目盛りに無い」が
+    // 見分けられなくなる。
+    for (system, _) in &scale.frozen {
+        rows.insert(format!("  {system}"), vec![None; n]);
+    }
+    for (at, (name, doc)) in docs.iter().enumerate() {
+        let sample = Sample { name, document: doc };
+        let got = measure_against(scale, sample, a);
+        let mut put = |key: String, v: Option<f64>| {
+            rows.entry(key).or_insert_with(|| vec![None; n])[at] = v;
+        };
+        put("照合値".to_owned(), got.matching);
+        put("人らしさ値".to_owned(), got.humanness);
+        for (system, d) in kakiburi_scale::assemble::distances_against(scale, sample, a) {
+            put(format!("  {system}"), Some(d));
+        }
+    }
+    rows
 }
 
 /// 表示のために縮める。
@@ -520,7 +596,12 @@ fn doctor(args: &[String]) -> Exit {
         bad += 1;
     }
 
-    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
+    // 読めないのは壊れている。 検査の口なので、そう言って落とす。
+    let scale = match read_scale(&c) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let Some(scale) = scale else {
         println!("目盛りが無い。素材のフォルダを指して build する");
         return if bad == 0 { Exit::Pass } else { Exit::Unknown };
     };
@@ -2255,7 +2336,15 @@ fn review(args: &[String]) -> Exit {
     // どのファイルを渡すかとして現れる。
     let scene = c.scene.clone();
 
-    // 指紋を先に照らす。 合わないカセットで測れば、比べたものに意味が無い。
+    // 目盛りを先に読む。 読めないまま指紋を照らすと、語彙が空のまま組み直されて
+    // 「指紋が合わない」として返る——同じ壊れたカセットに、口ごとに違う直し方を
+    // 案内することになる。
+    let scale = match read_scale(&c) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+
+    // 指紋を照らす。 合わないカセットで測れば、比べたものに意味が無い。
     // 判定できないではなく 使う前の問題である——64 以上で返す。
     if let Err(diff) = check_fingerprint(&c) {
         eprintln!("指紋が環境と合わない: {}", diff.join("、"));
@@ -2272,7 +2361,7 @@ fn review(args: &[String]) -> Exit {
 
     // 目盛りが無ければ判定できない。 素材が足りずに作れなかったのは正常な
     // 状態であり、仕様がそのために判定できないを置いている。
-    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
+    let Some(scale) = scale else {
         return unknown(
             json,
             &scene,
@@ -3176,6 +3265,18 @@ fn measure(args: &[String]) -> Exit {
         }
     };
 
+    // カセットを先に開く。 測る本文を 1 度だけ決めるためである——
+    // 落とす定型を目盛りの側にだけ掛ければ、1 つの出力の中で別の本文を
+    // 測ったことになる。
+    let opened = match &cassette {
+        Some(p) => match scale_of(p) {
+            Ok(v) => Some(v),
+            Err(e) => return e,
+        },
+        None => None,
+    };
+    let doc = doc.without_boilerplate(opened.as_ref().map_or(&[], |(c, _)| &c.decided.boilerplate));
+
     // 解析は 1 度だけ行い、両方の出し方が同じ値を使う。
     //
     // 別々に解析すると片方だけが解析器を捨てる。実際そうなっていた——
@@ -3189,6 +3290,25 @@ fn measure(args: &[String]) -> Exit {
     #[allow(clippy::cast_precision_loss)]
     let tokens = analyzed.as_ref().map(|a| a.tokens() as f64);
     let values = measured_with(&doc, analyzed.as_ref());
+
+    // 出し方で分かれる前に測る。 分岐のあとで測っていたときは、
+    // `--json` にだけ照合値が入らなかった——「人向けの表示は変えない」と
+    // 書いておきながら、道具向けの側が痩せていた。
+    let a = Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer);
+    // 目盛りが無いことは失敗ではない。 判定できないとして返すが、
+    // 道具向けの出口は必ず JSON を出す——出さなければ、読む側が
+    // 「出力が無い」を自分で場合分けすることになる。
+    let no_scale = matches!(opened, Some((_, None)));
+    let on_scale = opened.and_then(|(c, scale)| {
+        let scale = scale?;
+        let sample = Sample {
+            name: path,
+            document: &doc,
+        };
+        let got = measure_against(&scale, sample, a);
+        let distances = kakiburi_scale::assemble::distances_against(&scale, sample, a);
+        Some((c.scene, scale, got, distances))
+    });
 
     if json {
         // 人向けの表示は変えない。 出すのは同じ値の生の形である。
@@ -3219,10 +3339,55 @@ fn measure(args: &[String]) -> Exit {
                         .flat()
                     ),
                 ),
+                // カセットを渡されたなら、目盛りに載せた値も出す。
+                // 人向けに出るものが道具向けに出ないのは、`--json` の約束に反する。
+                (
+                    "on_scale".to_owned(),
+                    match &on_scale {
+                        None => kakiburi_cassette::json::Value::Null,
+                        Some((scene, scale, got, distances)) => {
+                            kakiburi_cassette::json::Value::obj([
+                                (
+                                    "scene".to_owned(),
+                                    kakiburi_cassette::json::Value::s(scene)
+                                ),
+                                ("matching".to_owned(), machine::number(got.matching)),
+                                ("humanness".to_owned(), machine::number(got.humanness)),
+                                // 出なかった理由を添える。 `null` だけでは、
+                                // 短くて測れないのか系統が欠けたのかを読む側が区別できない
+                                // ——`review --json` は添えている。
+                                (
+                                    "missing_systems".to_owned(),
+                                    machine::strings(&got.missing_systems)
+                                ),
+                                (
+                                    "missing_humanness".to_owned(),
+                                    machine::strings(&got.missing_humanness)
+                                ),
+                                (
+                                    "distances".to_owned(),
+                                    kakiburi_cassette::json::Value::obj(
+                                        distances.iter().map(|(k, v)| {
+                                            (
+                                                k.clone(),
+                                                kakiburi_cassette::json::Value::Number(*v),
+                                            )
+                                        })
+                                    ),
+                                ),
+                                ("matching_band".to_owned(), band_json(scale.band)),
+                                (
+                                    "humanness_band".to_owned(),
+                                    band_json(scale.humanness_band)
+                                ),
+                            ])
+                        }
+                    },
+                ),
             ])
             .write()
         );
-        return Exit::Pass;
+        return if no_scale { Exit::Unknown } else { Exit::Pass };
     }
 
     println!("取り込み元 {}", source.name());
@@ -3259,30 +3424,20 @@ fn measure(args: &[String]) -> Exit {
     println!("理由が「道具が無い」「道具が失敗した」なら、直すのは素材ではなく環境である。");
     println!();
 
-    let Some(path_to_cassette) = cassette else {
+    let Some((scene, scale, got, distances)) = on_scale else {
+        if no_scale {
+            println!("目盛りが無いカセットである。素材のフォルダを指して build する。");
+            return Exit::Unknown;
+        }
         println!("系統の距離は出していない。カセットが無いと語彙が決まらないためである。");
         println!("--cassette を渡すと、照合値・人らしさ値・系統の距離も出る。");
         return Exit::Pass;
     };
-    let (c, _) = match open(&path_to_cassette) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
-        println!("目盛りが無いカセットである。素材のフォルダを指して build する。");
-        return Exit::Unknown;
-    };
-    let a = Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer);
-    let sample = Sample {
-        name: path,
-        document: &doc,
-    };
-    let got = measure_against(&scale, sample, a);
-    println!("目盛りに載せた値（場面: {}）", c.scene);
+    println!("目盛りに載せた値（場面: {scene}）");
     println!("{}", "-".repeat(46));
     println!("  {:<28} {:>10}", "照合値", shown(got.matching));
     println!("  {:<28} {:>10}", "人らしさ値", shown(got.humanness));
-    for (system, d) in kakiburi_scale::assemble::distances_against(&scale, sample, a) {
+    for (system, d) in &distances {
         println!("  {:<28} {d:>10.3}", format!("  {system}"));
     }
     println!("{}", "-".repeat(46));
@@ -3872,23 +4027,159 @@ mod tests {
     }
 
     #[test]
+    fn 測れない文書が混ざっても列がずれない() {
+        // 測れた系統だけを順に足していくと、測れなかった文書のぶん値が前へ詰まり、
+        // 別の文書の値として並ぶ。
+        //
+        // 終了コードでは捕まらない。 詰まっても値は出るしエラーにもならない
+        // ——列そのものを見る。
+        let scale = fixture::scale();
+        // 1 本目は短くて測れない。2 本目は測れる。
+        let short = kakiburi_doc::Document::new(vec![kakiburi_doc::node::Node::leaf(
+            kakiburi_doc::node::Kind::Paragraph,
+            "短い。",
+        )]);
+        let (person, _) = fixture::corpus();
+        let long = person[0].1.clone();
+        let docs = vec![("短い".to_owned(), short), ("長い".to_owned(), long)];
+        let rows = scale_rows(&scale, &docs, Some(&fixture::Chars));
+
+        assert!(!rows.is_empty(), "行が出ている");
+        for (name, values) in &rows {
+            assert_eq!(values.len(), docs.len(), "{name} の列が文書の数と合わない");
+        }
+        // 測れた値が 1 列目に詰まっていない。 詰まる実装では、
+        // 2 本目でしか測れない系統の値が 1 本目の列に入る。
+        let measured_short = rows.values().filter(|v| v[0].is_some()).count();
+        let measured_long = rows.values().filter(|v| v[1].is_some()).count();
+        assert!(
+            measured_long > measured_short,
+            "短い側のほうが測れているのはおかしい（短 {measured_short} / 長 {measured_long}）"
+        );
+    }
+
+    #[test]
+    fn どの文書でも測れない系統も行として出る() {
+        // 測れたものだけで行を作ると、行ごと消える——「測れなかった」と
+        // 「目盛りに無い」が見分けられなくなる。
+        let scale = fixture::scale();
+        let short = |name: &str| {
+            (
+                name.to_owned(),
+                kakiburi_doc::Document::new(vec![kakiburi_doc::node::Node::leaf(
+                    kakiburi_doc::node::Kind::Paragraph,
+                    "短い。",
+                )]),
+            )
+        };
+        let docs = vec![short("a"), short("b")];
+        let rows = scale_rows(&scale, &docs, Some(&fixture::Chars));
+        for (system, _) in &scale.frozen {
+            let key = format!("  {system}");
+            let row = rows.get(&key).unwrap_or_else(|| panic!("{key} の行が無い"));
+            assert_eq!(row.len(), docs.len(), "{key}");
+            assert!(row.iter().all(Option::is_none), "{key} は測れないはず");
+        }
+    }
+
+    #[test]
+    fn 読めない目盛りを目盛り無しと言わない() {
+        // 畳むと壊れが正常に見える。 素材が足りずに作れなかったのは
+        // 正常な状態だが、書いてあるのに読めないのは壊れている——同じ顔で返せば、
+        // 足しても直らないものを足させる。
+        let dir = temp_dir("broken-scale");
+        let cassette = cassette_with_scale(&dir);
+        let raw = std::fs::read(&cassette).expect("読める");
+        let mut c = store::read(&raw).expect("読める");
+        c.derived.scale = Some("{\"壊れている\":true}".to_owned());
+        std::fs::write(&cassette, store::write(&c)).expect("書ける");
+
+        let a = a_document(&dir, "a");
+        assert_eq!(
+            run(&[
+                "measure".to_owned(),
+                a.clone(),
+                "--source".to_owned(),
+                "plain-markdown".to_owned(),
+                "--cassette".to_owned(),
+                cassette.clone(),
+            ]),
+            Exit::Unreadable,
+            "目盛り無しと同じ扱いになっている"
+        );
+        // 検める口も同じである。 口ごとに違う直し方を案内しない。
+        assert_eq!(
+            run(&["doctor".to_owned(), cassette.clone()]),
+            Exit::Unreadable
+        );
+        assert_eq!(
+            run(&[
+                "review".to_owned(),
+                a,
+                "--cassette".to_owned(),
+                cassette,
+                "--source".to_owned(),
+                "plain-markdown".to_owned(),
+            ]),
+            Exit::Unreadable,
+            "review だけ別の診断になっている"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 指紋の合わないカセットでは測らない() {
+        // 口ごとに検査を書けば、同じカセットが口によって通ったり断られたりする。
+        // review だけが指紋を照らしていて、compare と measure は照らしていなかった。
+        let dir = temp_dir("stale-cassette");
+        let cassette = cassette_with_scale(&dir);
+        let raw = std::fs::read(&cassette).expect("読める");
+        let mut c = store::read(&raw).expect("読める");
+        // 道具が変わったことにする。
+        let mut inputs = c.fingerprint.inputs.clone();
+        inputs.common.metric_definitions = "別の定義".into();
+        c.fingerprint = Fingerprint::build(inputs);
+        std::fs::write(&cassette, store::write(&c)).expect("書ける");
+
+        let a = a_document(&dir, "a");
+        for name in ["compare", "measure"] {
+            let mut args = vec![name.to_owned(), a.clone()];
+            if name == "compare" {
+                args.push(a.clone());
+            }
+            args.extend([
+                "--source".to_owned(),
+                "plain-markdown".to_owned(),
+                "--cassette".to_owned(),
+                cassette.clone(),
+            ]);
+            assert_eq!(run(&args), Exit::FingerprintMismatch, "{name}");
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn 目盛りの無いカセットでは比べられない() {
         // 空と欠けを分ける。 目盛りが無いカセットを渡されて、
         // 指示できる指標だけ出して「通った」ことにしない。
         let dir = temp_dir("compare-no-scale");
         let c = empty_cassette(&dir);
         let a = a_document(&dir, "a");
-        assert_eq!(
-            run(&[
-                "measure".to_owned(),
-                a,
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
-                "--cassette".to_owned(),
-                c,
-            ]),
-            Exit::Unknown
-        );
+        let args = [
+            "measure".to_owned(),
+            a,
+            "--source".to_owned(),
+            "plain-markdown".to_owned(),
+            "--cassette".to_owned(),
+            c,
+        ];
+        assert_eq!(run(&args), Exit::Unknown);
+        // 途中で抜ける道でも JSON を出す。 出さなければ、道具の側が
+        // 「出力が無い」を自分で場合分けすることになる——目盛りが無いのは
+        // 正常な状態であって、壊れたわけではない。
+        let mut with = args.to_vec();
+        with.push("--json".to_owned());
+        assert_eq!(run(&with), Exit::Unknown);
         std::fs::remove_dir_all(&dir).ok();
     }
 
