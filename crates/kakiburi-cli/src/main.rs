@@ -45,16 +45,6 @@ fn run(args: &[String]) -> Exit {
         }
     }
     match args.first().map(String::as_str) {
-        // <strong>名乗っているのに動かない解析器で進まない。</strong> 進めば、道具の壊れが
-        // <strong>素材が足りないという顔で出る</strong>——足しても直らないものを足させる。
-        //
-        // <strong>値を出す口だけを止める。</strong>`decide` も `show` も測らないので通す。
-        Some(
-            name @ ("measure" | "compare" | "build" | "review" | "doctor"),
-        ) if analyzer::resolve_or_report().is_err() => {
-            let _ = name;
-            Exit::Unreadable
-        }
         Some("measure") => measure(&args[1..]),
         Some("metrics") => metrics(&args[1..]),
         Some("decide") => decide(&args[1..]),
@@ -163,14 +153,12 @@ kakiburi metrics
 const ENVIRONMENT: &str = "\
 環境
 
-  KAKIBURI_UNIDIC          UniDic の展開先。指すと全系統を測れる
-  KAKIBURI_UNIDIC_VERSION  指紋に入る版の申告（既定: 版の申告なし）
-  KAKIBURI_MECAB           MeCab の実行ファイル（既定: mecab）
-  KAKIBURI_BASELINES       quick が使う基準の池（既定: 作業ディレクトリの baselines）
+  KAKIBURI_BASELINES       基準の池（既定: 作業ディレクトリの baselines）
 
-  <strong>UniDic は nixpkgs に無い。</strong> 国語研が配布している:
-  https://clrd.ninjal.ac.jp/unidic_archive/cwj/2.1.2/unidic-mecab-2.1.2_bin.zip
-  <strong>IPADic は断る</strong>——体系が違えば語彙素で引けない。";
+  <strong>用意するものは無い。</strong> 形態素解析器も辞書も実行ファイルに同梱してある
+  ——Lindera と UniDic 2.1.2 である。
+  <strong>環境に置けば消える</strong>：指した先が消えていても道具は「解析器あり」と
+  名乗り、以後すべての計測が黙って 0 形態素になる。実際にそうなった。";
 
 fn print_help() {
     println!("kakiburi — どこがその人と違うかを、言えるようにする");
@@ -268,7 +256,7 @@ fn set_sources(c: &mut Cassette, files: &[String]) {
 ///
 /// <strong>変えたのに組み直さなければ、次に検めたときに「合っている」と言われる。</strong>
 fn refresh(c: &mut Cassette) {
-    c.fingerprint = fingerprint_with(c, analyzer::resolved().as_ref());
+    c.fingerprint = fingerprint_with(c);
 }
 
 /// 言い回しの表に入っている本数。
@@ -338,10 +326,8 @@ fn compare(args: &[String]) -> Exit {
         None => None,
     };
 
-    let mecab = analyzer::resolved();
-    let a = mecab
-        .as_ref()
-        .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
+    let mecab = analyzer::resolve();
+    let a = Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer);
     let mut columns: Vec<(String, Vec<(String, Measured)>)> = Vec::new();
     let mut docs: Vec<(String, kakiburi_doc::Document)> = Vec::new();
     for f in &files {
@@ -1102,11 +1088,7 @@ fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> 
     if pool.len() <= take {
         return all();
     }
-    let Some(analyzer) = analyzer::resolved() else {
-        // <strong>解析器が無ければ選ばない。</strong> 題材で絞れないことを、黙って
-        // 別の基準で絞ったことにしない。
-        return all();
-    };
+    let analyzer = analyzer::resolve();
     let words = |files: &[String]| -> std::collections::BTreeSet<String> {
         let mut out = std::collections::BTreeSet::new();
         for f in files {
@@ -1386,22 +1368,13 @@ fn build(args: &[String]) -> Exit {
             println!("{line}");
         }
     };
-    let mecab = analyzer::resolved();
-    match &mecab {
-        Some(m) => say(format!(
-            "形態素解析: MeCab / {} {}",
-            m.dict_name, m.dict_version
-        )),
-        None => {
-            say(format!(
-                "形態素解析: 無し（{} が未設定）。<strong>形態素を要る系統が測れない</strong>",
-                analyzer::DICDIR
-            ));
-            // <strong>入手先を言う。</strong> 未設定だと言うだけでは、辞書をどこから引くかも
-            // どこに置くかも分からず、仕様を読むまで進めない。
-            say("  辞書の入手先は kakiburi help の「環境」に書いてある".to_owned());
-        }
-    }
+    let mecab = analyzer::resolve();
+    say(format!(
+        "形態素解析: {} / {} {}（同梱）",
+        kakiburi_metrics::lindera::ENGINE,
+        kakiburi_metrics::lindera::DICT_NAME,
+        kakiburi_metrics::lindera::DICT_VERSION
+    ));
 
     let person_files = readable_files(&person_dir);
     if person_files.is_empty() {
@@ -1476,7 +1449,7 @@ fn build(args: &[String]) -> Exit {
             eprintln!("<strong>名前はファイル名である。</strong> 分けたいならファイル名を分ける");
             return Exit::Usage;
         }
-        report = build_scene(&mut c, &person, &baseline, &others, mecab.as_ref(), json, &say);
+        report = build_scene(&mut c, &person, &baseline, &others, &mecab, json, &say);
         if attempt == last || c.derived.has_scale() {
             break;
         }
@@ -1675,7 +1648,7 @@ fn build_scene(
     person_units: &[(String, kakiburi_doc::Document)],
     baseline_units: &[(String, kakiburi_doc::Document)],
     other_units: &[(String, kakiburi_doc::Document)],
-    mecab: Option<&kakiburi_metrics::mecab::Mecab>,
+    mecab: &kakiburi_metrics::lindera::Lindera,
     json: bool,
     say: &dyn Fn(String),
 ) -> kakiburi_cassette::json::Value {
@@ -1706,7 +1679,7 @@ fn build_scene(
     if boilerplate > 0 {
         say(format!("落とす定型 {boilerplate} 本"));
     }
-    let a = mecab.map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
+    let a = Some(mecab as &dyn kakiburi_metrics::morph::Analyzer);
 
     // <strong>環境の側の理由で測れないものがあれば、目盛りを作らない。</strong>
     // 直すのはコーパスではなく環境であり、直せば全部の値が変わる——このまま進めば、
@@ -2324,16 +2297,14 @@ fn review(args: &[String]) -> Exit {
         return Exit::FingerprintMismatch;
     }
 
-    let mecab = analyzer::resolved();
+    let mecab = analyzer::resolve();
     let got = measure_against(
         &scale,
         Sample {
             name: path,
             document: &doc,
         },
-        mecab
-            .as_ref()
-            .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+        Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer),
     );
 
     // <strong>照合値のどこが違うのかを言えるようにする。</strong> 1 つの数のままでは、帯の中で
@@ -2354,9 +2325,7 @@ fn review(args: &[String]) -> Exit {
             name: path,
             document: &doc,
         },
-        mecab
-            .as_ref()
-            .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+        Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer),
     );
     let diverging = kakiburi_scale::diverging(
         &scale,
@@ -2364,9 +2333,7 @@ fn review(args: &[String]) -> Exit {
             name: path,
             document: &doc,
         },
-        mecab
-            .as_ref()
-            .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+        Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer),
         &readable,
         12,
     );
@@ -2418,14 +2385,12 @@ fn review(args: &[String]) -> Exit {
     // <strong>検める側も同じ解析器で測る。</strong> 片方だけ違えば、比べたものに意味が無い。
     // <strong>カセットが持つ辞書で割る。</strong> 作ったときと違う割り方をすれば、
     // 比べたものに意味が無い。
-    let analyzed_now = mecab.as_ref().and_then(|m| {
-        kakiburi_metrics::morph::Analyzed::with_lexicon(
-            &doc.prose(),
-            m as &dyn kakiburi_metrics::morph::Analyzer,
-            &scale.lexicon,
-        )
-        .ok()
-    });
+    let analyzed_now = kakiburi_metrics::morph::Analyzed::with_lexicon(
+        &doc.prose(),
+        &mecab as &dyn kakiburi_metrics::morph::Analyzer,
+        &scale.lexicon,
+    )
+    .ok();
     let measured_now = measured_with(&doc, analyzed_now.as_ref());
     // 0 段目。書き方。
     //
@@ -2837,15 +2802,11 @@ fn review(args: &[String]) -> Exit {
     println!();
     // <strong>長さで黙るなら、長さで黙ると言う。</strong> 直すと短くなり、下限を割って測れなく
     // なる——<strong>直した側には、道具が壊れたのか自分が削りすぎたのかが分からない。</strong>
-    let tokens = mecab
-        .as_ref()
-        .and_then(|m| {
-            analyzed_of(
-                &doc.prose(),
-                Some(m as &dyn kakiburi_metrics::morph::Analyzer),
-            )
-        })
-        .map(|a| a.tokens());
+    let tokens = analyzed_of(
+        &doc.prose(),
+        Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer),
+    )
+    .map(|a| a.tokens());
     if let Some(n) = tokens {
         let floor = kakiburi_metrics::floor::TOKENS;
         if n < floor {
@@ -2948,7 +2909,7 @@ fn verdict_name(v: kakiburi_review::Verdict) -> &'static str {
 ///
 /// <strong>材料をすべて渡さないと組み立てられない。</strong> 混ぜ忘れは型が止める。
 fn current_fingerprint() -> Fingerprint {
-    Fingerprint::build(base_inputs(None))
+    Fingerprint::build(base_inputs())
 }
 
 /// カセットに入れる指紋。<strong>目盛りができた時点で変わる。</strong>
@@ -2958,8 +2919,8 @@ fn current_fingerprint() -> Fingerprint {
 ///
 /// <strong>場面ごとの部分は、その場面の目盛りから読む。</strong> 1 つの場面を `build` した
 /// だけで、ほかの場面の語彙が消えてはいけない。
-fn fingerprint_with(c: &Cassette, mecab: Option<&kakiburi_metrics::mecab::Mecab>) -> Fingerprint {
-    let mut inputs = base_inputs(mecab);
+fn fingerprint_with(c: &Cassette) -> Fingerprint {
+    let mut inputs = base_inputs();
     // カセットが決めたことは引き継ぐ。取り込み元は環境の側で作り直せない。
     inputs.common.normalization.sources = c.fingerprint.inputs.common.normalization.sources.clone();
     let scale = c.derived.scale.as_deref().and_then(scale_json::read);
@@ -3108,7 +3069,7 @@ fn normalization_mapping() -> BTreeMap<String, String> {
 /// 指紋の材料。<strong>共通部分だけを環境から作る。</strong>
 ///
 /// 場面ごとの部分はカセットの側にしか無い。
-fn base_inputs(mecab: Option<&kakiburi_metrics::mecab::Mecab>) -> Inputs {
+fn base_inputs() -> Inputs {
     Inputs {
         common: Common {
             // <strong>本数を指紋にしない。</strong> 同じ本数のまま数え方・除外・直し方を変えれば、
@@ -3119,7 +3080,7 @@ fn base_inputs(mecab: Option<&kakiburi_metrics::mecab::Mecab>) -> Inputs {
                 env!("CARGO_PKG_VERSION"),
                 kakiburi_doc::text::UNICODE_VERSION,
             ),
-            morphology: analyzer::tool(mecab),
+            morphology: analyzer::tool(),
             // <strong>まだ使わないものも、使わないと書いて渡す。</strong>
             dependency: Tool::unused(),
             compressor: analyzer::compressor(),
@@ -3144,8 +3105,7 @@ fn base_inputs(mecab: Option<&kakiburi_metrics::mecab::Mecab>) -> Inputs {
 /// 変わった、指標が増えた——そこが変われば過去の値と比べられない。取り込み元と語彙は
 /// カセットが決めたことなので、カセットのものを引き継いで照らす。
 fn check_fingerprint(c: &Cassette) -> Result<(), Vec<String>> {
-    let mecab = analyzer::resolved();
-    let here = fingerprint_with(c, mecab.as_ref());
+    let here = fingerprint_with(c);
     let diff = c.fingerprint.differences(&here);
     if diff.is_empty() {
         Ok(())
@@ -3221,12 +3181,10 @@ fn measure(args: &[String]) -> Exit {
     // 別々に解析すると<strong>片方だけが解析器を捨てる</strong>。実際そうなっていた——
     // 人向けは `語を割る読点 0.000`、`--json` は `道具が無い` を返していた。
     // <strong>同じ入力に対して、測れたか測れていないかが出し方で変わってはいけない。</strong>
-    let mecab = analyzer::resolved();
+    let mecab = analyzer::resolve();
     let analyzed = analyzed_of(
         &doc.prose(),
-        mecab
-            .as_ref()
-            .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
+        Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer),
     );
     #[allow(clippy::cast_precision_loss)]
     let tokens = analyzed.as_ref().map(|a| a.tokens() as f64);
@@ -3256,9 +3214,7 @@ fn measure(args: &[String]) -> Exit {
                     machine::metrics(
                         &humanness_of(
                             &doc,
-                            mecab
-                                .as_ref()
-                                .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer)
+                            Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer)
                         )
                         .flat()
                     ),
@@ -3273,8 +3229,12 @@ fn measure(args: &[String]) -> Exit {
     println!("日本語 {} 字", doc.japanese_chars());
     // <strong>形態素の数も出す。</strong> 字数で足りていても語で足りないことがあり、
     // そのとき何が測れないかが字数からは分からない。
-    if let (Some(n), Some(m)) = (tokens, mecab.as_ref()) {
-        println!("延べ {n} 語（{} {}）", m.dict_name, m.dict_version);
+    if let Some(n) = tokens {
+        println!(
+            "延べ {n} 語（{} {}）",
+            kakiburi_metrics::lindera::DICT_NAME,
+            kakiburi_metrics::lindera::DICT_VERSION
+        );
     }
     println!(
         "段落 {} / 文 {} / 節 {} / 項目 {}",
@@ -3312,9 +3272,7 @@ fn measure(args: &[String]) -> Exit {
         println!("目盛りが無いカセットである。素材のフォルダを指して build する。");
         return Exit::Unknown;
     };
-    let a = mecab
-        .as_ref()
-        .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
+    let a = Some(&mecab as &dyn kakiburi_metrics::morph::Analyzer);
     let sample = Sample {
         name: path,
         document: &doc,
@@ -3471,10 +3429,11 @@ fn metrics(_args: &[String]) -> Exit {
     }
     println!();
     println!("登録簿の全体は docs/spec/metrics/ にある。");
-    println!("<strong>形態素解析を要る系統と指標は、UniDic を指したときだけ測る</strong>——");
     println!(
-        "{} に辞書の経路を渡す。指さなければ測らない（0 を返さない）。",
-        analyzer::DICDIR
+        "<strong>形態素解析は同梱である</strong>——{} / {} {}。何も用意しなくてよい。",
+        kakiburi_metrics::lindera::ENGINE,
+        kakiburi_metrics::lindera::DICT_NAME,
+        kakiburi_metrics::lindera::DICT_VERSION
     );
     Exit::Pass
 }
@@ -4110,10 +4069,12 @@ mod tests {
     #[test]
     fn 全体の_help_に環境変数と取り込み元が出る() {
         // 未設定だと言うだけでは、辞書をどこから引くかが分からない。
-        for name in [analyzer::DICDIR, analyzer::VERSION, analyzer::PROGRAM] {
-            assert!(ENVIRONMENT.contains(name), "{name}");
+        // <strong>用意させるものが減ったら、help もそう言う。</strong>
+        assert!(ENVIRONMENT.contains("KAKIBURI_BASELINES"));
+        assert!(ENVIRONMENT.contains("同梱"), "{ENVIRONMENT}");
+        for gone in ["KAKIBURI_UNIDIC", "KAKIBURI_MECAB", "unidic-mecab-2.1.2_bin.zip"] {
+            assert!(!ENVIRONMENT.contains(gone), "{gone} が残っている");
         }
-        assert!(ENVIRONMENT.contains("unidic-mecab-2.1.2_bin.zip"));
         // 一覧を 2 か所に書かない。
         for s in source_names() {
             assert!(Source::from_name(s).is_some(), "{s}");
@@ -4156,8 +4117,6 @@ mod tests {
         // 差として出て落ちる——見たいのは決めたことが指紋に入るかである。
         let dir = temp_dir("decided-fingerprint");
         let c = empty_cassette(&dir);
-        let mecab = analyzer::resolved();
-        let mecab = mecab.as_ref();
         let before = open(&c).expect("読める").0.fingerprint;
 
         assert_eq!(
@@ -4169,7 +4128,7 @@ mod tests {
             ]),
             Exit::Pass
         );
-        let after = fingerprint_with(&open(&c).expect("読める").0, mecab);
+        let after = fingerprint_with(&open(&c).expect("読める").0);
         assert_eq!(before.differences(&after), vec!["人が決めたこと"]);
 
         let metric = measured_names().first().expect("指標が要る").clone();
@@ -4183,7 +4142,7 @@ mod tests {
             ]),
             Exit::Pass
         );
-        let stuck = fingerprint_with(&open(&c).expect("読める").0, mecab);
+        let stuck = fingerprint_with(&open(&c).expect("読める").0);
         assert_eq!(after.differences(&stuck), vec!["人が決めたこと"]);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -4198,10 +4157,7 @@ mod tests {
         // 呼ばずに通ってしまう。
         // <strong>辞書が無ければ目盛りは作れない。</strong> そのまま走らせると、捨てた派生物と
         // 作り直した派生物がどちらも空で一致し、<strong>何も確かめずに緑になる。</strong>
-        let Some(_) = analyzer::resolved() else {
-            eprintln!("辞書が無いので飛ばす（{} を指す）", analyzer::DICDIR);
-            return;
-        };
+        // <strong>解析器は同梱なので、飛ばす条件が無い。</strong>
         let dir = temp_dir("rebuild");
         let person = dir.join("person");
         let baseline = dir.join("baseline");

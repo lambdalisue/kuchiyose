@@ -15,27 +15,26 @@ LLM に代筆させた文章は、素のままだと読みづらい。同じも�
 
 ## 何が要るか
 
-| | |
-| --- | --- |
-| Rust | 1.85 以上（`cargo build --release`） |
-| MeCab | 形態素解析器 |
-| UniDic | MeCab 用の辞書。<strong>IPADic は断る</strong>——体系が違えば語彙素で引けない |
-
-MeCab と UniDic が無くても `measure` は動くが、<strong>語を数える指標が落ちる</strong>ので
-目盛りは作れない。
-
-UniDic は nixpkgs に無い。[国語研が配布しているもの](https://clrd.ninjal.ac.jp/unidic_archive/cwj/2.1.2/unidic-mecab-2.1.2_bin.zip)を
-展開して、その場所を環境変数で渡す。
+<strong>Rust だけである。</strong>
 
 ```sh
-export KAKIBURI_UNIDIC=/path/to/unidic-mecab-2.1.2_bin
-export KAKIBURI_UNIDIC_VERSION=2.1.2   # 指紋に入る。省くと「版の申告なし」
-export KAKIBURI_MECAB=/path/to/mecab   # 省くと PATH の mecab
-export KAKIBURI_BASELINES=/path/to/kakiburi/baselines  # 省くと作業ディレクトリの baselines
+cargo build --release
 ```
 
-`KAKIBURI_UNIDIC_VERSION` を省いても動くが、<strong>指紋が変わると過去の値と比べられない</strong>ので、
-続けて使うなら最初から入れておく。
+形態素解析器も辞書も<strong>実行ファイルに同梱してある</strong>——[Lindera](https://github.com/lindera/lindera)
+と UniDic 2.1.2 である。<strong>用意するものは無い。</strong>
+
+> <strong>以前は MeCab と UniDic を手で入れさせていた。</strong> やめた理由は手間ではない
+> ——<strong>環境に置いたものは消える</strong>。指した先が消えていても道具は「解析器あり」と
+> 名乗り、以後すべての計測が黙って 0 形態素になり、<strong>「素材が足りない」という顔で
+> 報告する</strong>。実際にそうなった。同梱すれば起こらない。
+
+<strong>辞書を抱えるので実行ファイルは 194 MB になる。</strong> 起動は速いまま（辞書は
+そのまま読める形で埋めてある）。
+
+```sh
+export KAKIBURI_BASELINES=/path/to/kakiburi/baselines  # 省くと作業ディレクトリの baselines
+```
 
 ## 素材をそろえる
 
@@ -229,7 +228,7 @@ LLM は、プラグイン名もコマンド名も版番号もほとんど書か�
 | `--person に本人の記事が入ったフォルダを渡す` | カセットは本文を持たない。作り直すたびに素材を読む |
 | `目盛りを作らない: 測れた単位が N 本で、10 本に届かない` | 素材を足す。<strong>どの単位がどの指標で落ちたかまで出る</strong> |
 | `目盛りが無い。素材が足りずに作れなかった` | `build` がまだ通っていない。素材を足して打ち直す |
-| `指紋が環境と合わない` | 辞書か版が変わった。`build` し直す。過去の値とは比べられない |
+| `指紋が環境と合わない` | 道具の版が変わった（解析器・辞書・指標の定義）。`build` し直す。過去の値とは比べられない |
 | `日本語以外が主` | `--source` の取り違えか、日本語の文章ではない |
 
 いまどこまで来ているかも、目盛りが壊れていないかも `doctor` で見る。
