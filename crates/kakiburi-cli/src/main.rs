@@ -45,6 +45,16 @@ fn run(args: &[String]) -> Exit {
         }
     }
     match args.first().map(String::as_str) {
+        // <strong>名乗っているのに動かない解析器で進まない。</strong> 進めば、道具の壊れが
+        // <strong>素材が足りないという顔で出る</strong>——足しても直らないものを足させる。
+        //
+        // <strong>値を出す口だけを止める。</strong>`decide` も `show` も測らないので通す。
+        Some(
+            name @ ("measure" | "compare" | "build" | "review" | "doctor"),
+        ) if analyzer::resolve_or_report().is_err() => {
+            let _ = name;
+            Exit::Unreadable
+        }
         Some("measure") => measure(&args[1..]),
         Some("metrics") => metrics(&args[1..]),
         Some("new") => new_cassette(&args[1..]),
@@ -328,7 +338,7 @@ fn set_sources(c: &mut Cassette, files: &[String]) {
 ///
 /// <strong>変えたのに組み直さなければ、次に検めたときに「合っている」と言われる。</strong>
 fn refresh(c: &mut Cassette) {
-    c.fingerprint = fingerprint_with(c, analyzer::resolve().as_ref());
+    c.fingerprint = fingerprint_with(c, analyzer::resolved().as_ref());
 }
 
 /// カセットの中身を出す。
@@ -443,7 +453,7 @@ fn compare(args: &[String]) -> Exit {
         return missing_source();
     };
 
-    let mecab = analyzer::resolve();
+    let mecab = analyzer::resolved();
     let a = mecab
         .as_ref()
         .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
@@ -1187,7 +1197,7 @@ fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> 
     if pool.len() <= take {
         return all();
     }
-    let Some(analyzer) = analyzer::resolve() else {
+    let Some(analyzer) = analyzer::resolved() else {
         // <strong>解析器が無ければ選ばない。</strong> 題材で絞れないことを、黙って
         // 別の基準で絞ったことにしない。
         return all();
@@ -1463,7 +1473,7 @@ fn build(args: &[String]) -> Exit {
             println!("{line}");
         }
     };
-    let mecab = analyzer::resolve();
+    let mecab = analyzer::resolved();
     match &mecab {
         Some(m) => say(format!(
             "形態素解析: MeCab / {} {}",
@@ -2346,7 +2356,7 @@ fn review(args: &[String]) -> Exit {
         return Exit::FingerprintMismatch;
     }
 
-    let mecab = analyzer::resolve();
+    let mecab = analyzer::resolved();
     let got = measure_against(
         &scale,
         Sample {
@@ -3166,7 +3176,7 @@ fn base_inputs(mecab: Option<&kakiburi_metrics::mecab::Mecab>) -> Inputs {
 /// 変わった、指標が増えた——そこが変われば過去の値と比べられない。取り込み元と語彙は
 /// カセットが決めたことなので、カセットのものを引き継いで照らす。
 fn check_fingerprint(c: &Cassette) -> Result<(), Vec<String>> {
-    let mecab = analyzer::resolve();
+    let mecab = analyzer::resolved();
     let here = fingerprint_with(c, mecab.as_ref());
     let diff = c.fingerprint.differences(&here);
     if diff.is_empty() {
@@ -3233,7 +3243,7 @@ fn measure(args: &[String]) -> Exit {
     // 別々に解析すると<strong>片方だけが解析器を捨てる</strong>。実際そうなっていた——
     // 人向けは `語を割る読点 0.000`、`--json` は `道具が無い` を返していた。
     // <strong>同じ入力に対して、測れたか測れていないかが出し方で変わってはいけない。</strong>
-    let mecab = analyzer::resolve();
+    let mecab = analyzer::resolved();
     let analyzed = analyzed_of(
         &doc.prose(),
         mecab
@@ -4081,7 +4091,7 @@ mod tests {
         // 差として出て落ちる——見たいのは決めたことが指紋に入るかである。
         let dir = temp_dir("decided-fingerprint");
         let c = empty_cassette(&dir);
-        let mecab = analyzer::resolve();
+        let mecab = analyzer::resolved();
         let mecab = mecab.as_ref();
         let before = open(&c).expect("読める").0.fingerprint;
 
@@ -4123,7 +4133,7 @@ mod tests {
         // 呼ばずに通ってしまう。
         // <strong>辞書が無ければ目盛りは作れない。</strong> そのまま走らせると、捨てた派生物と
         // 作り直した派生物がどちらも空で一致し、<strong>何も確かめずに緑になる。</strong>
-        let Some(_) = analyzer::resolve() else {
+        let Some(_) = analyzer::resolved() else {
             eprintln!("辞書が無いので飛ばす（{} を指す）", analyzer::DICDIR);
             return;
         };
