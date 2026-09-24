@@ -80,6 +80,14 @@ pub struct Review {
     ///
     /// 判定には使わない。 その題材でだけ別の一人称を選ぶことはありうる。
     pub first_person: Vec<String>,
+    /// 本人と違う書き出しで始めている、ということ。書きぶりの枠を奪わない。
+    ///
+    /// 密度でも語の位置でも言えない。 見出しの密度は 1,000 字あたりの本数なので、
+    /// 見出しが 1 番目にあっても 3 番目にあっても同じ値になる。型の位置は語の位置で、
+    /// 挨拶の前に見出しを 1 本挟んでも 0.000 が 0.02 になるだけである。
+    ///
+    /// 判定には使わない。 その題材でだけ別の始め方をすることはありうる。
+    pub opening: Vec<String>,
 }
 
 impl Review {
@@ -96,6 +104,7 @@ impl Review {
             || !self.machine_gois.is_empty()
             || !self.overused_katas.is_empty()
             || !self.first_person.is_empty()
+            || !self.opening.is_empty()
     }
 }
 
@@ -451,6 +460,48 @@ pub struct Observations<'a> {
     pub first_person: &'a [(String, f64)],
     /// この文章に出てきた一人称と、その回数。
     pub draft_first_person: &'a [(String, usize)],
+    /// 本人の書き出しの種類と、その割合。多い順。
+    pub opening: &'a [(String, f64)],
+    /// この文章の書き出しの種類。node が 1 つも無ければ `None`。
+    pub draft_opening: Option<&'a str>,
+}
+
+/// 本人がその始め方を選んでいると言える、単位の割合。暫定値である。
+///
+/// [一人称](FIRST_PERSON_MIN)と同じ形である。 1 本でそう始めただけのものを
+/// 「本人はこう始める」と言えば、書き手は一度きりの形に寄せることになる。
+pub const OPENING_MIN: f64 = 0.10;
+
+/// 本人が選んでいないと言える、いちばん多い始め方に対する割合。暫定値である。
+pub const OPENING_SHARE: f64 = 0.5;
+
+/// 本人と違う書き出しで始めていることを言う。
+///
+/// この文章が何かで始まっているときだけ見る。 node を 1 つも持たない文章に
+/// 始め方は無い。
+fn opening_remedies(person: &[(String, f64)], draft: Option<&str>) -> Vec<String> {
+    let (Some((top, top_rate)), Some(here)) = (person.first(), draft) else {
+        return Vec::new();
+    };
+    if *top_rate < OPENING_MIN || here == top {
+        return Vec::new();
+    }
+    let mine = person
+        .iter()
+        .find(|(k, _)| k == here)
+        .map_or(0.0, |(_, r)| *r);
+    if mine >= top_rate * OPENING_SHARE {
+        return Vec::new();
+    }
+    let theirs = if mine <= 0.0 {
+        "本人はそう始めない".to_owned()
+    } else {
+        format!("本人は {:.0}% の記事でしかそう始めない", mine * 100.0)
+    };
+    vec![format!(
+        "この文章は{here}で始まっている。{theirs}——{:.0}% の記事を{top}で書き始める。",
+        top_rate * 100.0
+    )]
 }
 
 /// 本人がその一人称を選んでいると言える、単位の割合。暫定値である。
@@ -595,6 +646,8 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
         overused_katas,
         // どの一人称を選ぶかは、型にも語にも載らない。
         first_person: first_person_remedies(o.first_person, o.draft_first_person),
+        // 書き出しの構造も、密度にも語の位置にも載らない。
+        opening: opening_remedies(o.opening, o.draft_opening),
     }
 }
 
@@ -774,6 +827,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -804,6 +859,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -846,6 +903,36 @@ mod tests {
         let person = [("僕".to_owned(), 0.05)];
         assert!(first_person_remedies(&person, &[("私".to_owned(), 3)]).is_empty());
         assert!(first_person_remedies(&[], &[("私".to_owned(), 3)]).is_empty());
+    }
+
+    #[test]
+    fn 本人と違う書き出しを名指しする() {
+        // 見出しの密度では言えない。 1 番目にあっても 3 番目にあっても同じ値になる。
+        let person = [("段落".to_owned(), 0.92), ("見出し".to_owned(), 0.06)];
+        let got = opening_remedies(&person, Some("見出し"));
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].contains("見出しで始まっている"), "{got:?}");
+        assert!(got[0].contains("92% の記事を段落で"), "{got:?}");
+    }
+
+    #[test]
+    fn 本人と同じ書き出しなら何も言わない() {
+        let person = [("段落".to_owned(), 0.92), ("見出し".to_owned(), 0.06)];
+        assert!(opening_remedies(&person, Some("段落")).is_empty());
+    }
+
+    #[test]
+    fn 書き出しの無い文章には言わない() {
+        let person = [("段落".to_owned(), 0.92)];
+        assert!(opening_remedies(&person, None).is_empty());
+    }
+
+    #[test]
+    fn 本人が始め方を選んでいなければ言わない() {
+        // 半々で始めている書き手に「こう始めろ」とは言えない。
+        let person = [("段落".to_owned(), 0.52), ("見出し".to_owned(), 0.48)];
+        assert!(opening_remedies(&person, Some("見出し")).is_empty());
+        assert!(opening_remedies(&[], Some("見出し")).is_empty());
     }
 
     fn human(name: &str, value: f64) -> HumannessObserved {
@@ -894,6 +981,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -924,6 +1013,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -953,6 +1044,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -978,6 +1071,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1007,6 +1102,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1039,6 +1136,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1067,6 +1166,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1104,6 +1205,8 @@ mod tests {
                 phrases: &[dense("しています。", 10, 4.4, 2.8)],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1148,6 +1251,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1179,6 +1284,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1213,6 +1320,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1239,6 +1348,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1267,6 +1378,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1293,6 +1406,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1323,6 +1438,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1344,6 +1461,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1380,6 +1499,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &UpperOnly,
         );
@@ -1406,6 +1527,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &None_,
         );
@@ -1431,6 +1554,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1456,6 +1581,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1484,6 +1611,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1512,6 +1641,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );
@@ -1543,6 +1674,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &None_,
         );
@@ -1570,6 +1703,8 @@ mod tests {
                 phrases: &[],
                 first_person: &[],
                 draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
             },
             &All,
         );

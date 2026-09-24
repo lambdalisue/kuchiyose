@@ -53,6 +53,8 @@ struct Measurements {
     goi: BTreeMap<String, (String, usize)>,
     /// その単位に現れる[一人称](kakiburi_metrics::word::FIRST_PERSON)と、その回数。
     first_person: BTreeMap<String, usize>,
+    /// [書き出しの node の種類](kakiburi_doc::Document::opening)の名前。
+    opening: Option<String>,
     /// 人らしさの次元。
     humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
@@ -120,6 +122,11 @@ impl Measurements {
             goi: kakiburi_metrics::word::goi(analyzed.as_ref()),
             // どの一人称を選ぶかは、題材が変わっても動かない。
             first_person: kakiburi_metrics::word::first_person(analyzed.as_ref()),
+            // 書き出しに何を置くかも、題材ではなく書き手が決める。
+            opening: sample
+                .document
+                .opening()
+                .map(|k| k.name().to_owned()),
             humanness: Humanness::measure(&prose, analyzed.as_ref()),
             chars: sample.document.japanese_chars(),
             text: kakiburi_metrics::humanness::joined(&prose),
@@ -535,6 +542,8 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         // 一人称はどちらを選ぶかだけが問われる。 相手側は要らない——
         // 本人が何を選ぶかが分かれば、草稿が別のものを選んだことが言える。
         first_person: first_person_of(&person_units, &measured),
+        // 書き出しの構造も同じ形である。 閉じた集合のうちどれを選ぶかを持つ。
+        opening: opening_of(&person_units, &measured),
     })
 }
 
@@ -776,6 +785,44 @@ fn first_person_of(person: &[Unit], measured: &BTreeMap<String, Measurements>) -
             #[allow(clippy::cast_precision_loss)]
             let rate = k as f64 / n;
             (name.to_owned(), rate)
+        })
+        .collect();
+    // 多い順。同じなら名前の順。 決めておかないと並びが実装で変わる。
+    out.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    out
+}
+
+/// 本人の書き出しの種類と、その割合。多い順。
+///
+/// [一人称](first_person_of)と同じ形である。 閉じた集合のうちどれを選ぶかなので、
+/// 選ばれなかったことがそのまま癖になる。
+fn opening_of(person: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<(String, f64)> {
+    let mut df: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut n = 0usize;
+    for u in person {
+        let Some(m) = measured.get(&u.name) else {
+            continue;
+        };
+        // 数えられなかった単位は分母にも入れない。 入れると、書き出しの
+        // 割合が「node を持たない単位の多さ」で薄まる。
+        let Some(kind) = m.opening.as_deref() else {
+            continue;
+        };
+        n += 1;
+        *df.entry(kind).or_insert(0) += 1;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let total = n.max(1) as f64;
+    let mut out: Vec<(String, f64)> = df
+        .into_iter()
+        .map(|(kind, k)| {
+            #[allow(clippy::cast_precision_loss)]
+            let rate = k as f64 / total;
+            (kind.to_owned(), rate)
         })
         .collect();
     // 多い順。同じなら名前の順。 決めておかないと並びが実装で変わる。

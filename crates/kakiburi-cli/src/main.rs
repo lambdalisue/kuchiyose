@@ -655,6 +655,14 @@ fn doctor(args: &[String]) -> Exit {
             .collect();
         println!("一人称: {}", shown.join("、"));
     }
+    if !scale.opening.is_empty() {
+        let shown: Vec<String> = scale
+            .opening
+            .iter()
+            .map(|(kind, rate)| format!("{kind} {:.0}%", rate * 100.0))
+            .collect();
+        println!("書き出し: {}", shown.join("、"));
+    }
 
     // 5. 相手集合のベクトルが噛み合っているか。本数だけでは足りない。
     if scale.partner_vectors_ok() {
@@ -2775,6 +2783,9 @@ fn review(args: &[String]) -> Exit {
         .collect();
     // 一人称は語彙素で畳んでから数える。 `わたし` と `私` は同じ一人称だが、
     // UniDic は同綴りを分ける札を付けるので、そのままだと 2 つに割れる。
+    // 書き出しは node の種類である。 地の文にならない node もあるので、
+    // 解析ではなく文書の形から取る。
+    let draft_opening = doc.opening().map(|k| k.name().to_owned());
     let draft_first_person: Vec<(String, usize)> =
         kakiburi_metrics::word::first_person(analyzed_now.as_ref())
             .into_iter()
@@ -2794,6 +2805,8 @@ fn review(args: &[String]) -> Exit {
             phrases: &phrases,
             first_person: &scale.first_person,
             draft_first_person: &draft_first_person,
+            opening: &scale.opening,
+            draft_opening: draft_opening.as_deref(),
         },
         &defs,
     );
@@ -2870,6 +2883,10 @@ fn review(args: &[String]) -> Exit {
                 (
                     "first_person".to_owned(),
                     Value::Array(result.first_person.iter().map(Value::s).collect()),
+                ),
+                (
+                    "opening".to_owned(),
+                    Value::Array(result.opening.iter().map(Value::s).collect()),
                 ),
                 (
                     // 指摘は結果であって断り書きではない。 ここに入れる。
@@ -3018,6 +3035,13 @@ fn review(args: &[String]) -> Exit {
         println!("本人と違う一人称 {} 本", result.first_person.len());
         for f in &result.first_person {
             println!("  - {f}");
+        }
+    }
+    if !result.opening.is_empty() {
+        println!();
+        println!("書き出しの構造");
+        for o in &result.opening {
+            println!("  - {o}");
         }
     }
     Exit::from_verdict(result.outcome.verdict)

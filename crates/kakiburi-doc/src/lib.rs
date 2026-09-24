@@ -42,6 +42,20 @@ impl Document {
         prose::prose(&self.nodes)
     }
 
+    /// 書き出しの node の種類。node が 1 つも無ければ `None`。
+    ///
+    /// 書き出しに何を置くかは書き手の癖である。 実測で、ある書き手は 49 本中
+    /// 46 本（93%）を段落で書き始めるのに対し、LLM の基準は 44 本中 31 本（70%）を
+    /// 見出しで書き始めた。
+    ///
+    /// [見出しの密度](kakiburi_metrics::registry)では言えない。 密度は
+    /// 1,000 字あたりの本数なので、見出しが 1 番目にあっても 3 番目にあっても
+    /// 同じ値になる。
+    #[must_use]
+    pub fn opening(&self) -> Option<node::Kind> {
+        self.nodes.first().map(|n| n.kind)
+    }
+
     /// 日本語の文字数。率の分母。
     #[must_use]
     pub fn japanese_chars(&self) -> usize {
@@ -214,6 +228,17 @@ mod tests {
 
     fn para(t: &str) -> Node {
         Node::leaf(Kind::Paragraph, t)
+    }
+
+    #[test]
+    fn 書き出しは最初の_node_の種類である() {
+        // 見出しの密度では言えない。 密度は 1,000 字あたりの本数なので、
+        // 見出しが 1 番目にあっても 3 番目にあっても同じ値になる。
+        let prose = Document::new(vec![para("どうも。"), Node::heading(2, "節")]);
+        let heading = Document::new(vec![Node::heading(2, "節"), para("どうも。")]);
+        assert_eq!(prose.opening(), Some(Kind::Paragraph));
+        assert_eq!(heading.opening(), Some(Kind::Heading));
+        assert_eq!(Document::new(vec![]).opening(), None);
     }
 
     #[test]

@@ -252,6 +252,18 @@ pub fn write(s: &Scale) -> String {
             ),
         ),
         (
+            // 書き出しに何を置くかは、密度でも語の位置でも言えない。
+            "書き出し".to_owned(),
+            Value::Array(
+                s.opening
+                    .iter()
+                    .map(|(kind, rate)| {
+                        Value::Array(vec![Value::s(kind), Value::Number(*rate)])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
             // 繰り返せと言うなら、上限も渡す。
             "言い回しの上限".to_owned(),
             Value::Array(
@@ -530,6 +542,19 @@ pub fn read(text: &str) -> Option<Scale> {
             .map(|a| {
                 a.iter()
                     .filter_map(|x| x.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        // 無くてもよい。 書き出しを持たない版のカセットは、指摘が 1 本減るだけである。
+        opening: v
+            .get("書き出し")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| {
+                        let p = x.as_array()?;
+                        Some((p.first()?.as_str()?.to_owned(), p.get(1)?.as_f64()?))
+                    })
                     .collect()
             })
             .unwrap_or_default(),
