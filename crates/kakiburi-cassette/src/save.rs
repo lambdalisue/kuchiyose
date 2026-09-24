@@ -331,20 +331,11 @@ pub fn sweep(path: impl AsRef<Path>) {
 fn verify(tmp: &Path, expected: &Cassette) -> Result<(), SaveError> {
     let raw = fs::read(tmp).map_err(|e| SaveError::Verify(e.to_string()))?;
     let got = store::read(&raw).map_err(|e| SaveError::Verify(e.to_string()))?;
-    if got.corpus != expected.corpus {
-        return Err(SaveError::Verify("本文が戻らない".into()));
-    }
-    // <strong>トラックは鍵ごと検める。</strong> 場面が 1 つ消えても本文は戻るので、本文だけを
-    // 見ていると、決めたことが丸ごと落ちたことに気付けない。
-    if got.scenes() != expected.scenes() {
+    if got.scene != expected.scene {
         return Err(SaveError::Verify("場面が戻らない".into()));
     }
-    for (scene, t) in &expected.tracks {
-        if got.track(scene).map(|g| &g.decided) != Some(&t.decided) {
-            return Err(SaveError::Verify(format!(
-                "人が決めたことが戻らない: {scene}"
-            )));
-        }
+    if got.decided != expected.decided {
+        return Err(SaveError::Verify("人が決めたことが戻らない".into()));
     }
     if got.generation != expected.generation {
         return Err(SaveError::Verify("世代が戻らない".into()));
@@ -368,7 +359,7 @@ mod tests {
 
     /// 置き換えを試すための、いちばん小さいカセット。
     fn cassette() -> Cassette {
-        use crate::{Baseline, Corpus, Decided, Derived, Fingerprint, Inputs, Normalization, Tool};
+        use crate::{Baseline, Decided, Derived, Fingerprint, Inputs, Normalization, Tool};
         use std::collections::BTreeMap;
         let baseline = Baseline {
             model: "m".into(),
@@ -394,29 +385,19 @@ mod tests {
                         mapping: BTreeMap::new(),
                     },
                 },
-                scenes: [(
-                    "試験".to_owned(),
-                    crate::SceneInputs {
-                        baseline: baseline.clone(),
-                        ..crate::SceneInputs::default()
-                    },
-                )]
-                .into(),
+                scene: crate::SceneInputs {
+                    baseline: baseline.clone(),
+                    ..crate::SceneInputs::default()
+                },
             }),
             provisional: vec![],
-            corpus: Corpus::new(vec![]),
-            tracks: [(
-                "試験".to_owned(),
-                crate::Track {
-                    decided: Decided {
-                        boilerplate: vec![],
-                        baseline,
-                        movement: BTreeMap::new(),
-                    },
-                    derived: Derived::dropped(),
-                },
-            )]
-            .into(),
+            scene: "試験".into(),
+            decided: Decided {
+                boilerplate: vec![],
+                baseline,
+                movement: BTreeMap::new(),
+            },
+            derived: Derived::dropped(),
         }
     }
 

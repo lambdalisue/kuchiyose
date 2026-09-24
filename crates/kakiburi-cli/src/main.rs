@@ -13,8 +13,7 @@ mod scale_json;
 
 use exit::Exit;
 use kakiburi_cassette::{
-    save, store, Baseline, Cassette, Common, Corpus, Decided, Derived, Fingerprint, Inputs,
-    Normalization, Role, Tool, Unit,
+    save, store, Cassette, Common, Decided, Derived, Fingerprint, Inputs, Normalization, Tool,
 };
 use kakiburi_metrics::{phrase, structure, symbol, Measured};
 use kakiburi_normalize::{normalize, Source};
@@ -49,9 +48,6 @@ fn run(args: &[String]) -> Exit {
         Some("measure") => measure(&args[1..]),
         Some("metrics") => metrics(&args[1..]),
         Some("new") => new_cassette(&args[1..]),
-        Some("scene") => scene(&args[1..]),
-        Some("add") => add(&args[1..]),
-        Some("replace") => replace(&args[1..]),
         Some("decide") => decide(&args[1..]),
         Some("show") => show(&args[1..]),
         Some("compare") => compare(&args[1..]),
@@ -78,9 +74,6 @@ fn section(name: &str) -> Option<&'static str> {
     Some(match name {
         "measure" => MEASURE,
         "new" => NEW,
-        "scene" => SCENE,
-        "add" => ADD,
-        "replace" => REPLACE,
         "decide" => DECIDE,
         "build" => BUILD,
         "quick" => QUICK,
@@ -101,74 +94,52 @@ kakiburi measure <ファイル> --source <取り込み元> [--json]
     どうしの距離になる。";
 
 const NEW: &str = "\
-kakiburi new <カセット>
-    1 人分の入れ物を作る。<strong>既に在れば断る。</strong>
-    場面はここでは取らない——scene で作る。";
-
-const SCENE: &str = "\
-kakiburi scene <カセット> <場面>
-    場面を作る。<strong>場面は人が指定する。</strong> 文章から当てにいかない。
-    名前に `/` と空は使えない。保存の中では階層の名前になるためである。";
-
-const ADD: &str = "\
-kakiburi add <カセット> <ファイル...> --as person|baseline --scene <場面>
-                                 --source <取り込み元> [--id <名前>] [--unit <名前>]
-                                 [--model <名前> --version <版> --param <鍵>=<値> --topic <題材>]
-kakiburi add <カセット> <ファイル...> --as other --source <取り込み元>
-    正規化して入れる。<strong>1 本でも断ったら何も入れない。</strong>
-    名前はカセット全体で一意である。<strong>衝突したら断る</strong>——黙って上書きしない。
-    <strong>--unit で束ねる</strong>——短い文書を何本かで 1 単位にする。
-    <strong>--as baseline には --model と --version が要る</strong>（--param / --topic も取る）。
-    本文が変わるので派生物を捨てる。
-
-    役は 3 つある。
-      person    本人の文書。照合の相手集合と天井になる
-      baseline  基準。LLM の既定出力。床になる
-      other     <strong>他人の文書。</strong> 人らしさの人の側の較正にだけ効く
-
-    <strong>--as other だけが --scene を取らない。</strong> この軸が見ているのは機械の書きぶりが
-    残っていないかであって、その人らしさではない。繰り返しの少なさは書き手も
-    場面も問わず同じ向きに出るので、この用途に限って両方を跨げる。
-    <strong>目的の側——照合——には一切効かない。</strong>";
-
-const REPLACE: &str = "\
-kakiburi replace <カセット> <ファイル> --id <名前> --source <取り込み元>
-    既にある 1 本を差し替える。<strong>無い名前を渡したら断る。</strong>
-    足すことと差し替えることを分けるのは、上書きを事故ではなく意思にするため。
-    <strong>役も場面も束も変えない</strong>——変えるなら消して add し直す。";
+kakiburi new <カセット> <場面>
+    入れ物を作る。<strong>既に在れば断る。</strong>
+    <strong>1 カセットが 1 場面である。</strong> 場面を分けるならファイルを分ける。
+    <strong>場面は人が指定する</strong>——文章から当てにいかない。";
 
 const DECIDE: &str = "\
-kakiburi decide <カセット> --scene <場面> boilerplate <文字列...>
-kakiburi decide <カセット> --scene <場面> movement <指標> moves|stuck
-    <strong>コーパスから導けないものを書く。</strong> 落とす定型は場面ごとに人が決め、
+kakiburi decide <カセット> boilerplate <文字列...>
+kakiburi decide <カセット> movement <指標> moves|stuck
+    <strong>素材から導けないものを書く。</strong> 落とす定型は人が決め、
     指示して動くかは直させてみて初めて分かる。
     <strong>落とす定型は渡した一覧で置き換える</strong>——足していく形にしない。";
 
 const BUILD: &str = "\
-kakiburi build <カセット> [--scene <場面>] [--json]
-    目盛りを作る。<strong>省くと全場面。</strong>
-    <strong>作らずに終わる条件を持つ</strong>——止まっても失敗ではない。
-    作れたら割りを出す。場面が 2 つ以上あれば、分かれ方も出す。";
+kakiburi build <カセット> --person <フォルダ> [--baseline <フォルダ>]
+                          [--other <フォルダ>] [--json]
+    素材のフォルダを読んで目盛りを作る。<strong>カセットは本文を持たない</strong>ので、
+    作り直すたびにフォルダを読む。
+    <strong>取り込み元は拡張子から決める</strong>——.html は html、ほかは directive-markdown。
+    <strong>作らずに終わる条件を持つ</strong>——止まっても失敗ではない。作れたら割りを出す。
+
+    フォルダは 3 つある。
+      --person    本人の文書。照合の相手集合と天井になる
+      --baseline  基準。LLM の既定出力。床になる。省くと同梱の池
+      --other     <strong>他人の文書。</strong> 人らしさの人の側の較正にだけ効く
+
+    <strong>基準の束ね方は build が決める。</strong> 池の 1 本は地の文 4,500 字あたりで
+    頭打ちになるので、本人に長い記事があると長さの範囲の防護柵に当たる。
+    届かない分は池の記事を束ねて 1 単位にし、<strong>断られたら束ね方を変えて作り直す。</strong>";
 
 const QUICK: &str = "\
 kakiburi quick <本人の記事のフォルダ> [--cassette <カセット>] [--scene <場面>]
                                       [--baseline <基準の池>]
-    フォルダを指すだけで目盛りまで作る。new・scene・add・build をまとめて回す。
-    <strong>取り込み元は拡張子から決める</strong>——.html は html、ほかは directive-markdown。
+    フォルダを指すだけで目盛りまで作る。new と build をまとめて回す。
+    <strong>場面の名前は default</strong>（--scene で変えられる）。検めるたびに打つ名前を
+    道具が日本語で付けない。
 
     基準は<strong>同梱の池から取る</strong>。基準は機械がどう書くかであって書き手ごとに
-    変わらないので、あらかじめ作ったものでよい（[題材の統制](../../../docs/spec/200-extract.md)は
-    対ではなく素材全体に効かせる）。
-
-    <strong>長さの範囲が合うように束ねる。</strong> 池の 1 本は地の文 4,500 字あたりで
-    頭打ちになるので、本人に長い記事があると[長さの範囲](../../../docs/spec/200-extract.md)の
-    防護柵に当たる。届かない分は池の記事を束ねて 1 単位にする。";
+    変わらないので、あらかじめ作ったものでよい——題材の統制は対ではなく素材全体に
+    効かせる。";
 
 const REVIEW: &str = "\
-kakiburi review <ファイル> --cassette <カセット> --scene <場面> --source <取り込み元>
-                           [--json]
+kakiburi review <ファイル> --cassette <カセット> --source <取り込み元> [--json]
     検める。3 値と指摘を返す。
-    <strong>目盛りの無い場面は判定できない（2）を返す</strong>——素材が足りずに作れな
+    <strong>どの場面として検めるかはカセットが言う</strong>——1 カセットが 1 場面なので、
+    入れ物を選ぶことが場面を選ぶことである。
+    <strong>目盛りの無いカセットは判定できない（2）を返す</strong>——素材が足りずに作れな
     かったのは正常な状態である。";
 
 const COMPARE: &str = "\
@@ -178,14 +149,15 @@ kakiburi compare <ファイル>... --source <取り込み元>
 
 const SHOW: &str = "\
 kakiburi show <カセット>
-    コーパス全体の分布を、場面ごと・役ごとに出す。
-    <strong>場面を持たない other は場面の外に並べる。</strong>";
+    中身を出す。場面・世代・暫定値・帯・語彙の大きさ・効く指標・言い回しの表。
+    <strong>本文は持たないので、素材の分布は出ない</strong>——それは build が出す。";
 
 const DOCTOR: &str = "\
 kakiburi doctor <カセット>
-    <strong>自分を検査する。</strong> 本人がいちばん高く出ることが、目盛りが壊れていない
-    ことの最低条件である。指紋・派生物・暫定値もあわせて確かめる。
-    <strong>場面ごとに検める</strong>——まとめれば、1 つの場面の壊れがほかで薄まる。";
+    <strong>カセットを検査する。</strong> 指紋が環境と合っているか、派生物が揃っているか、
+    帯が全体を覆っていないか、暫定値が立っていないか。
+    <strong>素材は要らない。</strong> 本人がいちばん高く出るかは build が測る——
+    そちらは素材を持っているときにしか言えない。";
 
 const METRICS: &str = "\
 kakiburi metrics
@@ -213,12 +185,10 @@ fn print_help() {
     println!();
     println!("作る——たまに動かす");
     println!();
-    println!("  <strong>1 カセットが 1 人である。</strong> 場面ごとの束（トラック）を中に持ち、");
-    println!("  語彙も重みも帯も場面ごとに作る。");
-    println!(
-        "  <strong>quick がまとめているのはこの段である。</strong> 場面を分けるなら順に打つ。"
-    );
-    for s in [NEW, SCENE, ADD, REPLACE, DECIDE, BUILD] {
+    println!("  <strong>1 カセットが 1 場面である。</strong> 語彙も重みも帯も 1 場面ぶんで、");
+    println!("  場面を分けるならファイルを分ける。");
+    println!("  <strong>カセットは本文を持たない。</strong> 素材のフォルダが正本である。");
+    for s in [NEW, DECIDE, BUILD] {
         println!();
         println!("{s}");
     }
@@ -247,29 +217,37 @@ fn print_help() {
 
 /// カセットを作る。
 ///
-/// <strong>1 カセットが 1 人である。</strong> 場面はここでは取らない——場面ごとの束は
-/// [`scene`] が作る。
+/// <strong>1 カセットが 1 場面である。</strong> 場面はここで決まり、以後変わらない——
+/// 場面を分けるならファイルを分ける。
 fn new_cassette(args: &[String]) -> Exit {
-    let Some(path) = args.first() else {
-        eprintln!("カセットの経路を渡す");
+    let (Some(path), Some(scene)) = (args.first(), args.get(1)) else {
+        eprintln!("new <カセット> <場面>");
+        eprintln!("<strong>場面は人が指定する。</strong> 文章から当てにいかない");
         return Exit::Usage;
     };
-    if let Some(other) = args.get(1) {
+    if let Some(other) = args.get(2) {
         eprintln!("知らない引数: {other}");
-        eprintln!("<strong>場面は new では取らない。</strong> scene で作る");
+        return Exit::Usage;
+    }
+    if !kakiburi_cassette::scene_name_ok(scene) {
+        eprintln!("断る: 場面の名前に使えない: {scene}");
         return Exit::Usage;
     }
 
-    let c = Cassette {
+    let mut c = Cassette {
         version: store::VERSION,
         // <strong>置き換えるたびに増える。</strong> 作った時点では 0 で、書けば 1 になる。
         generation: 0,
         fingerprint: current_fingerprint(),
         // <strong>いまは常に暫定値が立つ。</strong> 閾値がまだ導き直されていない。
         provisional: vec!["除外の既定".into(), "帯の端".into(), "語彙の大きさ".into()],
-        corpus: Corpus::new(vec![]),
-        tracks: BTreeMap::new(),
+        scene: scene.clone(),
+        decided: Decided::default(),
+        derived: Derived::dropped(),
     };
+    // <strong>場面は指紋の材料である。</strong> 組み直さなければ、作った直後から
+    // 「環境と合わない」になる——<strong>1 度も使えないカセットが出来上がる。</strong>
+    refresh(&mut c);
 
     // <strong>既に在れば断る。</strong> 素材の取り込みには時間が掛かるうえ、原本は作り直せない
     // ——上書きすれば、取り込んだ単位はそこで消える。
@@ -280,52 +258,13 @@ fn new_cassette(args: &[String]) -> Exit {
     if let Err(e) = save::save(path, &c, None) {
         eprintln!("断る: {e}");
         if matches!(e, save::SaveError::Exists { .. }) {
-            eprintln!("<strong>取り込んだ単位は戻らない</strong>");
+            eprintln!("<strong>人が決めたことは戻らない</strong>");
             return Exit::Usage;
         }
         return Exit::Unreadable;
     }
-    println!("作った: {path}");
-    println!("場面はまだ無い。scene で作る");
-    Exit::Pass
-}
-
-/// 場面を作る。
-///
-/// <strong>場面は人が指定する。</strong> 文章から当てにいかないので、必ず訊く。
-///
-/// <strong>作るだけの操作を分けるのは、`add` で綴りを間違えたときに断れるようにするため
-/// である。</strong>`add` が場面を作れると、`技術記事` を `技術記時` と打っただけで
-/// <strong>誰もいない場面に素材が入り、エラーも出ない。</strong>
-fn scene(args: &[String]) -> Exit {
-    let (Some(path), Some(name)) = (args.first(), args.get(1)) else {
-        eprintln!("scene <カセット> <場面>");
-        return Exit::Usage;
-    };
-    if let Some(other) = args.get(2) {
-        eprintln!("知らない引数: {other}");
-        return Exit::Usage;
-    }
-    if !kakiburi_cassette::scene_name_ok(name) {
-        eprintln!("断る: 場面の名前に使えない: {name}");
-        eprintln!("保存の中では階層の名前になる。`/` と空は使えない");
-        return Exit::Usage;
-    }
-    let (mut c, generation) = match open(path) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if c.tracks.contains_key(name) {
-        eprintln!("断る: 既に在る場面: {name}");
-        return Exit::Usage;
-    }
-    c.track_mut(name);
-    refresh(&mut c);
-    if let Err(e) = store_back(path, &c, generation) {
-        return e;
-    }
-    println!("場面を作った: {name}");
-    println!("場面 {} 個: {}", c.scenes().len(), c.scenes().join("、"));
+    println!("作った: {path}（場面: {scene}）");
+    println!("素材のフォルダを指して build する");
     Exit::Pass
 }
 
@@ -363,440 +302,40 @@ fn store_back(path: &str, c: &Cassette, generation: u64) -> Result<(), Exit> {
     }
 }
 
-/// 文書を入れる。
+/// 読んだ取り込み元を指紋に置く。<strong>足すのではなく、入れ替える。</strong>
 ///
-/// <strong>落ちない入力は断る。</strong> 黙って一部を落として通さない——<strong>1 本でも断ったら
-/// 失敗する</strong>。成功したことにすると、欠けたまま次へ進む。
-fn add(args: &[String]) -> Exit {
-    let Some(path) = args.first() else {
-        eprintln!("カセットの経路を渡す");
-        return Exit::Usage;
-    };
-    let mut files: Vec<String> = Vec::new();
-    let mut source: Option<Source> = None;
-    // <strong>役に既定を置かない。</strong> 取り違えると、対照にしたはずの文書が書き手の帯に
-    // 残る——いちばん高くつく取り違えに既定を与えない。
-    let mut role: Option<Role> = None;
-    let mut scene: Option<String> = None;
-    let mut id: Option<String> = None;
-    let mut unit: Option<String> = None;
-    // 基準の作り方。<strong>`--as baseline` では欠かせない。</strong>
-    let mut model: Option<String> = None;
-    let mut version: Option<String> = None;
-    let mut params: BTreeMap<String, String> = BTreeMap::new();
-    let mut topics: Vec<String> = Vec::new();
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--source" => {
-                let Some(name) = args.get(i + 1).and_then(Source::from_name) else {
-                    eprintln!("対応表に無い取り込み元");
-                    return Exit::Usage;
-                };
-                source = Some(name);
-                i += 2;
-            }
-            "--as" => {
-                role = match args.get(i + 1).map(String::as_str) {
-                    Some("person") => Some(Role::Person),
-                    Some("baseline") => Some(Role::BaselineOutput),
-                    Some("other") => Some(Role::Other),
-                    _ => {
-                        eprintln!("--as は person / baseline / other");
-                        return Exit::Usage;
-                    }
-                };
-                i += 2;
-            }
-            "--scene" => {
-                let Some(v) = args.get(i + 1) else {
-                    eprintln!("--scene に場面を渡す");
-                    return Exit::Usage;
-                };
-                scene = Some(v.clone());
-                i += 2;
-            }
-            "--id" => {
-                let Some(v) = args.get(i + 1) else {
-                    eprintln!("--id に名前を渡す");
-                    return Exit::Usage;
-                };
-                id = Some(v.clone());
-                i += 2;
-            }
-            "--unit" => {
-                let Some(v) = args.get(i + 1) else {
-                    eprintln!("--unit に名前を渡す");
-                    return Exit::Usage;
-                };
-                unit = Some(v.clone());
-                i += 2;
-            }
-            "--model" => {
-                model = args.get(i + 1).cloned();
-                i += 2;
-            }
-            "--version" => {
-                version = args.get(i + 1).cloned();
-                i += 2;
-            }
-            "--param" => {
-                let Some((k, v)) = args.get(i + 1).and_then(|s| s.split_once('=')) else {
-                    eprintln!("--param は <鍵>=<値>");
-                    return Exit::Usage;
-                };
-                params.insert(k.to_owned(), v.to_owned());
-                i += 2;
-            }
-            "--topic" => {
-                let Some(v) = args.get(i + 1) else {
-                    eprintln!("--topic に題材を渡す");
-                    return Exit::Usage;
-                };
-                topics.push(v.clone());
-                i += 2;
-            }
-            f => {
-                files.push(f.to_owned());
-                i += 1;
-            }
-        }
-    }
-    if files.is_empty() {
-        eprintln!("入れるファイルを渡す");
-        return Exit::Usage;
-    }
-    let Some(role) = role else {
-        eprintln!("--as を渡す（person / baseline / other）");
-        eprintln!("<strong>既定を置かない。</strong> 役を取り違えると、対照が書き手の帯に残る");
-        return Exit::Usage;
-    };
-    let Some(source) = source else {
-        return missing_source();
-    };
-    // <strong>`--as other` だけが `--scene` を取らない。</strong> 仕様の「越境はこの用途に限る」を、
-    // 引数の形でそのまま言う——注釈でしか言えていなければ、越境は注意深さで守られる。
-    let belongs = match (role, scene) {
-        (Role::Other, None) => kakiburi_cassette::Belongs::Other,
-        (Role::Other, Some(_)) => {
-            eprintln!("断る: --as other は --scene を取らない");
-            eprintln!("他人の文書が効くのは人らしさの人の側だけで、そこは場面を跨ぐ");
-            return Exit::Usage;
-        }
-        (_, None) => {
-            eprintln!("--scene を渡す（--as other 以外では要る）");
-            eprintln!("<strong>場面は人が指定する。</strong> 文章から当てにいかない");
-            return Exit::Usage;
-        }
-        (Role::Person, Some(s)) => kakiburi_cassette::Belongs::Person { scene: s },
-        (Role::BaselineOutput, Some(s)) => kakiburi_cassette::Belongs::Baseline { scene: s },
-    };
-    // <strong>`--id` は 1 本だけ渡すときにしか書けない。</strong> 複数に同じ名前は付けられない。
-    if id.is_some() && files.len() > 1 {
-        eprintln!("--id は 1 本だけ渡すときに使う");
-        return Exit::Usage;
-    }
-    // <strong>基準は版と推論設定まで記録する。</strong> 外で作ったものでも同じである——
-    // 記録の無い基準で作った値は、次に測ったときに比べられない。
-    if role == Role::BaselineOutput && (model.is_none() || version.is_none()) {
-        eprintln!("--as baseline では --model と --version が要る");
-        eprintln!("<strong>モデル名だけでは足りない。</strong> 版が変われば出力が変わる");
-        return Exit::Usage;
-    }
-
-    let (mut c, generation) = match open(path) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-
-    // <strong>知らない場面には入れない。</strong> `scene` で作っていない場面を受けると、
-    // 綴りを間違えただけで誰もいない場面に素材が入り、エラーも出ない。
-    if let Some(s) = belongs.scene() {
-        if !c.tracks.contains_key(s) {
-            eprintln!("断る: 知らない場面: {s}");
-            eprintln!("先に scene で作る。いまある場面: {}", scenes_or_none(&c));
-            return Exit::Usage;
-        }
-    }
-
-    if role == Role::BaselineOutput {
-        let scene = belongs.scene().unwrap_or_default().to_owned();
-        let next = Baseline {
-            model: model.unwrap_or_default(),
-            version: version.unwrap_or_default(),
-            // <strong>推論設定も外さない。</strong> 省いたときに空で上書きすると、記録してあった
-            // 設定が黙って消える——題材と同じ扱いにする。
-            params: if params.is_empty() {
-                c.track_mut(&scene).decided.baseline.params.clone()
-            } else {
-                params
-            },
-            // <strong>題材は外さない。</strong> 言葉づかいだけで帯が動く。
-            topics: if topics.is_empty() {
-                c.track_mut(&scene).decided.baseline.topics.clone()
-            } else {
-                topics
-            },
-        };
-        // <strong>作り方が変われば、前に入れた基準と混ぜられない。</strong> 黙って上書きしない。
-        //
-        // <strong>見るのはその場面の基準である。</strong> 場面ごとに帯を作るので、別の場面が
-        // 別のモデルで作られていても混ざらない。
-        //
-        // <strong>推論設定まで見る。</strong> 版が同じでも温度が違えば別の出力になる——
-        // 仕様が「版と推論設定まで記録する」と言うのは、そこまでが作り方だからである。
-        let already = &c.track_mut(&scene).decided.baseline;
-        if !already.model.is_empty()
-            && (already.model != next.model
-                || already.version != next.version
-                || already.params != next.params)
-        {
-            eprintln!(
-                "断る: 基準の作り方が違う（{} {} {:?} → {} {} {:?}）",
-                already.model,
-                already.version,
-                already.params,
-                next.model,
-                next.version,
-                next.params
-            );
-            eprintln!("<strong>違う作り方の基準を混ぜない。</strong> 別の場面か別のカセットにする");
-            return Exit::Usage;
-        }
-        c.track_mut(&scene).decided.baseline = next;
-    }
-
-    // <strong>まず全部を読む。</strong> 1 本でも断られたら何も入れない——
-    // 途中まで入った状態を残すと、欠けたまま次へ進む。
-    let mut units = Vec::new();
-    for f in &files {
-        let name = id.clone().unwrap_or_else(|| stem_of(f));
-        let Ok(body) = std::fs::read_to_string(f) else {
-            eprintln!("読めない: {f}");
-            return Exit::Unreadable;
-        };
-        match normalize(&body, source) {
-            Ok(d) => units.push(Unit {
-                // <strong>束ねなければ、測る単位は取り込んだ 1 本と同じである。</strong>
-                unit: unit.clone().unwrap_or_else(|| name.clone()),
-                name,
-                belongs: belongs.clone(),
-                document: d,
-            }),
-            Err(e) => {
-                eprintln!("断る: {f}: {e}");
-                eprintln!("1 本でも断ったら入れない。欠けたまま次へ進まないため");
-                return Exit::Unreadable;
-            }
-        }
-    }
-
-    // <strong>名前の衝突は、書く前に断る。</strong> 黙って上書きすれば、原本が 1 本消えたことは
-    // 値が変わるまで誰も気付かない。
-    if let Err(why) = check_names(&c, &units) {
-        eprintln!("断る: {why}");
-        eprintln!("差し替えたいなら replace を使う");
-        return Exit::Usage;
-    }
-
-    for u in units {
-        c.corpus.push(u);
-    }
-    // <strong>本文が変われば派生物は古い。</strong> 捨てる。
-    //
-    // <strong>他人の文書はどの場面の人らしさにも効くので、全部の場面を捨てる。</strong>
-    // 場面ごとに捨て分けると、越境する素材を足したときだけ捨て漏れる。
-    c.drop_all_derived();
-    note_source(&mut c, source);
-    // <strong>指紋を組み直す。</strong> 派生物を捨てたのだから、語彙と z 得点も空に戻る
-    // ——残せば、次に検めたときに「合っている」と言われる。
-    refresh(&mut c);
-
-    if let Err(e) = store_back(path, &c, generation) {
-        return e;
-    }
-    match belongs.scene() {
-        Some(s) => println!("入れた {} 本。役: {} / 場面: {s}", files.len(), role.dir()),
-        None => println!(
-            "入れた {} 本。役: {}（場面を持たない）",
-            files.len(),
-            role.dir()
-        ),
-    }
-    println!("派生物を捨てた。build し直しが要る");
-    Exit::Pass
-}
-
-/// 取り込み元を指紋に足す。
-///
-/// <strong>本文を入れる道は全部ここを通す。</strong>`add` だけが足して `replace` が足さないと、
-/// 別の取り込み元で差し替えても指紋が古いままになり、<strong>照らしても違いが出ない</strong>
+/// 取り込み元が変われば値が変わるので、<strong>指紋が動かなければ照らしても違いが出ない</strong>
 /// ——[取り込み元を間違えると 0 が並ぶ](../../../docs/spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)
 /// のに、それを検出する唯一の手がかりが動かない。
 ///
-/// <strong>減らす道は持たない。</strong> 単位ごとに取り込み元を持っていないので、最後の 1 本を
-/// 差し替えたことを知る手段が無い。<strong>足したことだけを残す</strong>——多めに名乗るのは
-/// 「この中のどれかで読んだ」であって、嘘ではない。
-fn note_source(c: &mut Cassette, source: Source) {
-    let mut inputs = c.fingerprint.inputs.clone();
-    let sources = &mut inputs.common.normalization.sources;
-    if sources.iter().any(|s| s == source.name()) {
-        return;
-    }
-    sources.push(source.name().to_owned());
+/// <strong>足すだけにしない。</strong> 本文をカセットに溜めていた頃は、最後の 1 本を差し替えた
+/// ことを知る手段が無かったので足すしかなかった。<strong>いまは毎回フォルダを全部読む</strong>
+/// ので、いま読んだものがそのまま正本である——足すだけにすると、<strong>HTML を外して
+/// 作り直しても指紋に HTML が残る。</strong>
+fn set_sources(c: &mut Cassette, files: &[String]) {
+    let mut sources: Vec<String> = files
+        .iter()
+        .map(|f| source_of(f).name().to_owned())
+        .collect();
     sources.sort_unstable();
+    sources.dedup();
+    let mut inputs = c.fingerprint.inputs.clone();
+    inputs.common.normalization.sources = sources;
     c.fingerprint = Fingerprint::build(inputs);
 }
 
 /// 指紋を組み直す。<strong>カセットを変えたら必ず通る。</strong>
 ///
 /// <strong>変えたのに組み直さなければ、次に検めたときに「合っている」と言われる。</strong>
-/// 逆に、変わっていない場面まで巻き添えで「合わない」にもしない——場面ごとの材料が
-/// 分かれているので、動いた場面の欄だけが動く。
 fn refresh(c: &mut Cassette) {
     c.fingerprint = fingerprint_with(c, analyzer::resolve().as_ref());
 }
 
-/// いまある場面。<strong>1 つも無ければそう言う。</strong>
-fn scenes_or_none(c: &Cassette) -> String {
-    if c.tracks.is_empty() {
-        "（まだ無い）".to_owned()
-    } else {
-        c.scenes().join("、")
-    }
-}
-
-/// 文書を差し替える。
+/// カセットの中身を出す。
 ///
-/// <strong>`add` と分けるのは、上書きを事故ではなく意思にするためである。</strong> `add` が上書きも
-/// できると、同じ名前のファイルを 2 度取り込んだだけで<strong>原本が 1 本消える</strong>。
-///
-/// <strong>置き換える先をファイル名から当てにいかない。</strong> 取り込み直すときにファイル名が
-/// 変わっていることは普通にある——`--id` で名指しする。
-fn replace(args: &[String]) -> Exit {
-    let Some(path) = args.first() else {
-        eprintln!("カセットの経路を渡す");
-        return Exit::Usage;
-    };
-    let mut file: Option<String> = None;
-    let mut source: Option<Source> = None;
-    let mut role: Option<Role> = None;
-    let mut id: Option<String> = None;
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--source" => {
-                let Some(name) = args.get(i + 1).and_then(Source::from_name) else {
-                    eprintln!("対応表に無い取り込み元");
-                    return Exit::Usage;
-                };
-                source = Some(name);
-                i += 2;
-            }
-            "--as" => {
-                role = match args.get(i + 1).map(String::as_str) {
-                    Some("person") => Some(Role::Person),
-                    Some("baseline") => Some(Role::BaselineOutput),
-                    Some("other") => Some(Role::Other),
-                    _ => {
-                        eprintln!("--as は person / baseline / other");
-                        return Exit::Usage;
-                    }
-                };
-                i += 2;
-            }
-            "--id" => {
-                id = args.get(i + 1).cloned();
-                i += 2;
-            }
-            f => {
-                if file.is_some() {
-                    eprintln!("1 度に 1 本だけ差し替える");
-                    return Exit::Usage;
-                }
-                file = Some(f.to_owned());
-                i += 1;
-            }
-        }
-    }
-    let (Some(file), Some(id)) = (file, id) else {
-        eprintln!("差し替えるファイルと --id を渡す");
-        return Exit::Usage;
-    };
-    let Some(source) = source else {
-        return missing_source();
-    };
-
-    let (mut c, generation) = match open(path) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-
-    // <strong>無い `id` を渡したら断る。</strong> `add` の綴り間違いで差し替えたことにしない。
-    let Some(old) = c.corpus.find(&id) else {
-        eprintln!("断る: `{id}` はカセットに無い");
-        eprintln!("足すなら add を使う");
-        return Exit::Usage;
-    };
-    // <strong>所属は変えない。</strong> 差し替えは中身の入れ替えであって、役や場面の
-    // 変更ではない——変えたいなら消して入れ直す。
-    if let Some(r) = role {
-        if r != old.role() {
-            eprintln!(
-                "断る: replace で役は変えられない（いま {}）",
-                old.role().dir()
-            );
-            eprintln!("役や場面を変えるなら、消して add し直す");
-            return Exit::Usage;
-        }
-    }
-    let belongs = old.belongs.clone();
-    let unit = old.unit.clone();
-
-    let Ok(body) = std::fs::read_to_string(&file) else {
-        eprintln!("読めない: {file}");
-        return Exit::Unreadable;
-    };
-    let document = match normalize(&body, source) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("断る: {file}: {e}");
-            return Exit::Unreadable;
-        }
-    };
-
-    let role = belongs.role();
-    c.corpus.replace(
-        &id,
-        Unit {
-            name: id.clone(),
-            // <strong>束は変えない。</strong> 差し替えは中身の入れ替えであって、
-            // どの単位に属するかの変更ではない。
-            unit,
-            belongs,
-            document,
-        },
-    );
-    // <strong>本文が変われば派生物は古い。</strong> 捨てる——指紋は測った条件を表すものなので、
-    // 本文を差し替えても変わらない。捨てなければ古い値が有効な顔で読まれる。
-    c.drop_all_derived();
-    // <strong>差し替えでも取り込み元は記録する。</strong>`add` だけが足すと、別の取り込み元で
-    // 差し替えたことが指紋から読めない。
-    note_source(&mut c, source);
-    refresh(&mut c);
-    if let Err(e) = store_back(path, &c, generation) {
-        return e;
-    }
-    println!("差し替えた: {id}（役: {}）", role.dir());
-    println!("派生物を捨てた。build し直しが要る");
-    Exit::Pass
-}
-
-/// コーパス全体の分布を出す。
-///
-/// <strong>場面ごと、役ごとに分けて出す。</strong> 混ぜれば、本人と基準の差がそこで潰れる。
-/// <strong>場面を混ぜても同じことが起きる</strong>——場面ごとに閉じている以上、まとめて出した
-/// 分布は誰のものでもない。
+/// <strong>素材の分布は出ない。</strong> カセットは本文を持たないので、ここで出せるのは
+/// <strong>作り終えた目盛りそのもの</strong>である——素材がどう散らばっていたかは
+/// `build` が読んだその場でしか言えない。
 fn show(args: &[String]) -> Exit {
     let Some(path) = args.first() else {
         eprintln!("カセットの経路を渡す");
@@ -806,63 +345,70 @@ fn show(args: &[String]) -> Exit {
         Ok(v) => v,
         Err(e) => return e,
     };
-    println!("場面: {}", scenes_or_none(&c));
+    println!("場面: {}", c.scene);
     println!("世代: {}", c.generation);
     if !c.provisional.is_empty() {
         println!("暫定値: {}", c.provisional.join("、"));
     }
-    let mecab = analyzer::resolve();
-    let a = mecab
-        .as_ref()
-        .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
-    for scene in c.scenes() {
-        println!();
-        println!("== {scene} ==");
-        let has_scale = c.track(scene).is_some_and(|t| t.derived.has_scale());
-        println!("目盛り: {}", if has_scale { "ある" } else { "無い" });
-        for role in [Role::Person, Role::BaselineOutput] {
-            let units = stripped(&c, scene, role);
-            if units.is_empty() {
-                continue;
-            }
-            println!();
-            println!("{} — {} 単位", role.dir(), units.len());
-            print_distribution(&rows(&samples(&units), a));
-        }
+    if !c.decided.boilerplate.is_empty() {
+        println!("落とす定型: {}", c.decided.boilerplate.join("、"));
     }
-    // <strong>他人の文書は場面の外に出す。</strong> どれか 1 つの場面の下に並べれば、
-    // その場面のものだと読める。
-    let others = stripped_others(&c);
-    if !others.is_empty() {
-        println!();
-        println!("== 場面を持たない ==");
-        println!(
-            "other — {} 単位（人らしさの人の側にだけ効く）",
-            others.len()
-        );
-        print_distribution(&rows(&samples(&others), a));
+    let stuck: Vec<&str> = c
+        .decided
+        .movement
+        .iter()
+        .filter(|(_, m)| **m == kakiburi_cassette::Movement::Stuck)
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if !stuck.is_empty() {
+        println!("動かないと分かった指標: {}", stuck.join("、"));
     }
+
+    println!();
+    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
+        println!("目盛り: 無い。素材のフォルダを指して build する");
+        return Exit::Pass;
+    };
+    println!("目盛り: ある");
+    for (name, set) in &scale.frozen {
+        println!("  {name:<12} {:>5} 次元", set.len());
+    }
+    println!(
+        "照合値の帯: 天井 {:.3}〜{:.3} / 床 {:.3}〜{:.3}",
+        scale.band.ceiling.low, scale.band.ceiling.high, scale.band.floor.low, scale.band.floor.high
+    );
+    println!(
+        "人らしさの帯: 人 {:.3}〜{:.3} / 機械 {:.3}〜{:.3}",
+        scale.humanness_band.ceiling.low,
+        scale.humanness_band.ceiling.high,
+        scale.humanness_band.floor.low,
+        scale.humanness_band.floor.high
+    );
+    for line in selection_lines(&scale.selection) {
+        println!("{line}");
+    }
+    if let Some(effective) = c
+        .derived
+        .spread
+        .as_deref()
+        .zip(c.derived.effective.as_deref())
+        .and_then(|(s, e)| effective_json::read(s, e))
+    {
+        let works = effective.iter().filter(|e| e.works()).count();
+        println!("効く指標: {works} / {} 本", effective.len());
+    }
+    // <strong>言い回しの表は本文の代わりである。</strong> 何本畳んであるかを出さなければ、
+    // 繰り返しの上限が言えるかどうかが読めない。
+    println!("言い回しの表: {} 本", phrase_table_len(&c));
     Exit::Pass
 }
 
-/// 指標ごとの分布を出す。<strong>測れた単位の数も添える。</strong>
-///
-/// 数を出さなければ、幅が狭いのか素材が少ないのかが読めない。
-fn print_distribution(rows: &[kakiburi_scale::effective::Row]) {
-    let mut seen: BTreeMap<String, Vec<f64>> = BTreeMap::new();
-    for row in rows {
-        for (name, v) in row {
-            if let Some(v) = v {
-                seen.entry(name.clone()).or_default().push(*v);
-            }
-        }
-    }
-    println!("  {:<28} {:>9} {:>9} {:>6}", "指標", "最小", "最大", "単位");
-    for (name, vs) in seen {
-        let low = vs.iter().copied().fold(f64::INFINITY, f64::min);
-        let high = vs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        println!("  {name:<28} {low:>9.3} {high:>9.3} {:>6}", vs.len());
-    }
+/// 言い回しの表に入っている本数。
+fn phrase_table_len(c: &Cassette) -> usize {
+    c.derived
+        .phrases
+        .as_deref()
+        .map_or(0, |s| s.lines().filter(|l| !l.trim().is_empty()).count())
 }
 
 /// 並べて比べる。
@@ -949,10 +495,11 @@ fn cut(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-/// 自分を検査する。
+/// カセットを検査する。
 ///
-/// <strong>本人がいちばん高く出ることが、目盛りが壊れていないことの最低条件である。</strong>
-/// 生成文より低く出る指標があれば、測っているのは著者性ではなく指示追従である。
+/// <strong>素材は要らない。</strong> 本人がいちばん高く出るかは [`build`] が測る——
+/// そちらは素材を持っているときにしか言えない。ここで見るのは、<strong>カセット単体で
+/// 矛盾していないか</strong>である。
 fn doctor(args: &[String]) -> Exit {
     let Some(path) = args.first() else {
         eprintln!("カセットの経路を渡す");
@@ -963,6 +510,7 @@ fn doctor(args: &[String]) -> Exit {
         Err(e) => return e,
     };
     let mut bad = 0usize;
+    println!("場面: {}", c.scene);
 
     // 1. 指紋が現在の環境と合っているか。<strong>共通部分だけを見る。</strong>
     match check_fingerprint(&c) {
@@ -981,19 +529,69 @@ fn doctor(args: &[String]) -> Exit {
         println!("  判定に但し書きが付く");
     }
 
-    if c.tracks.is_empty() {
-        println!();
-        println!("場面がまだ無い。scene で作る");
-        return if bad == 0 { Exit::Pass } else { Exit::Unknown };
+    // 3. 派生物が揃っているか。<strong>片方だけあるのは壊れている。</strong>
+    let has_scale = c.derived.scale.is_some();
+    let has_effective = c.derived.effective.is_some() && c.derived.spread.is_some();
+    println!(
+        "派生物: 目盛り {} / 効くかの判定 {}",
+        if has_scale { "あり" } else { "無し" },
+        if has_effective { "あり" } else { "無し" }
+    );
+    if has_scale != has_effective {
+        println!("  <strong>片方だけある。</strong> build し直しが要る");
+        bad += 1;
     }
 
-    // 3. 場面ごとに検める。<strong>まとめて 1 つの判定にしない</strong>——1 つの場面が
-    //    壊れていることが、ほかの場面の健全さで薄まる。
-    for scene in c.scenes() {
-        println!();
-        println!("== {scene} ==");
-        bad += doctor_scene(&c, scene);
+    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
+        println!("目盛りが無い。素材のフォルダを指して build する");
+        return if bad == 0 { Exit::Pass } else { Exit::Unknown };
+    };
+
+    // 4. 帯が全体を覆っていないか。<strong>覆っていれば「判定できない」しか返らない。</strong>
+    //    仮説が成り立っていない書き手・場面では、それがここに出る。
+    for (name, band) in [
+        ("照合値", scale.band),
+        ("人らしさ値", scale.humanness_band),
+    ] {
+        println!(
+            "{name}の帯: 天井 {:.3}〜{:.3} / 床 {:.3}〜{:.3}",
+            band.ceiling.low, band.ceiling.high, band.floor.low, band.floor.high
+        );
+        if band.floor.high >= band.ceiling.low {
+            println!("  <strong>帯が重なっている。</strong> 本人と基準が分かれていない");
+            bad += 1;
+        }
     }
+
+    // 5. 相手集合のベクトルが噛み合っているか。<strong>本数だけでは足りない。</strong>
+    if scale.partner_vectors_ok() {
+        println!("相手集合のベクトル: {} 本", scale.partner_vectors.len());
+    } else {
+        println!("相手集合のベクトル: <strong>目盛りと噛み合わない</strong>");
+        println!("  照合値が出せない。build し直しが要る");
+        bad += 1;
+    }
+
+    // 6. 言い回しの表があるか。<strong>本文の代わりなので、無ければ上限を言えない。</strong>
+    //
+    // <strong>空の表と、表が無いことを分ける。</strong> 2 つ以上の単位に現れる言い回しが
+    // 無ければ表は正しく空になる——<strong>それを壊れと言えば、build し直しても直らない
+    // ことを要求することになる。</strong>
+    match c.derived.phrases.as_deref() {
+        None => {
+            println!("言い回しの表: 無い");
+            println!("  <strong>繰り返しの上限を言えない。</strong> build し直しが要る");
+            bad += 1;
+        }
+        Some(_) => {
+            let phrases = phrase_table_len(&c);
+            println!("言い回しの表: {phrases} 本");
+            if phrases == 0 {
+                println!("  <strong>正常な状態である。</strong> 2 つ以上の単位に現れる言い回しが無い");
+            }
+        }
+    }
+
     if bad == 0 {
         Exit::Pass
     } else {
@@ -1013,87 +611,58 @@ const HIGHER_RATE_FLOOR: f64 = 0.95;
 /// 逆に出た対を、いくつまで名指しするか。
 const INVERTED_SHOWN: usize = 5;
 
-/// 1 つの場面を検める。<strong>おかしかった数を返す。</strong>
-fn doctor_scene(c: &Cassette, scene: &str) -> usize {
-    let mut bad = 0usize;
-    let derived = c.track(scene).map(|t| &t.derived);
-    let has_scale = derived.is_some_and(|d| d.scale.is_some());
-    let has_effective = derived.is_some_and(|d| d.effective.is_some() && d.spread.is_some());
-    println!(
-        "派生物: 目盛り {} / 効くかの判定 {}",
-        if has_scale { "あり" } else { "無し" },
-        if has_effective { "あり" } else { "無し" }
-    );
-    if has_scale != has_effective {
-        println!("  <strong>片方だけある。</strong> build し直しが要る");
-        bad += 1;
-    }
-
-    let Some(scale) = derived
-        .and_then(|d| d.scale.as_deref())
-        .and_then(scale_json::read)
-    else {
-        println!("目盛りが無いので、本人の側が高く出るかは確かめられない");
-        return bad;
-    };
-    let person = stripped(c, scene, Role::Person);
-    let person = samples(&person);
-    let partners: Vec<Sample<'_>> = person
-        .iter()
-        .filter(|s| scale.partners().iter().any(|n| n == s.name))
-        .copied()
-        .collect();
-    let mecab = analyzer::resolve();
-    let a = mecab
-        .as_ref()
-        .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
+/// 本人がいちばん高く出るかを検める。<strong>おかしかった数を返す。</strong>
+///
+/// <strong>素材を持っている `build` の側でやる。</strong> カセットは本文を持たないので、
+/// 作り終えたあとにこれを測り直す道が無い——<strong>測れる唯一の瞬間がここである。</strong>
+fn check_person_higher(
+    scale: &Scale,
+    person: &[Sample<'_>],
+    baseline: &[Sample<'_>],
+    a: Option<&dyn kakiburi_metrics::morph::Analyzer>,
+    say: &dyn Fn(String),
+) -> usize {
+    // <strong>相手集合そのものは測らない。</strong> 自分との距離を測ることになる。
     let side = |samples: &[Sample<'_>]| -> Vec<(String, f64)> {
         samples
             .iter()
-            .filter(|s| !partners.iter().any(|p| p.name == s.name))
+            .filter(|s| !scale.partners().iter().any(|n| n == s.name))
             .filter_map(|s| {
-                measure_against(&scale, *s, &partners, a)
+                measure_against(scale, *s, a)
                     .matching
                     .map(|v| (s.name.to_owned(), v))
             })
             .collect()
     };
-    let baseline_units = stripped(c, scene, Role::BaselineOutput);
-    let mine = side(&person);
-    let theirs = side(&samples(&baseline_units));
+    let mine = side(person);
+    let theirs = side(baseline);
     if mine.is_empty() || theirs.is_empty() {
-        println!("照合値を出せる単位が足りない");
-        return bad;
+        say("自己検査: 照合値を出せる単位が足りない".to_owned());
+        return 0;
     }
     let (rate, inverted) = higher_rate(&mine, &theirs);
-    let lowest = mine.iter().map(|(_, v)| *v).fold(f64::INFINITY, f64::min);
-    let highest = theirs
-        .iter()
-        .map(|(_, v)| *v)
-        .fold(f64::NEG_INFINITY, f64::max);
-    println!("本人の最小: {lowest:.3} / 基準の最大: {highest:.3}");
-    println!(
-        "本人が高く出た対: {rate:.3}（{} 対中 {} 対が逆、下限 {HIGHER_RATE_FLOOR:.2} は暫定値）",
+    say(format!(
+        "自己検査: 本人が高く出た対 {rate:.3}（{} 対中 {} 対が逆、下限 {HIGHER_RATE_FLOOR:.2} は暫定値）",
         mine.len() * theirs.len(),
         inverted.len()
-    );
+    ));
     // <strong>逆に出た対を名指しする。</strong> 割合だけでは、目盛り全体が緩んでいるのか
     // 1 本の単位が外れているのかが分からない。
     for (p, pv, b, bv) in inverted.iter().take(INVERTED_SHOWN) {
-        println!("  {p} ({pv:.3}) ≦ {b} ({bv:.3})");
+        say(format!("  {p} ({pv:.3}) ≦ {b} ({bv:.3})"));
     }
     if inverted.len() > INVERTED_SHOWN {
-        println!("  ほか {} 対", inverted.len() - INVERTED_SHOWN);
+        say(format!("  ほか {} 対", inverted.len() - INVERTED_SHOWN));
     }
     if rate >= HIGHER_RATE_FLOOR {
-        println!("<strong>本人が高く出ている。</strong> 目盛りは壊れていない");
+        0
     } else {
-        println!("<strong>基準のほうが高く出る対が多すぎる。</strong> 目盛りを疑う");
-        println!("  測っているのは著者性ではなく指示追従かもしれない");
-        bad += 1;
+        say("  <strong>基準のほうが高く出る対が多すぎる。</strong> 目盛りを疑う".to_owned());
+        say("  測っているのは著者性ではなく指示追従かもしれない".to_owned());
+        1
     }
-    bad
 }
+
 
 /// 本人が基準より高く出た対の割合。<strong>逆に出た対も返す。</strong>
 ///
@@ -1131,77 +700,42 @@ fn higher_rate(
 
 /// 人が決めたことを書く。
 ///
-/// <strong>コーパスから導けないものだけがここに来る。</strong> 落とす定型は場面ごとに人が決める
-/// ものであり、指示して動くかは直させてみて初めて分かる。
+/// <strong>素材から導けないものだけがここに来る。</strong> 落とす定型は人が決めるもので
+/// あり、指示して動くかは直させてみて初めて分かる。
+///
+/// <strong>場面は取らない。</strong> 1 カセットが 1 場面なので、入れ物を選ぶことが場面を
+/// 選ぶことである。
 fn decide(args: &[String]) -> Exit {
     let Some(path) = args.first() else {
         eprintln!("カセットの経路を渡す");
         return Exit::Usage;
     };
-    // <strong>決めることはすべて場面ごとである。</strong> 場面を省いた `decide` は、どの場面の
-    // ことかが決まらない——既定を置けば、いちばん打つ回数の多い操作が静かに別の場面へ
-    // 掛かる。
-    let mut rest: Vec<String> = Vec::new();
-    let mut scene: Option<String> = None;
-    let mut i = 1;
-    while i < args.len() {
-        if args[i] == "--scene" {
-            let Some(v) = args.get(i + 1) else {
-                eprintln!("--scene に場面を渡す");
-                return Exit::Usage;
-            };
-            scene = Some(v.clone());
-            i += 2;
-            continue;
-        }
-        rest.push(args[i].clone());
-        i += 1;
-    }
-    let Some(scene) = scene else {
-        eprintln!("--scene を渡す。決めることは場面ごとである");
-        return Exit::Usage;
-    };
+    let rest = &args[1..];
     match rest.first().map(String::as_str) {
-        Some("boilerplate") => decide_boilerplate(path, &scene, &rest[1..]),
-        Some("movement") => decide_movement(path, &scene, &rest[1..]),
+        Some("boilerplate") => decide_boilerplate(path, &rest[1..]),
+        Some("movement") => decide_movement(path, &rest[1..]),
         _ => {
             eprintln!(
-                "decide <カセット> --scene <場面> boilerplate <文字列...>\n\
-                 decide <カセット> --scene <場面> movement <指標> moves|stuck"
+                "decide <カセット> boilerplate <文字列...>\n\
+                 decide <カセット> movement <指標> moves|stuck"
             );
             Exit::Usage
         }
     }
 }
 
-/// その場面がカセットにあるか。<strong>無ければ断る。</strong>
-fn known_scene(c: &Cassette, scene: &str) -> Result<(), Exit> {
-    if c.tracks.contains_key(scene) {
-        return Ok(());
-    }
-    eprintln!("断る: 知らない場面: {scene}");
-    eprintln!("いまある場面: {}", scenes_or_none(c));
-    Err(Exit::Usage)
-}
-
 /// 落とす定型を決める。<strong>渡した一覧で置き換える。</strong>
 ///
 /// 足すのではなく置き換えるのは、<strong>いま何を落としているかが 1 度で読める</strong>ようにする
 /// ためである。積み上げると、消すのに別の操作が要る。
-fn decide_boilerplate(path: &str, scene: &str, words: &[String]) -> Exit {
+fn decide_boilerplate(path: &str, words: &[String]) -> Exit {
     let (mut c, generation) = match open(path) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    if let Err(e) = known_scene(&c, scene) {
-        return e;
-    }
-    c.track_mut(scene).decided.boilerplate = words.to_vec();
+    c.decided.boilerplate = words.to_vec();
     // <strong>落とす範囲が変われば値が変わる。</strong> 派生物を捨てる。
-    //
-    // <strong>捨てるのはその場面だけである。</strong> 落とす定型は場面ごとに人が決めたもので、
-    // ほかの場面の値には掛かっていない。
-    c.drop_derived(scene);
+    c.drop_derived();
     refresh(&mut c);
     if let Err(e) = store_back(path, &c, generation) {
         return e;
@@ -1223,7 +757,7 @@ fn decide_boilerplate(path: &str, scene: &str, words: &[String]) -> Exit {
 /// <strong>照合値が動かなかったことを根拠にしない。</strong> 照合値は 1 つの切り口には鈍く、
 /// 指摘が正しく通じても動かないことがある。混ぜれば、効いている指標を `stuck` にして
 /// 捨てる。
-fn decide_movement(path: &str, scene: &str, args: &[String]) -> Exit {
+fn decide_movement(path: &str, args: &[String]) -> Exit {
     let (Some(metric), Some(state)) = (args.first(), args.get(1)) else {
         eprintln!("decide movement <指標> moves|stuck");
         return Exit::Usage;
@@ -1249,21 +783,15 @@ fn decide_movement(path: &str, scene: &str, args: &[String]) -> Exit {
         Ok(v) => v,
         Err(e) => return e,
     };
-    if let Err(e) = known_scene(&c, scene) {
-        return e;
-    }
-    c.track_mut(scene)
-        .decided
-        .movement
-        .insert(metric.clone(), state);
+    c.decided.movement.insert(metric.clone(), state);
 
     // <strong>前に出す指標は movement から導く派生物である。</strong> 書き換えたのに作り直さな
     // ければ、`stuck` にした指標が指摘に出続ける。
     //
     // 値も目盛りも movement では変わらないので、<strong>作り直すのはここだけである。</strong>
-    let dropped = c.track_mut(scene).derived.effective.is_some();
-    c.track_mut(scene).derived.effective = None;
-    c.track_mut(scene).derived.spread = None;
+    let dropped = c.derived.effective.is_some();
+    c.derived.effective = None;
+    c.derived.spread = None;
     refresh(&mut c);
     if let Err(e) = store_back(path, &c, generation) {
         return e;
@@ -1288,65 +816,23 @@ fn stem_of(f: &str) -> String {
         .map_or_else(|| f.to_owned(), |s| s.to_string_lossy().into_owned())
 }
 
-/// 入れようとしている単位の名前を検める。
-///
-/// <strong>名前はカセット全体で一意である。</strong> 役で名前空間を分けない——分ければ、
-/// 本人の `Rust入門` と基準の `Rust入門` が別物として通る。
-/// [題材を揃える](../../../docs/spec/200-extract.md#題材の統制は対ではなく素材に効かせる)ほど
-/// 同じ名前が付きやすいので、<strong>いちばん正しく集めた人がいちばん踏む。</strong>
-fn check_names(c: &Cassette, adding: &[Unit]) -> Result<(), String> {
-    let mut names: std::collections::BTreeSet<&str> = c.corpus.names().collect();
-    for u in adding {
-        if !names.insert(u.name.as_str()) {
-            return Err(format!("`{}` は既にある", u.name));
-        }
-    }
-
-    // <strong>束ねた文書は同じ `unit` を共有する。</strong> だから単純な重複拒否にはできない。
-    // <strong>だが所属を跨いだ共有は断る</strong>——1 つの単位が本人でも基準でも、
-    // 技術記事でもチャットでもあることになる。
-    let mut units: BTreeMap<&str, &kakiburi_cassette::Belongs> = BTreeMap::new();
-    for u in adding {
-        if let Some(other) = units.insert(u.unit.as_str(), &u.belongs) {
-            if *other != u.belongs {
-                return Err(format!("単位 `{}` が所属を跨いでいる", u.unit));
-            }
-        }
-    }
-    // カセットに入っている側とも照らす。<strong>束は追加で伸びる。</strong>
-    for scene in c.scenes() {
-        for role in [Role::Person, Role::BaselineOutput] {
-            for u in c.corpus.in_scene(scene, role) {
-                if let Some(b) = units.get(u.unit.as_str()) {
-                    if **b != u.belongs {
-                        return Err(format!("単位 `{}` が所属を跨いでいる", u.unit));
-                    }
-                }
-            }
-        }
-    }
-    for u in c.corpus.for_humanness() {
-        if let Some(b) = units.get(u.unit.as_str()) {
-            if **b != u.belongs {
-                return Err(format!("単位 `{}` が所属を跨いでいる", u.unit));
-            }
-        }
-    }
-    Ok(())
-}
-
 /// フォルダを指すだけで目盛りまで作る。
 ///
-/// <strong>新しい経路を作らない。</strong> `new` / `scene` / `add` / `build` をそのまま呼ぶ——
-/// 別の道を作れば、そちらだけが古くなる。
+/// <strong>新しい経路を作らない。</strong>`new` と `build` をそのまま呼ぶ——別の道を作れば、
+/// そちらだけが古くなる。
 fn quick(args: &[String]) -> Exit {
     let Some(dir) = args.first() else {
         eprintln!("本人の記事が入ったフォルダを渡す");
         return Exit::Usage;
     };
     let mut cassette: Option<String> = None;
-    let mut scene_name = "既定".to_owned();
+    // <strong>言われた場面と、既定の場面を分けて持つ。</strong> 既にあるカセットの場面と
+    // 食い違ったときに、<strong>人が名乗ったのか道具が埋めたのかで扱いが違う。</strong>
+    let mut scene_name: Option<String> = None;
     let mut pool_dir: Option<String> = None;
+    // <strong>基準の来歴はそのまま通す。</strong> 外から池を渡すなら `build` が版を要求する
+    // ので、<strong>quick に渡す道が無ければ `--baseline` が必ず落ちる。</strong>
+    let mut provenance: Vec<String> = Vec::new();
     let mut i = 1;
     while i < args.len() {
         let Some(v) = args.get(i + 1) else {
@@ -1355,8 +841,11 @@ fn quick(args: &[String]) -> Exit {
         };
         match args[i].as_str() {
             "--cassette" => cassette = Some(v.clone()),
-            "--scene" => scene_name = v.clone(),
+            "--scene" => scene_name = Some(v.clone()),
             "--baseline" => pool_dir = Some(v.clone()),
+            flag @ ("--model" | "--version" | "--param" | "--topic") => {
+                provenance.extend([flag.to_owned(), v.clone()]);
+            }
             other => {
                 eprintln!("知らない引数: {other}");
                 return Exit::Usage;
@@ -1365,86 +854,215 @@ fn quick(args: &[String]) -> Exit {
         i += 2;
     }
     let cassette = cassette.unwrap_or_else(|| format!("{dir}.kb"));
-    let Some(pool) = pool_dir.or_else(baseline_pool) else {
-        eprintln!("基準の池が見つからない。--baseline で渡すか KAKIBURI_BASELINES を指す");
-        return Exit::Usage;
-    };
-
-    let person = readable_files(dir);
-    if person.is_empty() {
+    if readable_files(dir).is_empty() {
         eprintln!("記事が 1 本も見つからない: {dir}");
         return Exit::Unreadable;
     }
-    let pool_files = readable_files(&pool);
-    if pool_files.is_empty() {
-        eprintln!("基準の池が空: {pool}");
-        return Exit::Unreadable;
+
+    // <strong>在るものを消さない。</strong> 消してよいかは、読んでみるまで分からない
+    // ——カセットでないファイルを指されたら、<strong>それは人の別のファイルである。</strong>
+    //
+    // <strong>カセットだったとしても消さない。</strong>[人が決めたこと](kakiburi_cassette::Decided)は
+    // 作り直せないので、落とす定型も動かない指標もそこで消える。<strong>目盛りは
+    // `build` が入れ替える</strong>ので、消す理由がそもそも無い。
+    if std::path::Path::new(&cassette).exists() {
+        let (existing, _) = match open(&cassette) {
+            Ok(v) => v,
+            Err(_) => {
+                eprintln!("断る: 既に在るが、カセットとして読めない: {cassette}");
+                eprintln!("<strong>消さない。</strong> 別の経路を --cassette で渡す");
+                return Exit::Usage;
+            }
+        };
+        // <strong>場面の食い違いは断る。</strong> 別の場面の目盛りを、名乗りだけ
+        // 据え置いて作り直せば、<strong>中身と名前が合わないカセットになる。</strong>
+        if let Some(asked) = &scene_name {
+            if asked != &existing.scene {
+                eprintln!(
+                    "断る: 既に在るカセットの場面が違う（{} / 言われたのは {asked}）",
+                    existing.scene
+                );
+                eprintln!("<strong>場面はファイルで分ける。</strong> --cassette で別の経路を渡す");
+                return Exit::Usage;
+            }
+        }
+        say_reuse(&cassette, &existing.scene);
+    } else if run(&[
+        "new".to_owned(),
+        cassette.clone(),
+        scene_name.unwrap_or_else(|| DEFAULT_SCENE.to_owned()),
+    ]) != Exit::Pass
+    {
+        return Exit::Usage;
     }
 
-    for step in [
-        vec!["new".to_owned(), cassette.clone()],
-        vec!["scene".to_owned(), cassette.clone(), scene_name.clone()],
-    ] {
-        if run(&step) != Exit::Pass {
-            return Exit::Usage;
-        }
+    let mut a = vec![
+        "build".to_owned(),
+        cassette,
+        "--person".to_owned(),
+        dir.clone(),
+    ];
+    // <strong>池は build に探させる。</strong> ここで解決して渡すと、同梱の池まで
+    // 「外から渡された基準」になり、版を名乗れと言われる。
+    if let Some(pool) = pool_dir {
+        a.extend(["--baseline".to_owned(), pool]);
     }
-
-    // <strong>取り込み元は拡張子から決める。</strong> `add` が既定を置かないのは取り違えを
-    // 静かに通さないためで、拡張子から決めるのは既定ではなく判別である。
-    for (src, files) in group_by_source(&person) {
-        let mut a = vec!["add".to_owned(), cassette.clone()];
-        a.extend(files);
-        a.extend(["--as", "person", "--scene", &scene_name, "--source", src].map(str::to_owned));
-        if run(&a) != Exit::Pass {
-            return Exit::Usage;
-        }
-    }
-
-    // <strong>題材で選んでから、長さで束ねる。</strong> 逆にすると、題材の合わない分を
-    // 束ねてから捨てることになる。
-    let picked = pick_by_topic(&person, &pool_files, POOL_TAKE);
-    let pool_files: Vec<String> = picked.iter().map(|&i| pool_files[i].clone()).collect();
-    println!("基準を池から {} 本選んだ（題材の近い順）", pool_files.len());
-
-    let plan = bundle_plan(&japanese_chars_of(&person), &japanese_chars_of(&pool_files));
-    let bundled = plan.iter().filter(|g| g.len() > 1).count();
-    if bundled > 0 {
-        println!("基準のうち {bundled} 単位を束ねる。本人の長い記事に、池の 1 本では届かない");
-    }
-    for (n, group) in plan.iter().enumerate() {
-        let mut a = vec!["add".to_owned(), cassette.clone()];
-        a.extend(group.iter().map(|&i| pool_files[i].clone()));
-        a.extend(
-            [
-                "--as",
-                "baseline",
-                "--scene",
-                &scene_name,
-                "--source",
-                "plain-markdown",
-                "--model",
-                "同梱の池",
-                "--version",
-                POOL_VERSION,
-            ]
-            .map(str::to_owned),
-        );
-        if group.len() > 1 {
-            a.extend(["--unit".to_owned(), format!("pool{n:03}")]);
-        }
-        if run(&a) != Exit::Pass {
-            return Exit::Usage;
-        }
-    }
-    run(&["build".to_owned(), cassette])
+    a.extend(provenance);
+    run(&a)
 }
 
-/// 同梱の池の版。<strong>指紋に入る。</strong>
+/// 作り直すときに、何を引き継ぐかを言う。
+fn say_reuse(cassette: &str, scene: &str) {
+    println!("既に在るカセットに作り直す: {cassette}（場面: {scene}）");
+    println!("人が決めたことは引き継ぐ。目盛りだけ作り直す");
+}
+
+/// `quick` が作る場面の名前。
 ///
-/// 池を作り直したら上げる——<strong>上げなければ、中身が変わったのに過去の値と
-/// 比べられてしまう。</strong>
-const POOL_VERSION: &str = "2026-09";
+/// <strong>半角で名付ける。</strong> 道具が勝手に作る名前を日本語にしない
+/// ——<strong>打ちにくい名前は道具の側の落ち度である。</strong>
+const DEFAULT_SCENE: &str = "default";
+
+/// この文章が繰り返している言い回しと、その回数。
+///
+/// <strong>繰り返していないものは見ない。</strong> 1 度きりの言い回しは書きぶりではなく、
+/// その文章の題材である。
+const DRAFT_REPEAT: usize = 3;
+
+/// <strong>上限を渡す先を、道具が勧めた言い回しに限らない。</strong>
+///
+/// 受け取った側は勧められていない言い回しでも足す——人らしさを通すために語尾を
+/// 揃えるのが、いちばん安い手だからである。<strong>そこを見ていなければ、道具は自分が
+/// 誘発した水増しを見逃す。</strong>
+fn repeated_in_draft(analyzed: Option<&kakiburi_metrics::morph::Analyzed>) -> Vec<(String, usize)> {
+    let mut n: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for (g, _, _) in
+        kakiburi_metrics::word::grams_with_position(analyzed, &kakiburi_scale::assemble::KATA_N)
+    {
+        *n.entry(g).or_insert(0) += 1;
+    }
+    let mut out: Vec<(String, usize)> = n
+        .into_iter()
+        .filter(|(text, times)| *times >= DRAFT_REPEAT && text.chars().count() >= 4)
+        .collect();
+    // <strong>長いほうを先に採る。</strong> 短い並びはその一部なので、両方出すと同じ指摘が重なる。
+    out.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then_with(|| b.0.chars().count().cmp(&a.0.chars().count()))
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    let mut kept: Vec<(String, usize)> = Vec::new();
+    for (text, times) in out {
+        if kept.iter().any(|(k, _)| k.contains(&text)) {
+            continue;
+        }
+        kept.push((text, times));
+    }
+    kept
+}
+
+/// 本人がその言い回しを使う、日本語 1,000 字あたりの最大。
+///
+/// <strong>カセットの[言い回しの表](kakiburi_cassette::Derived::phrases)を引く。</strong>
+/// <strong>表に無いものは 0 である</strong>——1 つの単位にしか出てこない言い回しは上限が
+/// ほぼ 0 なので、持たないのと同じ結論になる。本人が一度も使っていない言い回しを
+/// 草稿が繰り返していれば、表に無いことがそのまま指摘になる。
+fn person_ceiling(table: &BTreeMap<String, f64>, phrase: &str) -> f64 {
+    table.get(phrase).copied().unwrap_or(0.0)
+}
+
+/// 言い回しの表を読む。<strong>読めない行は落とす。</strong>
+fn read_phrase_table(c: &Cassette) -> BTreeMap<String, f64> {
+    let mut out = BTreeMap::new();
+    let Some(body) = c.derived.phrases.as_deref() else {
+        return out;
+    };
+    for line in body.lines() {
+        let Ok(v) = kakiburi_cassette::json::parse(line) else {
+            continue;
+        };
+        let (Some(text), Some(ceiling)) = (
+            v.get("text").and_then(kakiburi_cassette::json::Value::as_str),
+            v.get("ceiling")
+                .and_then(kakiburi_cassette::json::Value::as_f64),
+        ) else {
+            continue;
+        };
+        out.insert(text.to_owned(), ceiling);
+    }
+    out
+}
+
+/// 言い回しの表を作る。<strong>本文の代わりである。</strong>
+///
+/// <strong>2 つ以上の単位に現れるものだけを持つ。</strong> 1 つの単位にしか出てこない
+/// 言い回しは、その記事の題材であって書きぶりではない——持っても上限がほぼ 0 で、
+/// 持たないのと同じ結論になる。
+fn phrase_table(
+    units: &[(String, kakiburi_doc::Document)],
+    a: Option<&dyn kakiburi_metrics::morph::Analyzer>,
+) -> String {
+    let mut seen: BTreeMap<String, (usize, f64)> = BTreeMap::new();
+    for (_, doc) in units {
+        let chars = doc.japanese_chars();
+        if chars == 0 {
+            continue;
+        }
+        let analyzed = analyzed_of(&doc.prose(), a);
+        let mut here: BTreeMap<String, usize> = BTreeMap::new();
+        for (g, _, _) in kakiburi_metrics::word::grams_with_position(
+            analyzed.as_ref(),
+            &kakiburi_scale::assemble::KATA_N,
+        ) {
+            if g.chars().count() < PHRASE_CHARS {
+                continue;
+            }
+            *here.entry(g).or_insert(0) += 1;
+        }
+        for (text, times) in here {
+            #[allow(clippy::cast_precision_loss)]
+            let rate = 1000.0 * times as f64 / chars as f64;
+            let e = seen.entry(text).or_insert((0, 0.0));
+            e.0 += 1;
+            if rate > e.1 {
+                e.1 = rate;
+            }
+        }
+    }
+    let mut out = String::new();
+    for (text, (units_seen, ceiling)) in seen {
+        if units_seen < PHRASE_UNITS {
+            continue;
+        }
+        out.push_str(
+            &kakiburi_cassette::json::Value::obj([
+                ("text".to_owned(), kakiburi_cassette::json::Value::s(&text)),
+                (
+                    "ceiling".to_owned(),
+                    kakiburi_cassette::json::Value::Number(ceiling),
+                ),
+            ])
+            .write(),
+        );
+        out.push('\n');
+    }
+    out
+}
+
+/// 言い回しとして持つ最短の長さ。<strong>草稿を見る側と同じ線である。</strong>
+const PHRASE_CHARS: usize = 4;
+
+/// 表に載せるのに要る単位の数。
+const PHRASE_UNITS: usize = 2;
+
+/// 同梱の池が版を名乗るファイル。
+///
+/// 池を作り直したら中の版を上げる——<strong>上げなければ、中身が変わったのに
+/// 過去の値と比べられてしまう。</strong>
+const POOL_MARKER: &str = "POOL";
+
+/// 同梱の池の名前。<strong>指紋に入る。</strong>
+const POOL_MODEL: &str = "同梱の池";
 
 /// 池から取る本数。<strong>暫定値である。</strong>
 ///
@@ -1454,13 +1072,27 @@ const POOL_VERSION: &str = "2026-09";
 /// <strong>多く取れば題材の遠いものが混ざり、少なく取れば本数が下限を割る。</strong>
 const POOL_TAKE: usize = 24;
 
-/// 同梱の池の場所。
+/// 基準の池の場所。
 fn baseline_pool() -> Option<String> {
     if let Ok(p) = std::env::var("KAKIBURI_BASELINES") {
         return Some(p);
     }
     let here = std::path::Path::new("baselines");
     here.is_dir().then(|| "baselines".to_owned())
+}
+
+/// 池が名乗っている版。<strong>同梱の池かどうかは、池自身が言う。</strong>
+///
+/// <strong>場所では決められない。</strong>[環境変数](baseline_pool)は同梱の池を指すのが
+/// 普通の使い方だが、どこを指しているかは道具に分からない——<strong>場所で決めると、
+/// 別の素材が同梱の池の来歴を名乗る。</strong>
+///
+/// <strong>だから目印を池の中に置く。</strong> 目印のあるフォルダだけが同梱の池である。
+fn pool_version(dir: &str) -> Option<String> {
+    let marker = std::path::Path::new(dir).join(POOL_MARKER);
+    let text = std::fs::read_to_string(marker).ok()?;
+    let v = text.trim();
+    (!v.is_empty()).then(|| v.to_owned())
 }
 
 /// フォルダの中の、読める文書。<strong>決定的に並べる。</strong>
@@ -1482,27 +1114,6 @@ fn readable_files(dir: &str) -> Vec<String> {
     out
 }
 
-/// 拡張子ごとに分ける。<strong>取り込み元が違うものは同じ呼び出しに混ぜられない。</strong>
-fn group_by_source(files: &[String]) -> Vec<(&'static str, Vec<String>)> {
-    let mut html = Vec::new();
-    let mut md = Vec::new();
-    for f in files {
-        if f.ends_with(".html") || f.ends_with(".htm") {
-            html.push(f.clone());
-        } else {
-            md.push(f.clone());
-        }
-    }
-    let mut out = Vec::new();
-    if !md.is_empty() {
-        out.push(("directive-markdown", md));
-    }
-    if !html.is_empty() {
-        out.push(("html", html));
-    }
-    out
-}
-
 /// 地の文の日本語の文字数。<strong>読めないものは数えない。</strong>
 fn japanese_chars_of(files: &[String]) -> Vec<usize> {
     files
@@ -1515,6 +1126,38 @@ fn japanese_chars_of(files: &[String]) -> Vec<usize> {
                 Source::DirectiveMarkdown
             };
             normalize(&body, source).ok().map(|d| d.japanese_chars())
+        })
+        .collect()
+}
+
+/// 目盛りに乗りそうな文書だけの、地の文の日本語の文字数。
+///
+/// <strong>[長さの範囲](kakiburi_scale::length_range_ok)は測れた単位だけで測られる。</strong>
+/// 短すぎて落ちる文書まで数えて束ね方を決めると、<strong>実際より低いところから始まる
+/// 分布に合わせてしまう。</strong>
+///
+/// 実測で、362 字の記事まで数えていたために本人の下端が低く見え、束ねた基準が
+/// 上へ寄って防護柵に当たった——取り置きの総当たりで 4 分割のうち 1 つが目盛りを
+/// 作れず、<strong>取り置いた 12 本が丸ごと判定できない</strong>になっていた。
+///
+/// <strong>ここで掛けるのは字数と読点だけである。</strong> 延べ語数は解析器が要り、
+/// 束ね方を決めるだけのために全文を解析し直すのは高い。
+fn measurable_chars_of(files: &[String]) -> Vec<usize> {
+    files
+        .iter()
+        .filter_map(|f| {
+            let body = std::fs::read_to_string(f).ok()?;
+            let doc = normalize(&body, source_of(f)).ok()?;
+            let chars = doc.japanese_chars();
+            if chars < kakiburi_metrics::floor::JAPANESE_CHARS {
+                return None;
+            }
+            let commas: usize = doc
+                .prose()
+                .iter()
+                .map(|s| s.text.matches('、').count())
+                .sum();
+            (commas >= kakiburi_metrics::matching::COMMA_FLOOR).then_some(chars)
         })
         .collect()
 }
@@ -1602,40 +1245,80 @@ fn source_of(path: &str) -> Source {
 
 /// 返すのは<strong>池の何番目をどう束ねるか</strong>である。中の並びは池の添字。
 ///
-/// <strong>一律に束ねない。</strong> 全部を同じ本数で束ねると、大きいものどうしが合わさって
-/// 本人の上端を大きく超え、今度は基準側の範囲が広がりすぎる（重なり ÷ 基準の範囲が
-/// 0.5 を割る）。実測で、一律 3 本にしたら本人側 70% / 基準側 42% になった。
-///
-/// <strong>小さいほうから積んで上端に届かせ、残りは単独で置く。</strong> こうすると単独の分が
+/// <strong>小さいほうから積んで本人の上端に届かせ、残りは単独で置く。</strong> こうすると単独の分が
 /// 下から中ほどを埋め、束ねた分が上端に届く。
+///
+/// <strong>一律に束ねない。</strong> 全部を同じ本数で束ねると、大きいものどうしが合わさって
+/// 本人の上端を大きく超え、今度は基準側の範囲が広がりすぎる。実測で、一律 3 本に
+/// したら本人側 70% / 基準側 42% になった。
+///
+/// <strong>[防護柵](kakiburi_scale::length_range_ok)は通ればよい門であって、最大化する目的ではない。</strong>
+/// この案が通るならそのまま使い、<strong>落ちたときだけ</strong>ほかの束ね方を探す。
+///
+/// <strong>最大化しにいくと別の場所が壊れる。</strong> 実測で、重なりを最大にする案に置き換え
+/// たら目盛りはすべて作れるようになったが、<strong>本人の通過が 15 本から 9 本へ落ちた</strong>
+/// ——長さの重なりが最大の案が、値の帯まで良くしてくれるわけではない。
+#[cfg(test)]
 fn bundle_plan(person: &[usize], pool: &[usize]) -> Vec<Vec<usize>> {
-    let single = || (0..pool.len()).map(|i| vec![i]).collect();
+    bundle_plans(person, pool).swap_remove(0)
+}
+
+/// 試す順に並べた束ね方。<strong>1 案目が本命で、残りは断られたときの控えである。</strong>
+///
+/// <strong>通るかどうかは作ってみないと分からない。</strong> 長さの範囲は測れた単位だけで
+/// 測られ、どれが測れるかは全文を解析するまで決まらない——ここで計算する重なりは
+/// <strong>近似でしかない。</strong>
+///
+/// だから<strong>選ぶのではなく、順番を付けて渡す。</strong> 決めるのは build である。
+fn bundle_plans(person: &[usize], pool: &[usize]) -> Vec<Vec<Vec<usize>>> {
+    let single = || -> Vec<Vec<usize>> { (0..pool.len()).map(|i| vec![i]).collect() };
     let (Some(&p_hi), Some(&b_hi)) = (person.iter().max(), pool.iter().max()) else {
-        return single();
+        return vec![single()];
     };
-    if b_hi == 0 || p_hi <= b_hi {
-        return single();
-    }
     let mut order: Vec<usize> = (0..pool.len()).collect();
     order.sort_by_key(|&i| pool[i]);
 
+    // <strong>本命は今までと同じ案である。</strong> 小さいほうから積んで本人の上端に届かせ、
+    // 残りは単独で置く。これが通る素材のほうが多い。
+    let mut out: Vec<Vec<Vec<usize>>> = Vec::new();
+    if b_hi > 0 && p_hi > b_hi {
+        out.push(bundle_to(&order, pool, p_hi, pool.len() / 3));
+    }
+    out.push(single());
+
+    // <strong>控えは重なりの良い順。</strong> 近似でしかないが、順番を付ける材料はこれしかない。
+    let mut rest: Vec<(f64, Vec<Vec<usize>>)> = Vec::new();
+    for step in 1..=12u32 {
+        let target = p_hi * step as usize / 12;
+        for div in [2usize, 3, 4, 6] {
+            let plan = bundle_to(&order, pool, target, pool.len() / div);
+            if out.contains(&plan) || rest.iter().any(|(_, p)| *p == plan) {
+                continue;
+            }
+            rest.push((overlap_score(person, &lengths_of(&plan, pool)), plan));
+        }
+    }
+    rest.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    out.extend(rest.into_iter().map(|(_, p)| p));
+    out
+}
+
+/// 目標の上端まで小さいほうから積む。残りは単独で置く。
+fn bundle_to(order: &[usize], pool: &[usize], target: usize, budget: usize) -> Vec<Vec<usize>> {
     let mut plan: Vec<Vec<usize>> = Vec::new();
     let mut cur: Vec<usize> = Vec::new();
     let mut sum = 0usize;
-    // <strong>束ねるのは池の 3 分の 1 まで。</strong> 全部を束ねると単位の本数が下限を割る。
-    let budget = pool.len() / 3;
     for (used, &i) in order.iter().enumerate() {
         if used >= budget {
             break;
         }
         cur.push(i);
         sum += pool[i];
-        if sum >= p_hi {
+        if sum >= target {
             plan.push(std::mem::take(&mut cur));
             sum = 0;
         }
     }
-    // <strong>作りかけを捨てない。</strong> 上端に届かなくても、単独より近いところまでは伸びる。
     if cur.len() > 1 {
         plan.push(cur);
     }
@@ -1649,7 +1332,32 @@ fn bundle_plan(person: &[usize], pool: &[usize]) -> Vec<Vec<usize>> {
     plan
 }
 
+/// 束ねた結果の、単位ごとの長さ。
+fn lengths_of(plan: &[Vec<usize>], pool: &[usize]) -> Vec<usize> {
+    plan.iter()
+        .map(|g| g.iter().map(|&i| pool[i]).sum())
+        .collect()
+}
+
+/// [防護柵](kakiburi_scale::length_range_ok)の採点。<strong>小さいほうの比を返す。</strong>
+///
+/// 片方だけ良くても通らないので、最大化するのは<strong>悪いほう</strong>である。
+fn overlap_score(person: &[usize], baseline: &[usize]) -> f64 {
+    let span = |v: &[usize]| -> Option<(f64, f64)> {
+        #[allow(clippy::cast_precision_loss)]
+        Some((*v.iter().min()? as f64, *v.iter().max()? as f64))
+    };
+    let (Some((plo, phi)), Some((blo, bhi))) = (span(person), span(baseline)) else {
+        return 0.0;
+    };
+    let overlap = (phi.min(bhi) - plo.max(blo)).max(0.0);
+    (overlap / (phi - plo).max(1.0)).min(overlap / (bhi - blo).max(1.0))
+}
+
 /// 目盛りを作る。
+///
+/// <strong>素材のフォルダを読む。</strong> カセットは本文を持たないので、作り直すたびに
+/// フォルダから読み直す（[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）。
 ///
 /// <strong>作らずに終わる条件を持つ。</strong> 止まっても失敗ではない——目盛りの無いカセットが
 /// 出来上がり、`0` で終わる。
@@ -1658,44 +1366,96 @@ fn build(args: &[String]) -> Exit {
         eprintln!("カセットの経路を渡す");
         return Exit::Usage;
     };
-    let mut only: Option<String> = None;
+    let mut person_dir: Option<String> = None;
+    let mut baseline_dir: Option<String> = None;
+    let mut other_dir: Option<String> = None;
+    // 基準の作り方。<strong>記録の無い基準で作った値は、次に測ったときに比べられない。</strong>
+    let mut model: Option<String> = None;
+    let mut version: Option<String> = None;
+    let mut params: BTreeMap<String, String> = BTreeMap::new();
+    let mut topics: Vec<String> = Vec::new();
     let mut json = false;
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--scene" {
-            let Some(v) = args.get(i + 1) else {
-                eprintln!("--scene に場面を渡す");
-                return Exit::Usage;
-            };
-            only = Some(v.clone());
-            i += 2;
-            continue;
-        }
         if args[i] == "--json" {
             json = true;
             i += 1;
             continue;
         }
-        eprintln!("知らない引数: {}", args[i]);
-        return Exit::Usage;
+        let Some(v) = args.get(i + 1) else {
+            eprintln!("{} に値を渡す", args[i]);
+            return Exit::Usage;
+        };
+        match args[i].as_str() {
+            "--person" => person_dir = Some(v.clone()),
+            "--baseline" => baseline_dir = Some(v.clone()),
+            "--other" => other_dir = Some(v.clone()),
+            "--model" => model = Some(v.clone()),
+            "--version" => version = Some(v.clone()),
+            "--topic" => topics.push(v.clone()),
+            "--param" => {
+                let Some((k, x)) = v.split_once('=') else {
+                    eprintln!("--param は <鍵>=<値>");
+                    return Exit::Usage;
+                };
+                params.insert(k.to_owned(), x.to_owned());
+            }
+            other => {
+                eprintln!("知らない引数: {other}");
+                return Exit::Usage;
+            }
+        }
+        i += 2;
     }
+    let Some(person_dir) = person_dir else {
+        eprintln!("--person に本人の記事が入ったフォルダを渡す");
+        eprintln!("<strong>カセットは本文を持たない。</strong> 作り直すたびに素材を読む");
+        return Exit::Usage;
+    };
+    // <strong>作り方を知っているのは同梱の池だけである。</strong> ほかはどこから来たか
+    // 分からないので、<strong>版まで名乗らせる</strong>——モデル名だけでは足りない。
+    // 版が変われば出力が変わり、[記録の無い基準で作った値は次に測ったときに
+    // 比べられない](../../../docs/spec/200-extract.md#版と推論設定まで記録する)。
+    //
+    // <strong>同梱かどうかは池自身が言う。</strong> 場所では決められない。
+    let Some(baseline_dir) = baseline_dir.or_else(baseline_pool) else {
+        eprintln!("基準が見つからない。--baseline で渡すか KAKIBURI_BASELINES を指す");
+        return Exit::Usage;
+    };
+    let bundled = pool_version(&baseline_dir);
+    let baseline_made = if let (Some(v), None, None) = (&bundled, &model, &version) {
+        kakiburi_cassette::Baseline {
+            model: POOL_MODEL.to_owned(),
+            version: v.clone(),
+            params,
+            topics,
+        }
+    } else {
+        let (Some(model), Some(version)) = (model, version) else {
+            eprintln!("断る: 同梱の池でない基準には --model と --version が要る");
+            eprintln!("<strong>モデル名だけでは足りない。</strong> 版が変われば出力が変わる");
+            eprintln!("記録の無い基準で作った値は、次に測ったときに比べられない");
+            eprintln!("（同梱の池なら {POOL_MARKER} が版を名乗っている）");
+            return Exit::Usage;
+        };
+        kakiburi_cassette::Baseline {
+            model,
+            version,
+            params,
+            topics,
+        }
+    };
+
     let (mut c, generation) = match open(path) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    if let Some(s) = &only {
-        if let Err(e) = known_scene(&c, s) {
-            return e;
-        }
-    }
-    if c.tracks.is_empty() {
-        eprintln!("場面がまだ無い。scene で作る");
-        return Exit::Usage;
-    }
+    // <strong>基準の作り方は人が決めたことである。</strong> 派生物ではないので、
+    // 目盛りを作り直しても残る。
+    c.decided.baseline = baseline_made;
 
     // <strong>`--json` でも進み方は stderr へ出す。</strong> stdout に混ぜれば、JSON として
     // 読めなくなる。
-    let mecab = analyzer::resolve();
     let say = |line: String| {
         if json {
             eprintln!("{line}");
@@ -1703,6 +1463,7 @@ fn build(args: &[String]) -> Exit {
             println!("{line}");
         }
     };
+    let mecab = analyzer::resolve();
     match &mecab {
         Some(m) => say(format!(
             "形態素解析: MeCab / {} {}",
@@ -1718,9 +1479,27 @@ fn build(args: &[String]) -> Exit {
             say("  辞書の入手先は kakiburi help の「環境」に書いてある".to_owned());
         }
     }
-    // <strong>道具は共有である。</strong> 場面ごとにファイルが別だった頃は、片方を辞書ありで、
-    // もう片方を無しで作れてしまい、しかも気付けなかった。
-    let others = stripped_others(&c);
+
+    let person_files = readable_files(&person_dir);
+    if person_files.is_empty() {
+        eprintln!("記事が 1 本も見つからない: {person_dir}");
+        return Exit::Unreadable;
+    }
+    let pool_files = readable_files(&baseline_dir);
+    if pool_files.is_empty() {
+        eprintln!("基準が 1 本も見つからない: {baseline_dir}");
+        return Exit::Unreadable;
+    }
+
+    let person = match load_units(&person_files, &[]) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let other_files = other_dir.as_deref().map(readable_files).unwrap_or_default();
+    let others = match load_units(&other_files, &[]) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
     if !others.is_empty() {
         say(format!(
             "他人 {} 単位（人らしさの人の側にだけ効く）",
@@ -1728,27 +1507,77 @@ fn build(args: &[String]) -> Exit {
         ));
     }
 
-    let scenes: Vec<String> = match &only {
-        Some(s) => vec![s.clone()],
-        None => c.scenes().into_iter().map(str::to_owned).collect(),
-    };
-    let mut built = Vec::new();
-    for scene in &scenes {
-        say(String::new());
-        say(format!("== {scene} =="));
-        built.push((
-            scene.clone(),
-            build_scene(&mut c, scene, &others, mecab.as_ref(), json),
-        ));
+    // <strong>題材で選んでから、長さで束ねる。</strong> 逆にすると、題材の合わない分を
+    // 束ねてから捨てることになる。
+    let picked = pick_by_topic(&person_files, &pool_files, POOL_TAKE);
+    let pool_files: Vec<String> = picked.iter().map(|&i| pool_files[i].clone()).collect();
+    say(format!(
+        "基準を {} 本選んだ（題材の近い順）",
+        pool_files.len()
+    ));
+
+    // <strong>束ね方は作ってみて決める。</strong> 通るかどうかは作るまで分からない——
+    // [長さの範囲](kakiburi_scale::length_range_ok)は<strong>測れた単位だけ</strong>で測られ、
+    // どれが測れるかは全文を解析するまで分からない。
+    //
+    // <strong>手前で当てにいくと外れる。</strong> 字数と読点で近似して計画したが、延べ語数と
+    // 地の文のバイト数が効いて<strong>本人 37 本のうち使えたのは 17 本</strong>だった。
+    // 見ている分布が違えば、束ね方も違う。
+    let person_lengths = measurable_chars_of(&person_files);
+    let pool_lengths = japanese_chars_of(&pool_files);
+    let plans = bundle_plans(&person_lengths, &pool_lengths);
+    let last = plans.len() - 1;
+    let mut report = kakiburi_cassette::json::Value::Null;
+    for (attempt, plan) in plans.into_iter().enumerate() {
+        if attempt > 0 {
+            say(format!(
+                "長さの範囲で断られたので、束ね方を変えて作り直す（{} 回目）",
+                attempt + 1
+            ));
+        }
+        let bundled = plan.iter().filter(|g| g.len() > 1).count();
+        if bundled > 0 {
+            say(format!(
+                "基準のうち {bundled} 単位を束ねる。本人の長い記事に、1 本では届かない"
+            ));
+        }
+        let baseline = match load_units(&pool_files, &plan) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        // <strong>名前は役を跨いで一意である。</strong> 測るときは名前で引くので、
+        // 重なれば<strong>片方の値がもう片方の値で黙って置き換わる</strong>——本人の単位が
+        // 基準の数字で測られ、壊れた帯が正常な顔でカセットに入る。
+        if let Err(why) = check_names(&person, &baseline, &others) {
+            eprintln!("断る: {why}");
+            eprintln!("<strong>名前はファイル名である。</strong> 分けたいならファイル名を分ける");
+            return Exit::Usage;
+        }
+        report = build_scene(&mut c, &person, &baseline, &others, mecab.as_ref(), json, &say);
+        if attempt == last || c.derived.has_scale() {
+            break;
+        }
+        // <strong>環境が壊れているなら束ね直しても直らない。</strong> 案を全部試せば、
+        // 直らないことを何度も確かめるだけで時間が溶ける。
+        if report.get("reason").and_then(kakiburi_cassette::json::Value::as_str)
+            == Some(BROKEN_ENVIRONMENT)
+        {
+            break;
+        }
     }
 
-    // <strong>場面が本当に分かれているかを見る。</strong> 同じ入れ物に複数の場面が入って
-    // 初めて測れるようになった検査である。
-    if scenes.len() > 1 || c.scenes().len() > 1 {
-        eprintln!();
-        print_scene_separation(&c, mecab.as_ref());
-    }
-
+    // <strong>読んだ取り込み元を指紋に置く。</strong> 別の取り込み元で読み直したのに指紋が
+    // 古いままだと、照らしても違いが出ない。
+    //
+    // <strong>他人の文書も入れる。</strong> 人らしさの較正に実際に効くので、そこだけ
+    // 別の取り込み元で読んでも指紋が動かないと、<strong>較正が変わったことを言えない。</strong>
+    let read: Vec<String> = person_files
+        .iter()
+        .chain(pool_files.iter())
+        .chain(other_files.iter())
+        .cloned()
+        .collect();
+    set_sources(&mut c, &read);
     // <strong>指紋を作り直す。</strong> 語彙と z 得点と道具が値を決めるので、目盛りができた
     // 時点で指紋も変わる——変えなければ、次に検めるときに合わないことが分からない。
     refresh(&mut c);
@@ -1756,14 +1585,7 @@ fn build(args: &[String]) -> Exit {
         return e;
     }
     if json {
-        println!(
-            "{}",
-            kakiburi_cassette::json::Value::obj([(
-                "scenes".to_owned(),
-                kakiburi_cassette::json::Value::obj(built),
-            )])
-            .write()
-        );
+        println!("{}", report.write());
         return Exit::Pass;
     }
     println!();
@@ -1771,26 +1593,115 @@ fn build(args: &[String]) -> Exit {
     Exit::Pass
 }
 
-/// 1 つの場面の目盛りを作る。<strong>作らずに終わる条件を持つ。</strong>
+/// 単位の名前が役を跨いで一意かを検める。
+///
+/// <strong>役で名前空間を分けない。</strong> 分ければ、本人の `Rust入門` と基準の `Rust入門` が
+/// 別物として通る——[測るときは名前で引く](kakiburi_scale::assemble)ので、重なれば
+/// <strong>片方の測定値がもう片方で置き換わる。</strong>
+///
+/// <strong>[題材を揃える](../../../docs/spec/200-extract.md#題材の統制は対ではなく素材に効かせる)ほど
+/// 同じ名前が付きやすい</strong>ので、いちばん正しく集めた人がいちばん踏む。
+fn check_names(
+    person: &[(String, kakiburi_doc::Document)],
+    baseline: &[(String, kakiburi_doc::Document)],
+    others: &[(String, kakiburi_doc::Document)],
+) -> Result<(), String> {
+    let mut seen: BTreeMap<&str, &'static str> = BTreeMap::new();
+    for (role, units) in [("本人", person), ("基準", baseline), ("他人", others)] {
+        for (name, _) in units {
+            if let Some(first) = seen.insert(name.as_str(), role) {
+                return Err(format!("単位の名前が重なっている: `{name}`（{first} と {role}）"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 素材のファイルを単位にする。
+///
+/// <strong>1 本でも断ったら何も返さない。</strong> 黙って一部を落として通せば、欠けたまま
+/// 目盛りが出来上がる。
+///
+/// `plan` が空でなければ、<strong>その組ごとに 1 単位へ束ねる</strong>——1 文書では指標が
+/// 意味を持たないほど短いものを、何本かでまとめて数えるためである。
+fn load_units(
+    files: &[String],
+    plan: &[Vec<usize>],
+) -> Result<Vec<(String, kakiburi_doc::Document)>, Exit> {
+    let mut docs: Vec<kakiburi_doc::Document> = Vec::with_capacity(files.len());
+    for f in files {
+        let Ok(body) = std::fs::read_to_string(f) else {
+            eprintln!("読めない: {f}");
+            return Err(Exit::Unreadable);
+        };
+        // <strong>取り込み元は拡張子から決める。</strong> 既定ではなく判別である——
+        // 取り違えれば[0 が並ぶ](../../../docs/spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)。
+        match normalize(&body, source_of(f)) {
+            Ok(d) => docs.push(d),
+            Err(e) => {
+                eprintln!("断る: {f}: {e}");
+                eprintln!("1 本でも断ったら使わない。欠けたまま次へ進まないため");
+                return Err(Exit::Unreadable);
+            }
+        }
+    }
+    if plan.is_empty() {
+        return Ok(files
+            .iter()
+            .map(|f| stem_of(f))
+            .zip(docs)
+            .collect());
+    }
+    // <strong>取り込み元が違うものは束ねない</strong>（[仕様](../../../docs/spec/200-extract.md#短い文書は束ねる)）。
+    // [升目は取り込み元ごとに効く](../../../docs/spec/030-normalize.md#対応表は取り込み元ごとに持つ)
+    // ので、混ぜると<strong>単位ごとに測れる指標が変わる。</strong>
+    for group in plan {
+        let mut kinds = group.iter().map(|&i| source_of(&files[i]));
+        let first = kinds.next();
+        if kinds.any(|k| Some(k) != first) {
+            eprintln!("断る: 取り込み元の違うものを束ねようとした");
+            eprintln!("<strong>升目は取り込み元ごとに効く。</strong> 混ぜると測れる指標が単位ごとに変わる");
+            return Err(Exit::Usage);
+        }
+    }
+    let mut out = Vec::with_capacity(plan.len());
+    for group in plan {
+        let nodes: Vec<kakiburi_doc::node::Node> = group
+            .iter()
+            .flat_map(|&i| docs[i].nodes.iter().cloned())
+            .collect();
+        // <strong>束ねた単位は、中身を名前にする。</strong> 連番にすると
+        // [束の構成と並び](../../../docs/spec/200-extract.md#短い文書は束ねる)が
+        // どこにも残らず、<strong>割りの表に名前だけが並んで中身が見えない</strong>
+        // ——偏っていても気付けない。<strong>並びも名前がそのまま持つ。</strong>
+        let name = group
+            .iter()
+            .map(|&i| stem_of(&files[i]))
+            .collect::<Vec<_>>()
+            .join("+");
+        out.push((name, kakiburi_doc::Document::new(nodes)));
+    }
+    Ok(out)
+}
+
+
+/// 環境の側で測れないときの理由。<strong>束ね直しでは直らない印である。</strong>
+const BROKEN_ENVIRONMENT: &str = "環境の側で測れない指標がある";
+
+/// 目盛りを作る。<strong>作らずに終わる条件を持つ。</strong>
 ///
 /// 何が起きたかを返す——<strong>道具向けの出口が要る</strong>ので、出力を組み立てながら
 /// 進み方を捨ててしまわない。
 fn build_scene(
     c: &mut Cassette,
-    scene: &str,
-    others: &[(String, kakiburi_doc::Document)],
+    person_units: &[(String, kakiburi_doc::Document)],
+    baseline_units: &[(String, kakiburi_doc::Document)],
+    other_units: &[(String, kakiburi_doc::Document)],
     mecab: Option<&kakiburi_metrics::mecab::Mecab>,
     json: bool,
+    say: &dyn Fn(String),
 ) -> kakiburi_cassette::json::Value {
     use kakiburi_cassette::json::Value;
-    // <strong>`--json` でも進み方は stderr へ出す。</strong> stdout に混ぜれば読めなくなる。
-    let say = |line: String| {
-        if json {
-            eprintln!("{line}");
-        } else {
-            println!("{line}");
-        }
-    };
     #[allow(clippy::cast_precision_loss)]
     let n = |v: usize| Value::Number(v as f64);
     let stopped = |why: String| {
@@ -1800,20 +1711,20 @@ fn build_scene(
         ])
     };
 
-    let person_units = stripped(c, scene, Role::Person);
-    let baseline_units = stripped(c, scene, Role::BaselineOutput);
+    // <strong>定型は測るときだけ落とす。</strong> 人が決め直したら測り直せる形にしておく。
+    let person_units = stripped(c, person_units);
+    let baseline_units = stripped(c, baseline_units);
     let person = samples(&person_units);
     let baseline = samples(&baseline_units);
-    let others = samples(others);
+    // <strong>他人の文書に落とす定型は掛けない。</strong> 定型は本人の書きぶりについて
+    // 人が決めたものである。
+    let others = samples(other_units);
     say(format!(
         "本人 {} 単位 / 基準 {} 単位",
         person.len(),
         baseline.len()
     ));
-    let boilerplate = c
-        .track(scene)
-        .map(|t| t.decided.boilerplate.len())
-        .unwrap_or(0);
+    let boilerplate = c.decided.boilerplate.len();
     if boilerplate > 0 {
         say(format!("落とす定型 {boilerplate} 本"));
     }
@@ -1829,8 +1740,8 @@ fn build_scene(
             say(format!("  {name}: {why}"));
         }
         say("<strong>素材ではなく環境を直す。</strong> 足しても直らない".to_owned());
-        c.drop_derived(scene);
-        return stopped("環境の側で測れない指標がある".to_owned());
+        c.drop_derived();
+        return stopped(BROKEN_ENVIRONMENT.to_owned());
     }
 
     let material = kakiburi_scale::assemble::Material {
@@ -1845,9 +1756,16 @@ fn build_scene(
             say(format!("目盛りを作らない: {e}"));
             // <strong>どの単位のどこで止まったかを言う。</strong>「10 本に届かない」だけでは、
             // 素材を足すべきか、長さを揃えるべきか、辞書を入れるべきかが分からない。
-            print_reports("本人", &kakiburi_scale::inspect(&person, a), json);
+            let mine = kakiburi_scale::inspect(&person, a);
+            print_reports("本人", &mine, json);
             print_reports("基準", &kakiburi_scale::inspect(&baseline, a), json);
-            c.drop_derived(scene);
+            // <strong>次の一手を言う。</strong> 止まった理由だけでは、素材を足せばよいのか
+            // 長さを揃えればよいのかが分からない——<strong>本人側が短さで落ちているなら、
+            // 足しても直らない。</strong>
+            for line in next_step(&mine) {
+                say(line);
+            }
+            c.drop_derived();
             return stopped(e.to_string());
         }
     };
@@ -1940,6 +1858,11 @@ fn build_scene(
     let works = effective.iter().filter(|e| e.works()).count();
     say(format!("効く指標: {works} / {} 本", effective.len()));
 
+    // <strong>本人がいちばん高く出るかは、ここでしか測れない。</strong> カセットは本文を
+    // 持たないので、作り終えたあとに測り直す道が無い。
+    say(String::new());
+    let suspect = check_person_higher(&scale, &person, &baseline, a, say);
+
     let report = Value::obj([
         ("built".to_owned(), Value::Bool(true)),
         (
@@ -1967,6 +1890,7 @@ fn build_scene(
         ("humanness_band".to_owned(), band_json(scale.humanness_band)),
         ("effective".to_owned(), n(works)),
         ("metrics".to_owned(), n(effective.len())),
+        ("person_higher".to_owned(), Value::Bool(suspect == 0)),
         (
             "evenly_spread".to_owned(),
             Value::Bool(scale.humanness.evenly_spread()),
@@ -1974,13 +1898,17 @@ fn build_scene(
     ]);
 
     // <strong>作り終えた目盛りだけを入れる。</strong> 検めはこれを受け取る。
-    c.track_mut(scene).derived = Derived {
+    //
+    // <strong>言い回しの表は本文の代わりである。</strong> どの言い回しを訊かれるかは検める
+    // まで決まらないので、ここで畳んでおかなければ繰り返しの上限を言えない。
+    c.derived = Derived {
         vocabulary: Some(vocabulary_note(&scale)),
         values: None,
         spread: Some(effective_json::write_spread(&effective)),
         calibration: Some(format!("系統 {} 本の較正と合算", scale.frozen.len())),
         scale: Some(scale_json::write(&scale)),
         effective: Some(effective_json::write_effective(&effective)),
+        phrases: Some(phrase_table(&person_units, a)),
     };
     report
 }
@@ -2006,118 +1934,6 @@ fn band_json(b: kakiburi_scale::Band) -> kakiburi_cassette::json::Value {
     ])
 }
 
-/// 場面が本当に分かれているかを見る。
-///
-/// <strong>1 カセットに複数の場面が入って初めて測れる検査である。</strong> 別のファイルだった
-/// 頃は比べる経路そのものが無かった。
-///
-/// <strong>場面が分かれていないなら、場面ごとに閉じている意味が無い。</strong> 逆に、
-/// 場面の中が場面の間より散らばっているなら、その「1 つの場面」は 1 つではない。
-fn print_scene_separation(c: &Cassette, mecab: Option<&kakiburi_metrics::mecab::Mecab>) {
-    let a = mecab.map(|m| m as &dyn kakiburi_metrics::morph::Analyzer);
-    // 場面ごとに、本人の単位を目盛り抜きの生の値で並べる。<strong>目盛りは場面ごとに
-    // 違うので、目盛りに載せた値どうしは比べられない。</strong>
-    let mut by_scene: Vec<(String, Vec<kakiburi_scale::effective::Row>)> = Vec::new();
-    for scene in c.scenes() {
-        let units = stripped(c, scene, Role::Person);
-        if units.len() < 2 {
-            continue;
-        }
-        by_scene.push((scene.to_owned(), rows(&samples(&units), a)));
-    }
-    if by_scene.len() < 2 {
-        return;
-    }
-    println!("場面の分かれ方（本人の単位、目盛りに載せる前の値）");
-    println!("  {:<20} {:>10} {:>10}", "場面", "中の散らばり", "外との差");
-    let mut suspicious = Vec::new();
-    for (i, (scene, mine)) in by_scene.iter().enumerate() {
-        let within = mean_spread(mine);
-        let others: Vec<Vec<(String, Option<f64>)>> = by_scene
-            .iter()
-            .enumerate()
-            .filter(|(j, _)| *j != i)
-            .flat_map(|(_, (_, rows))| rows.clone())
-            .collect();
-        let between = mean_gap(mine, &others);
-        println!("  {scene:<20} {within:>10.3} {between:>10.3}");
-        if between <= within {
-            suspicious.push(scene.clone());
-        }
-    }
-    if suspicious.is_empty() {
-        println!("  <strong>どの場面も、中より外のほうが離れている。</strong> 分かれている");
-    } else {
-        eprintln!(
-            "  但し書き: <strong>中のほうが散らばっている場面がある</strong>（{}）",
-            suspicious.join("、")
-        );
-        eprintln!("  1 つの場面として扱えているかを疑う");
-    }
-}
-
-/// 指標ごとの散らばりの平均。<strong>測れた指標だけで取る。</strong>
-fn mean_spread(rows: &[kakiburi_scale::effective::Row]) -> f64 {
-    let mut totals = Vec::new();
-    let mut by_metric: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
-    for row in rows {
-        for (name, v) in row {
-            if let Some(v) = v {
-                by_metric.entry(name.as_str()).or_default().push(*v);
-            }
-        }
-    }
-    for (_, vs) in by_metric {
-        if vs.len() < 2 {
-            continue;
-        }
-        let m = vs.iter().sum::<f64>() / vs.len() as f64;
-        // <strong>指標ごとに大きさが違うので、平均で割る。</strong> 割らなければ、
-        // 値の大きい指標だけが全体を決める。
-        let sd = (vs.iter().map(|v| (v - m).powi(2)).sum::<f64>() / vs.len() as f64).sqrt();
-        if m.abs() > f64::EPSILON {
-            totals.push(sd / m.abs());
-        }
-    }
-    if totals.is_empty() {
-        return 0.0;
-    }
-    totals.iter().sum::<f64>() / totals.len() as f64
-}
-
-/// 2 つの集合の、指標ごとの中心の隔たりの平均。
-fn mean_gap(a: &[kakiburi_scale::effective::Row], b: &[kakiburi_scale::effective::Row]) -> f64 {
-    let center = |rows: &[kakiburi_scale::effective::Row]| -> BTreeMap<String, f64> {
-        let mut by: BTreeMap<String, Vec<f64>> = BTreeMap::new();
-        for row in rows {
-            for (name, v) in row {
-                if let Some(v) = v {
-                    by.entry(name.clone()).or_default().push(*v);
-                }
-            }
-        }
-        by.into_iter()
-            .map(|(k, vs)| {
-                let n = vs.len() as f64;
-                (k, vs.iter().sum::<f64>() / n)
-            })
-            .collect()
-    };
-    let (ca, cb) = (center(a), center(b));
-    let mut gaps = Vec::new();
-    for (name, va) in &ca {
-        let Some(vb) = cb.get(name) else { continue };
-        let scale = va.abs().max(vb.abs());
-        if scale > f64::EPSILON {
-            gaps.push((va - vb).abs() / scale);
-        }
-    }
-    if gaps.is_empty() {
-        return 0.0;
-    }
-    gaps.iter().sum::<f64>() / gaps.len() as f64
-}
-
 /// 割りを読める形にする。<strong>4 つとも出す。</strong>
 ///
 /// <strong>相手集合だけでは、どこで割れたかが読めない。</strong>
@@ -2132,6 +1948,49 @@ fn selection_lines(s: &kakiburi_scale::Selection) -> Vec<String> {
         out.push(format!("  {label} {}", names.join("、")));
     }
     out
+}
+
+/// 桁を区切る。<strong>下限は文書でも区切って書いてある。</strong>
+fn with_commas(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// 本人側が短さで止まっているときの、次の一手。
+///
+/// <strong>「10 本に届かない」だけでは足りない。</strong> 素材を足すべきか、長さを揃えるべきか、
+/// 辞書を入れるべきかが分からない——<strong>短さで落ちているなら、同じ長さのものを
+/// いくら足しても届かない。</strong>
+fn next_step(mine: &[kakiburi_scale::Report]) -> Vec<String> {
+    let usable = mine.iter().filter(|r| r.usable()).count();
+    if usable >= kakiburi_scale::split::UNITS_FLOOR {
+        return Vec::new();
+    }
+    let short = mine
+        .iter()
+        .filter(|r| !r.usable() && r.chars < kakiburi_metrics::floor::JAPANESE_CHARS)
+        .count();
+    // <strong>落ちた分の大半が短さなら、足しても直らない。</strong>
+    if short * 2 < mine.len() - usable {
+        return Vec::new();
+    }
+    vec![
+        String::new(),
+        "<strong>短い文書ばかりなので、同じものを足しても届かない。</strong>".to_owned(),
+        format!(
+            "  1 単位が地の文 {} 字に届く必要がある。いまは {short} 本がそこで落ちている",
+            with_commas(kakiburi_metrics::floor::JAPANESE_CHARS)
+        ),
+        "  <strong>いまの道具は本人側を束ねられない。</strong> 長い文書を素材にするか、".to_owned(),
+        "  1 つのファイルにまとめてから渡す".to_owned(),
+    ]
 }
 
 /// 単位ごとの内訳を出す。<strong>止まった理由を単位まで下ろす。</strong>
@@ -2149,8 +2008,25 @@ fn print_reports(side: &str, reports: &[kakiburi_scale::Report], json: bool) {
         "{side}: 使える単位 {usable} / {} 本",
         reports.len()
     ));
+    // <strong>短さでまとめて言う。</strong> どの指標が落ちたかを 1 本ずつ並べても、
+    // <strong>読み手が知りたいのは「なぜ」と「次に何をするか」である</strong>
+    // ——同じ理由の単位が 15 本並ぶのは、情報ではなく雑音である。
+    let short: Vec<&kakiburi_scale::Report> = reports
+        .iter()
+        .filter(|r| !r.usable() && r.chars < kakiburi_metrics::floor::JAPANESE_CHARS)
+        .collect();
+    if !short.is_empty() {
+        let longest = short.iter().map(|r| r.chars).max().unwrap_or(0);
+        say(format!(
+            "  <strong>{} 本が短すぎる。</strong> 地の文の日本語が {} 字に届かない（いちばん長いもので {longest} 字）",
+            short.len(),
+            with_commas(kakiburi_metrics::floor::JAPANESE_CHARS)
+        ));
+        say("  <strong>短い文書は測れない。</strong> 分布と呼べる形にならないものを 0 で埋めない".to_owned());
+    }
+    // 残りは 1 本ずつ言う。<strong>長さで説明が付かないものは、理由が違う。</strong>
     for r in reports {
-        if r.usable() {
+        if r.usable() || r.chars < kakiburi_metrics::floor::JAPANESE_CHARS {
             continue;
         }
         let mut why = Vec::new();
@@ -2173,30 +2049,23 @@ fn print_reports(side: &str, reports: &[kakiburi_scale::Report], json: bool) {
     }
 }
 
-/// カセットの単位から<strong>定型を落とした写し</strong>を作る。
+/// 単位から<strong>定型を落とした写し</strong>を作る。
 ///
-/// <strong>原本は変えない。</strong> 定型は[人が決めたこと](../../../docs/spec/200-extract.md#定型を落とす)
-/// であって本文ではないので、決め直したら測り直せる形にしておく。カセットへ
-/// 書き戻すのは落とす前の本文である。
-fn stripped(c: &Cassette, scene: &str, role: Role) -> Vec<(String, kakiburi_doc::Document)> {
-    let boilerplate = c
-        .track(scene)
-        .map(|t| t.decided.boilerplate.clone())
-        .unwrap_or_default();
-    // <strong>束ねてから落とす。</strong> 測るのは単位であって、取り込んだ 1 本ではない。
-    c.bundles(scene, role)
-        .into_iter()
-        .map(|(unit, doc)| (unit, doc.without_boilerplate(&boilerplate)))
+/// <strong>素材は変えない。</strong> 定型は[人が決めたこと](../../../docs/spec/200-extract.md#定型を落とす)
+/// であって本文ではないので、決め直したら測り直せる形にしておく。
+fn stripped(
+    c: &Cassette,
+    units: &[(String, kakiburi_doc::Document)],
+) -> Vec<(String, kakiburi_doc::Document)> {
+    units
+        .iter()
+        .map(|(name, doc)| {
+            (
+                name.clone(),
+                doc.without_boilerplate(&c.decided.boilerplate),
+            )
+        })
         .collect()
-}
-
-/// 他人の文書。<strong>落とす定型は掛けない。</strong>
-///
-/// <strong>落とす定型は場面ごとに人が決めたものである。</strong> 場面を持たない文書に、
-/// どれか 1 つの場面の定型を当てる筋は無い——当てれば、どの場面で `build` したかで
-/// 人らしさの較正が変わる。
-fn stripped_others(c: &Cassette) -> Vec<(String, kakiburi_doc::Document)> {
-    c.other_bundles()
 }
 
 /// 素材の形にする。
@@ -2363,7 +2232,6 @@ fn review(args: &[String]) -> Exit {
         return Exit::Usage;
     };
     let mut cassette = None;
-    let mut scene: Option<String> = None;
     let mut source: Option<Source> = None;
     let mut json = false;
     let mut i = 1;
@@ -2389,14 +2257,6 @@ fn review(args: &[String]) -> Exit {
                 source = Some(s);
                 i += 2;
             }
-            "--scene" => {
-                let Some(v) = args.get(i + 1) else {
-                    eprintln!("--scene に場面が要る");
-                    return Exit::Usage;
-                };
-                scene = Some(v.clone());
-                i += 2;
-            }
             "--json" => {
                 json = true;
                 i += 1;
@@ -2409,12 +2269,6 @@ fn review(args: &[String]) -> Exit {
     }
     let Some(cassette) = cassette else {
         eprintln!("--cassette が要る");
-        return Exit::Usage;
-    };
-    // <strong>場面は明示する。</strong> ファイルを選ぶことが暗黙の場面指定だった頃は、
-    // 選び間違えても止まらなかった——<strong>1 手増えるが、正しい向きの摩擦である。</strong>
-    let Some(scene) = scene else {
-        eprintln!("--scene が要る。どの場面として検めるかは人が指定する");
         return Exit::Usage;
     };
     let Some(source) = source else {
@@ -2445,13 +2299,10 @@ fn review(args: &[String]) -> Exit {
         }
     };
 
-    // <strong>知らない場面では検めない。</strong> 綴りを間違えたまま通れば、目盛りが無い
-    // 場面として「判定できない」が返り、間違いに見えない。
-    let Some(track) = c.track(&scene) else {
-        eprintln!("断る: 知らない場面: {scene}");
-        eprintln!("このカセットの場面: {}", scenes_or_none(&c));
-        return Exit::Usage;
-    };
+    // <strong>場面はカセットが言う。</strong>[1 カセットが 1 場面](../../../docs/spec/010-strategy.md#場面ごとに閉じる)
+    // なので、入れ物を選ぶことが場面を選ぶことである——選び間違いは、検める前に
+    // <strong>どのファイルを渡すかとして現れる。</strong>
+    let scene = c.scene.clone();
 
     // <strong>指紋を先に照らす。</strong> 合わないカセットで測れば、比べたものに意味が無い。
     // 判定できないではなく <strong>使う前の問題</strong>である——64 以上で返す。
@@ -2470,7 +2321,7 @@ fn review(args: &[String]) -> Exit {
 
     // <strong>目盛りが無ければ判定できない。</strong> 素材が足りずに作れなかったのは正常な
     // 状態であり、仕様がそのために判定できないを置いている。
-    let Some(scale) = track.derived.scale.as_deref().and_then(scale_json::read) else {
+    let Some(scale) = c.derived.scale.as_deref().and_then(scale_json::read) else {
         return unknown(
             json,
             &scene,
@@ -2482,22 +2333,16 @@ fn review(args: &[String]) -> Exit {
 
     // <strong>検める側にも同じ定型を掛ける。</strong> 片方だけに掛ければ、落とした分だけ値が
     // ずれたものを比べることになる（[同じ測り方で測る](../../../docs/spec/300-revise.md#同じ測り方で測る)）。
-    let doc = doc.without_boilerplate(&track.decided.boilerplate);
+    let doc = doc.without_boilerplate(&c.decided.boilerplate);
 
-    // <strong>相手集合は目盛りが名指ししたものである。</strong> 検める側が選び直さない。
-    let person_units = stripped(&c, &scene, Role::Person);
-    let person = samples(&person_units);
-    let partners: Vec<Sample<'_>> = person
-        .iter()
-        .filter(|s| scale.partners().iter().any(|n| n == s.name))
-        .copied()
-        .collect();
-    if partners.len() != scale.partners().len() {
-        eprintln!(
-            "相手集合が揃わない（{} / {} 本）。カセットの本文が入れ替わっている",
-            partners.len(),
-            scale.partners().len()
-        );
+    // <strong>相手集合は目盛りが持っている。</strong> カセットは本文を持たないので、
+    // 検める側が本文から選び直す経路そのものが無い。
+    //
+    // <strong>本数だけでは足りない。</strong> 次元がずれていても距離は短いほうまでで
+    // 計算されるので、<strong>エラーにならずに違う照合値が出る。</strong>
+    if !scale.partner_vectors_ok() {
+        eprintln!("相手集合が目盛りと噛み合わない。目盛りが壊れている");
+        eprintln!("素材のフォルダを指して build し直す");
         return Exit::FingerprintMismatch;
     }
 
@@ -2508,7 +2353,6 @@ fn review(args: &[String]) -> Exit {
             name: path,
             document: &doc,
         },
-        &partners,
         mecab
             .as_ref()
             .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
@@ -2532,7 +2376,6 @@ fn review(args: &[String]) -> Exit {
             name: path,
             document: &doc,
         },
-        &partners,
         mecab
             .as_ref()
             .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
@@ -2543,7 +2386,6 @@ fn review(args: &[String]) -> Exit {
             name: path,
             document: &doc,
         },
-        &partners,
         mecab
             .as_ref()
             .map(|m| m as &dyn kakiburi_metrics::morph::Analyzer),
@@ -2564,11 +2406,11 @@ fn review(args: &[String]) -> Exit {
     // <strong>幅も効くかの判定も、目盛りが持っているものを読むだけである。</strong>
     // 検める時点で作り直さない——作り直せるなら、検める文書を見てから作り直す
     // 経路が書ける（[分ける基準](../../../docs/design/000-architecture.md#分ける基準)）。
-    let Some(effective) = track
+    let Some(effective) = c
         .derived
         .spread
         .as_deref()
-        .zip(track.derived.effective.as_deref())
+        .zip(c.derived.effective.as_deref())
         .and_then(|(s, e)| effective_json::read(s, e))
     else {
         // <strong>空と欠けを分ける。</strong> 判定がまだ行われていないカセットで「効く指標が
@@ -2652,7 +2494,7 @@ fn review(args: &[String]) -> Exit {
         // 検査は幅で見ない。**比べる先が本人ではない。**
         .filter(|e| !defs.is_inspection(&e.name))
         // 条件 3。<strong>動かないと分かった指標は前に出さない。</strong>
-        .filter(|e| !c.is_stuck(&scene, &e.name))
+        .filter(|e| !c.is_stuck(&e.name))
         // <strong>層 3 は指摘にも判定にも使わない。</strong> 止めた理由を言えないものは止めない。
         .filter(|e| !defs.is_layer_three(&e.name))
         .filter_map(|e| {
@@ -2676,7 +2518,7 @@ fn review(args: &[String]) -> Exit {
     let habits: Vec<Observed> = effective
         .iter()
         .filter(|e| e.narrow_only())
-        .filter(|e| !c.is_stuck(&scene, &e.name))
+        .filter(|e| !c.is_stuck(&e.name))
         .filter(|e| !defs.is_layer_three(&e.name))
         .filter(|e| !defs.is_inspection(&e.name))
         .filter_map(|e| {
@@ -2774,6 +2616,7 @@ fn review(args: &[String]) -> Exit {
                     times,
                     density,
                     ceiling: k.ceiling,
+                    base: k.base,
                     // <strong>穴あきは、固定部が 2 つともこの順で同じ段落にあれば使われている。</strong>
                     // 間は書き手が埋めるので、そこは見ない。
                     used: match &k.tail {
@@ -2806,6 +2649,9 @@ fn review(args: &[String]) -> Exit {
             kakiburi_review::Kata {
                 text: text.clone(),
                 rate: 0.0,
+                // <strong>本人の側は分からない。</strong> ここは草稿から作った行なので、
+                // 本人の割合を持たない——言い切らせないために 0 を渡さない筋も無い。
+                base: 0.0,
                 at: 0.0,
                 used: times > 0,
                 spots,
@@ -2815,9 +2661,72 @@ fn review(args: &[String]) -> Exit {
             }
         })
         .collect();
+    // <strong>この文章が繰り返している言い回しも、同じ物差しに乗せる。</strong>
+    //
+    // <strong>上限を持っていたのは道具が「繰り返せ」と言った分だけだった。</strong> 受け取った
+    // 側が自分で足した言い回しは誰も見ていない——実測で、人らしさを通すために
+    // <strong>本人が 49 本で 6 本しか使わない `ことになります` を 1 本に 6 回</strong>入れても、
+    // 道具は何も言わなかった。
+    //
+    // <strong>機械の型では拾えない。</strong> あれは基準の 10% 以上が使う並びしか名指しできず、
+    // この言い回しは池 44 本のうち 1 本にしか出てこない。
+    //
+    // <strong>本人の上限は畳んだ表から引く。</strong> どの言い回しを訊かれるかは検めるまで
+    // 決まらないので、<strong>`build` が 2 つ以上の単位に現れるものを全部表にしてある</strong>
+    // ——[表に無いものは上限 0](../../../docs/design/100-cassette.md#phrasesjsonl--本文の代わり)
+    // で、本人が一度も使っていないことがそのまま指摘になる。
+    let ceilings = read_phrase_table(&c);
+    let phrases: Vec<kakiburi_review::Kata> = phrases
+        .into_iter()
+        .chain(
+            repeated_in_draft(analyzed_now.as_ref())
+                .into_iter()
+                .filter(|(text, _)| {
+                    !scale
+                        .phrase_ceilings
+                        .iter()
+                        .any(|(p, _)| p == text || text.contains(p) || p.contains(text))
+                })
+                .map(|(text, times)| {
+                    let (spots, _) = spots_of(&text);
+                    #[allow(clippy::cast_precision_loss)]
+                    let density = if ja == 0 {
+                        0.0
+                    } else {
+                        1000.0 * times as f64 / ja as f64
+                    };
+                    let ceiling = person_ceiling(&ceilings, &text);
+                    kakiburi_review::Kata {
+                        text,
+                        rate: 0.0,
+                        base: 0.0,
+                        at: 0.0,
+                        used: true,
+                        spots,
+                        times,
+                        density,
+                        ceiling,
+                    }
+                }),
+        )
+        .collect();
     let katas = seen(&scale.katas);
     // <strong>役を入れ替えた側も同じ見方で拾う。</strong>
     let machine_katas = seen(&scale.machine_katas);
+    // <strong>語は文字列ではなく語彙素で照らす。</strong> そのまま探すと `地味` が `地味な` の
+    // 前半に当たるだけで、`地味だ` と `地味に` を別のものとして数えてしまう。
+    let here = kakiburi_metrics::word::goi(analyzed_now.as_ref());
+    let machine_gois: Vec<kakiburi_review::Goi> = scale
+        .machine_gois
+        .iter()
+        .map(|g| kakiburi_review::Goi {
+            times: here.get(&g.text).map_or(0, |(_, n)| *n),
+            text: g.text.clone(),
+            rate: g.rate,
+            base: g.base,
+            theirs: g.theirs.clone(),
+        })
+        .collect();
     let result = kakiburi_review::review(
         &kakiburi_review::Observations {
             inspections: &inspections,
@@ -2829,6 +2738,7 @@ fn review(args: &[String]) -> Exit {
             diverging: &apart,
             katas: &katas,
             machine_katas: &machine_katas,
+            machine_gois: &machine_gois,
             phrases: &phrases,
         },
         &defs,
@@ -2891,6 +2801,17 @@ fn review(args: &[String]) -> Exit {
                 (
                     "katas".to_owned(),
                     Value::Array(result.katas.iter().map(Value::s).collect()),
+                ),
+                // <strong>人向けに出しているものは、道具向けにも出す。</strong> 片方にしか
+                // 無ければ、<strong>同じ検めでも読む口で結論が変わる</strong>——
+                // `--json` は表示を変えないという約束が、そこで崩れる。
+                (
+                    "machine_katas".to_owned(),
+                    Value::Array(result.machine_katas.iter().map(Value::s).collect()),
+                ),
+                (
+                    "machine_gois".to_owned(),
+                    Value::Array(result.machine_gois.iter().map(Value::s).collect()),
                 ),
                 (
                     // <strong>指摘は結果であって断り書きではない。</strong> ここに入れる。
@@ -3014,6 +2935,13 @@ fn review(args: &[String]) -> Exit {
             println!("  - {k}");
         }
     }
+    if !result.machine_gois.is_empty() {
+        println!();
+        println!("残っている機械の語 {} 本", result.machine_gois.len());
+        for g in &result.machine_gois {
+            println!("  - {g}");
+        }
+    }
     if !result.overused_katas.is_empty() {
         println!();
         println!("使いすぎている言い回し {} 本", result.overused_katas.len());
@@ -3056,20 +2984,16 @@ fn fingerprint_with(c: &Cassette, mecab: Option<&kakiburi_metrics::mecab::Mecab>
     let mut inputs = base_inputs(mecab);
     // カセットが決めたことは引き継ぐ。取り込み元は環境の側で作り直せない。
     inputs.common.normalization.sources = c.fingerprint.inputs.common.normalization.sources.clone();
-    for (scene, t) in &c.tracks {
-        let scale = t.derived.scale.as_deref().and_then(scale_json::read);
-        inputs.scenes.insert(
-            scene.clone(),
-            kakiburi_cassette::SceneInputs {
-                vocabulary: vocabulary_of(scale.as_ref()),
-                z_scores: z_scores_of(scale.as_ref()),
-                // <strong>基準の作り方は `decided` が正本である。</strong> 指紋に写した値ではなく、
-                // 人が決めたほうを読む——写しを読むと、決め直したのに指紋が動かない。
-                baseline: t.decided.baseline.clone(),
-                decided: decided_inputs(scene, &t.decided),
-            },
-        );
-    }
+    let scale = c.derived.scale.as_deref().and_then(scale_json::read);
+    inputs.scene = kakiburi_cassette::SceneInputs {
+        vocabulary: vocabulary_of(scale.as_ref()),
+        z_scores: z_scores_of(scale.as_ref()),
+        selection: selection_of(scale.as_ref()),
+        // <strong>基準の作り方は `decided` が正本である。</strong> 指紋に写した値ではなく、
+        // 人が決めたほうを読む——写しを読むと、決め直したのに指紋が動かない。
+        baseline: c.decided.baseline.clone(),
+        decided: decided_inputs(&c.scene, &c.decided),
+    };
     Fingerprint::build(inputs)
 }
 
@@ -3085,6 +3009,24 @@ fn vocabulary_of(scale: Option<&Scale>) -> BTreeMap<String, Vec<String>> {
             }
         }
         out.insert(name.clone(), dims);
+    }
+    out
+}
+
+/// 単位の割り。<strong>束の構成と並びもここに出る。</strong>
+///
+/// <strong>[束ねた単位は中身を名前にする](../../../docs/spec/200-extract.md#短い文書は束ねる)</strong>
+/// ので、どの文書をどの順で束ねたかがそのまま並びに入る。
+fn selection_of(scale: Option<&Scale>) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    let Some(s) = scale else { return out };
+    for (name, names) in [
+        ("本人の相手集合", &s.selection.person_partners),
+        ("本人の測る分", &s.selection.person_points),
+        ("基準の較正分", &s.selection.baseline_partners),
+        ("基準の床の点", &s.selection.baseline_points),
+    ] {
+        out.insert(name.to_owned(), names.clone());
     }
     out
 }
@@ -3211,7 +3153,7 @@ fn base_inputs(mecab: Option<&kakiburi_metrics::mecab::Mecab>) -> Inputs {
                 mapping: normalization_mapping(),
             },
         },
-        scenes: BTreeMap::new(),
+        scene: kakiburi_cassette::SceneInputs::default(),
     }
 }
 
@@ -3592,6 +3534,43 @@ mod tests {
     }
 
     #[test]
+    fn 束ね方は防護柵の式で選ぶ() {
+        // <strong>勘で決めた 1 案では落ちる素材がある。</strong> 取り置きの総当たりで、
+        // 4 分割のうち 1 つが長さの範囲で目盛りを作れず、取り置いた 12 本が
+        // 丸ごと判定できないになっていた。
+        //
+        // <strong>候補を作って、通さなければならない式そのもので採点する。</strong>
+        let pool = vec![2200, 2900, 3000, 4400, 2400, 2600, 3200, 3800, 2300];
+        for person in [
+            vec![1500, 7000],
+            vec![900, 12000],
+            vec![3000, 3200, 18000],
+            vec![2500, 2600, 2700],
+        ] {
+            let plan = bundle_plan(&person, &pool);
+            let got = overlap_score(&person, &lengths_of(&plan, &pool));
+            let flat: Vec<Vec<usize>> = (0..pool.len()).map(|i| vec![i]).collect();
+            let flat_score = overlap_score(&person, &lengths_of(&flat, &pool));
+            assert!(
+                got >= flat_score,
+                "束ねて悪くなる案は採らない: {person:?} で {got} < {flat_score}"
+            );
+            let used: Vec<usize> = plan.iter().flatten().copied().collect();
+            assert_eq!(used.len(), pool.len(), "池を余さず使う: {person:?}");
+        }
+    }
+
+    #[test]
+    fn 採点は悪いほうの比を返す() {
+        // <strong>片方だけ良くても通らない。</strong> 防護柵は両方に 0.5 を要求する。
+        // 基準が本人の範囲に完全に含まれていると、本人側の比だけが効く。
+        let wide = overlap_score(&[1000, 5000], &[2000, 3000]);
+        assert!(wide < 0.5, "基準が狭すぎれば落ちる: {wide}");
+        let same = overlap_score(&[1000, 5000], &[1000, 5000]);
+        assert!((same - 1.0).abs() < 1e-9, "同じ範囲なら 1.0: {same}");
+    }
+
+    #[test]
     fn 池が空でも落ちない() {
         assert!(bundle_plan(&[1500], &[]).is_empty());
         assert_eq!(bundle_plan(&[], &[2000]).len(), 1);
@@ -3673,24 +3652,13 @@ mod tests {
             "compare"
         );
         assert_eq!(
-            run(&[
-                "add".to_owned(),
-                c.clone(),
-                f.clone(),
-                "--as".to_owned(),
-                "person".to_owned(),
-            ]),
-            Exit::Usage,
-            "add"
-        );
-        assert_eq!(
             run(&["review".to_owned(), f, "--cassette".to_owned(), c.clone(),]),
             Exit::Usage,
             "review"
         );
-        // 断ったのだから、何も入っていない。
+        // 断ったのだから、目盛りもできていない。
         let (got, _) = open(&c).expect("読める");
-        assert!(got.corpus.is_empty());
+        assert!(!got.derived.has_scale());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -3729,37 +3697,20 @@ mod tests {
     }
 
     /// 目盛りの入ったカセットを置く。<strong>作るのは目盛りの側である。</strong>
+    /// 目盛りの入ったカセットを置く。<strong>作るのは目盛りの側である。</strong>
     fn cassette_with_scale(dir: &std::path::Path) -> String {
         let scale = fixture::scale();
         let (person, baseline) = fixture::corpus();
-        let units: Vec<Unit> = person
-            .iter()
-            .map(|(n, d)| Unit {
-                name: n.clone(),
-                unit: n.clone(),
-                belongs: kakiburi_cassette::Belongs::Person {
-                    scene: "試験".into(),
-                },
-                document: d.clone(),
-            })
-            .chain(baseline.iter().map(|(n, d)| Unit {
-                name: n.clone(),
-                unit: n.clone(),
-                belongs: kakiburi_cassette::Belongs::Baseline {
-                    scene: "試験".into(),
-                },
-                document: d.clone(),
-            }))
-            .collect();
         let mut c = Cassette {
             version: store::VERSION,
             generation: 0,
             fingerprint: current_fingerprint(),
             provisional: vec![],
-            corpus: Corpus::new(units),
-            tracks: BTreeMap::new(),
+            scene: "試験".into(),
+            decided: Decided::default(),
+            derived: Derived::dropped(),
         };
-        c.track_mut("試験").derived.scale = Some(scale_json::write(&scale));
+        c.derived.scale = Some(scale_json::write(&scale));
         // <strong>効くかの判定も入れる。</strong> 入れなければ、検めはそこで判定できないを返す
         // ——別の理由で止まるので、通したい経路が通っていないことに気付けない。
         let effective = kakiburi_scale::effective::judge(
@@ -3767,8 +3718,9 @@ mod tests {
             &rows(&fixture::samples(&baseline), Some(&fixture::Chars)),
             &|n| remedies::FromDefinitions::load().by_appearance(n),
         );
-        c.track_mut("試験").derived.spread = Some(effective_json::write_spread(&effective));
-        c.track_mut("試験").derived.effective = Some(effective_json::write_effective(&effective));
+        c.derived.spread = Some(effective_json::write_spread(&effective));
+        c.derived.effective = Some(effective_json::write_effective(&effective));
+        c.derived.phrases = Some(phrase_table(&person, Some(&fixture::Chars)));
         // <strong>指紋も目盛りに合わせる。</strong> 合わせなければ、検めが使う前に断る。
         refresh(&mut c);
         let path = dir.join("scale.kbc");
@@ -3797,8 +3749,6 @@ mod tests {
             target.to_string_lossy().into_owned(),
             "--cassette".to_owned(),
             cassette,
-            "--scene".to_owned(),
-            "試験".to_owned(),
             "--source".to_owned(),
             "plain-markdown".to_owned(),
         ];
@@ -3808,33 +3758,40 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    #[test]
+    fn 検めは場面を訊かない() {
+        // <strong>1 カセットが 1 場面である。</strong> 入れ物を選ぶことが場面を選ぶこと
+        // なので、引数で二重に言わせない——言わせれば、食い違ったときに正本が
+        // 決まらない。
+        let dir = temp_dir("review-no-scene");
+        let cassette = cassette_with_scale(&dir);
+        let target = dir.join("検める.md");
+        std::fs::write(&target, "これは、そうだ、と思う。\n").expect("書ける");
+        assert_eq!(
+            run(&[
+                "review".to_owned(),
+                target.to_string_lossy().into_owned(),
+                "--cassette".to_owned(),
+                cassette,
+                "--source".to_owned(),
+                "plain-markdown".to_owned(),
+                "--scene".to_owned(),
+                "試験".to_owned(),
+            ]),
+            Exit::Usage,
+            "--scene はもう無い"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     /// 空のカセットを 1 つ作る。
     fn empty_cassette(dir: &std::path::Path) -> String {
         let p = dir.join("c.kbc").to_string_lossy().into_owned();
-        assert_eq!(run(&["new".to_owned(), p.clone()]), Exit::Pass);
         assert_eq!(
-            run(&["scene".to_owned(), p.clone(), "試験".to_owned()]),
+            run(&["new".to_owned(), p.clone(), "試験".to_owned()]),
             Exit::Pass
         );
         p
-    }
-
-    /// `add` の引数。<strong>場面と取り込み元は毎回書く。</strong>
-    fn add_args(cassette: &str, file: &str, role: &str) -> Vec<String> {
-        let mut out = vec![
-            "add".to_owned(),
-            cassette.to_owned(),
-            file.to_owned(),
-            "--as".to_owned(),
-            role.to_owned(),
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
-        ];
-        if role != "other" {
-            out.push("--scene".to_owned());
-            out.push("試験".to_owned());
-        }
-        out
     }
 
     /// 入れる 1 本を書く。
@@ -3845,89 +3802,21 @@ mod tests {
     }
 
     #[test]
-    fn 役を渡さなければ入れない() {
-        // 取り違えると、対照にしたはずの文書が書き手の帯に残る。
-        let dir = temp_dir("as-required");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "x");
-        assert_eq!(run(&["add".to_owned(), c, f]), Exit::Usage);
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 同じ名前は入れない() {
-        // 黙って上書きすれば、原本が 1 本消えたことは値が変わるまで気付けない。
-        let dir = temp_dir("dup-id");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "x");
-        let args = |c: &str, f: &str| add_args(c, f, "person");
-        assert_eq!(run(&args(&c, &f)), Exit::Pass);
-        assert_eq!(run(&args(&c, &f)), Exit::Usage, "2 度目は断る");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 役を跨いでも名前は一意である() {
-        // 役で名前空間を分ければ、本人と基準の同題材が別物として通る。
-        let dir = temp_dir("dup-role");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "x");
-        let args = |role: &str| add_args(&c, &f, role);
-        assert_eq!(run(&args("person")), Exit::Pass);
-        assert_eq!(run(&args("baseline")), Exit::Usage, "役が違っても断る");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 無い名前は差し替えない() {
-        // add の綴り間違いで差し替えたことにしない。
-        let dir = temp_dir("replace-missing");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "x");
-        let args = vec![
-            "replace".to_owned(),
-            c,
-            f,
-            "--id".to_owned(),
-            "無い".to_owned(),
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
-        ];
-        assert_eq!(run(&args), Exit::Usage);
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 差し替えは名前で指す() {
-        // 取り込み直すときにファイル名が変わっていることは普通にある。
-        let dir = temp_dir("replace-ok");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "もとの名前");
-        assert_eq!(run(&add_args(&c, &f, "person")), Exit::Pass);
-        let f2 = a_document(&dir, "違う名前");
+    fn 場面を名乗らなければ作らない() {
+        // <strong>場面は人が指定する。</strong> 文章から当てにいかない。
+        let dir = temp_dir("new-needs-scene");
+        let p = dir.join("c.kbc").to_string_lossy().into_owned();
+        assert_eq!(run(&["new".to_owned(), p.clone()]), Exit::Usage);
         assert_eq!(
-            run(&[
-                "replace".to_owned(),
-                c.clone(),
-                f2,
-                "--id".to_owned(),
-                "もとの名前".to_owned(),
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
-            ]),
-            Exit::Pass
-        );
-        let (got, _) = open(&c).expect("読める");
-        assert_eq!(got.corpus.len(), 1, "増えない");
-        assert_eq!(
-            got.corpus.in_scene("試験", Role::Person)[0].name,
-            "もとの名前"
+            run(&["new".to_owned(), p, "   ".to_owned()]),
+            Exit::Usage,
+            "空白だけの名前も断る"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn 分布を出す() {
+    fn 中身を出す() {
         let dir = temp_dir("show");
         let cassette = cassette_with_scale(&dir);
         assert_eq!(run(&["show".to_owned(), cassette]), Exit::Pass);
@@ -3969,6 +3858,20 @@ mod tests {
     }
 
     #[test]
+    fn 検査は素材を要らない() {
+        // <strong>カセット単体で矛盾していないかを見る。</strong> 本人がいちばん高く出るかは
+        // build が測る——そちらは素材を持っているときにしか言えない。
+        let dir = temp_dir("doctor-no-material");
+        let cassette = cassette_with_scale(&dir);
+        // 素材のフォルダをどこにも渡していないのに、最後まで走る。
+        assert!(matches!(
+            run(&["doctor".to_owned(), cassette]),
+            Exit::Pass | Exit::Unknown
+        ));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn 落とす定型を決める() {
         let dir = temp_dir("decide-bp");
         let c = empty_cassette(&dir);
@@ -3976,31 +3879,20 @@ mod tests {
             run(&[
                 "decide".to_owned(),
                 c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
                 "boilerplate".to_owned(),
                 "お世話になっており".to_owned(),
             ]),
             Exit::Pass
         );
         let (got, _) = open(&c).expect("読める");
-        assert_eq!(
-            got.track("試験").unwrap().decided.boilerplate,
-            vec!["お世話になっており"]
-        );
+        assert_eq!(got.decided.boilerplate, vec!["お世話になっており"]);
         // <strong>置き換える。</strong> 足していく形にしない。
         assert_eq!(
-            run(&[
-                "decide".to_owned(),
-                c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-                "boilerplate".to_owned(),
-            ]),
+            run(&["decide".to_owned(), c.clone(), "boilerplate".to_owned()]),
             Exit::Pass
         );
         let (got, _) = open(&c).expect("読める");
-        assert!(got.track("試験").unwrap().decided.boilerplate.is_empty());
+        assert!(got.decided.boilerplate.is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4012,8 +3904,6 @@ mod tests {
             run(&[
                 "decide".to_owned(),
                 c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
                 "movement".to_owned(),
                 "絵文字".to_owned(),
                 "stuck".to_owned(),
@@ -4021,7 +3911,7 @@ mod tests {
             Exit::Pass
         );
         let (got, _) = open(&c).expect("読める");
-        assert!(got.is_stuck("試験", "絵文字"));
+        assert!(got.is_stuck("絵文字"));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4049,13 +3939,11 @@ mod tests {
         let dir = temp_dir("decide-drop");
         let cassette = cassette_with_scale(&dir);
         let (before, _) = open(&cassette).expect("読める");
-        assert!(before.track("試験").unwrap().derived.effective.is_some());
+        assert!(before.derived.effective.is_some());
         assert_eq!(
             run(&[
                 "decide".to_owned(),
                 cassette.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
                 "movement".to_owned(),
                 "絵文字".to_owned(),
                 "stuck".to_owned(),
@@ -4063,63 +3951,22 @@ mod tests {
             Exit::Pass
         );
         let (after, _) = open(&cassette).expect("読める");
-        assert!(
-            after.track("試験").unwrap().derived.effective.is_none(),
-            "捨てている"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 基準は版まで書かないと入れない() {
-        // 記録の無い基準で作った値は、次に測ったときに比べられない。
-        let dir = temp_dir("baseline-version");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "b");
-        let base = vec![
-            "add".to_owned(),
-            c.clone(),
-            f,
-            "--as".to_owned(),
-            "baseline".to_owned(),
-            "--scene".to_owned(),
-            "試験".to_owned(),
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
-        ];
-        assert_eq!(run(&base), Exit::Usage, "版が無い");
-        let mut with = base.clone();
-        with.extend([
-            "--model".to_owned(),
-            "m".to_owned(),
-            "--version".to_owned(),
-            "v1".to_owned(),
-        ]);
-        assert_eq!(run(&with), Exit::Pass);
-        let (got, _) = open(&c).expect("読める");
-        assert_eq!(got.track("試験").unwrap().decided.baseline.model, "m");
-        assert_eq!(got.track("試験").unwrap().decided.baseline.version, "v1");
+        assert!(after.derived.effective.is_none(), "捨てている");
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
     fn 既に在るところには作らない() {
-        // 取り込みには時間が掛かり、原本は作り直せない。上書きすれば、入れた単位は
-        // そこで消える。
+        // 人が決めたことは作り直せない。上書きすれば、そこで消える。
         let dir = temp_dir("new-exists");
         let c = empty_cassette(&dir);
         assert_eq!(
-            run(&[
-                "new".to_owned(),
-                c.clone(),
-                "--scene".to_owned(),
-                "別の場面".to_owned(),
-            ]),
+            run(&["new".to_owned(), c.clone(), "別の場面".to_owned()]),
             Exit::Usage,
             "既に在れば断る"
         );
         let (got, _) = open(&c).expect("読める");
-        assert_eq!(got.scenes(), vec!["試験"], "断ったのだから中身は変わらない");
+        assert_eq!(got.scene, "試験", "断ったのだから中身は変わらない");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4131,17 +3978,15 @@ mod tests {
         let mut made = Vec::new();
         for (name, scene) in [("a", "技術記事"), ("b", "議事録")] {
             let p = dir.join(name).to_string_lossy().into_owned();
-            assert_eq!(run(&["new".to_owned(), p.clone()]), Exit::Pass);
             assert_eq!(
-                run(&["scene".to_owned(), p.clone(), scene.to_owned()]),
+                run(&["new".to_owned(), p.clone(), scene.to_owned()]),
                 Exit::Pass
             );
             made.push(open(&p).expect("読める").0);
         }
-        // <strong>片方にしか無い場面として、両方が差に出る。</strong>
         assert_eq!(
             made[0].fingerprint.differences(&made[1].fingerprint),
-            vec!["技術記事 の場面ごとの材料", "議事録 の場面ごとの材料"]
+            vec!["人が決めたこと"]
         );
         // <strong>道具は同じである。</strong> 場面が違うだけで「辞書が変わった」と言わない。
         assert!(made[0]
@@ -4152,41 +3997,12 @@ mod tests {
     }
 
     #[test]
-    fn 分かれている場面は外との差が中の散らばりを上回る() {
-        // <strong>場面が分かれていないなら、場面ごとに閉じている意味が無い。</strong>
-        // 逆に、中が外より散らばっているなら、その「1 つの場面」は 1 つではない。
-        let row =
-            |v: f64| -> kakiburi_scale::effective::Row { vec![("指標".to_owned(), Some(v))] };
-        let tight = vec![row(1.0), row(1.02), row(0.98)];
-        let far = vec![row(10.0), row(10.2), row(9.8)];
-        assert!(
-            mean_gap(&tight, &far) > mean_spread(&tight),
-            "離れていれば上回る"
-        );
-        let overlapping = vec![row(1.0), row(9.0), row(5.0)];
-        let also = vec![row(1.2), row(8.8), row(5.1)];
-        assert!(
-            mean_gap(&overlapping, &also) <= mean_spread(&overlapping),
-            "中のほうが散らばっていれば上回らない"
-        );
-    }
-
-    #[test]
-    fn 測れていない指標は分かれ方に数えない() {
-        // 測れていないものを 0 として混ぜれば、測れない場面ほど離れて見える。
-        let row =
-            |v: Option<f64>| -> kakiburi_scale::effective::Row { vec![("指標".to_owned(), v)] };
-        assert_eq!(mean_spread(&[row(None), row(None)]), 0.0);
-        assert_eq!(mean_gap(&[row(None)], &[row(Some(1.0))]), 0.0);
-    }
-
-    #[test]
     fn 各コマンドが自分の節を出す() {
         // 位置引数がファイルなので、そのまま渡すと `--help` がファイル名として
         // 解釈され、<strong>「読めない（65）」で終わる。</strong>
         for name in [
-            "measure", "new", "scene", "add", "replace", "decide", "build", "review", "compare",
-            "show", "doctor", "metrics",
+            "measure", "new", "decide", "build", "quick", "review", "compare", "show", "doctor",
+            "metrics",
         ] {
             assert_eq!(
                 run(&[name.to_owned(), "--help".to_owned()]),
@@ -4204,6 +4020,16 @@ mod tests {
             ]),
             Exit::Pass
         );
+    }
+
+    #[test]
+    fn 消したコマンドは知らないコマンドである() {
+        // <strong>黙って別の意味で受けない。</strong> 素材はフォルダを指して渡すように
+        // なったので、単位を 1 本ずつ入れる道はもう無い。
+        for name in ["scene", "add", "replace"] {
+            assert_eq!(run(&[name.to_owned()]), Exit::Usage, "{name}");
+            assert!(section(name).is_none(), "{name}");
+        }
     }
 
     #[test]
@@ -4238,114 +4064,7 @@ mod tests {
     }
 
     #[test]
-    fn 知らない場面は断る() {
-        // 綴りを間違えたまま通れば、誰もいない場面に素材が入り、エラーも出ない。
-        // <strong>review では「目盛りが無い」として正常な停止に化ける。</strong>
-        let dir = temp_dir("unknown-scene");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "x");
-        let bad = |mut args: Vec<String>| {
-            let i = args.iter().position(|a| a == "試験").expect("在る");
-            args[i] = "試駼".to_owned();
-            args
-        };
-        assert_eq!(run(&bad(add_args(&c, &f, "person"))), Exit::Usage, "add");
-        assert_eq!(
-            run(&bad(vec![
-                "decide".to_owned(),
-                c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-                "boilerplate".to_owned(),
-            ])),
-            Exit::Usage,
-            "decide"
-        );
-        assert_eq!(
-            run(&bad(vec![
-                "review".to_owned(),
-                f.clone(),
-                "--cassette".to_owned(),
-                c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
-            ])),
-            Exit::Usage,
-            "review"
-        );
-        assert_eq!(
-            run(&bad(vec![
-                "build".to_owned(),
-                c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-            ])),
-            Exit::Usage,
-            "build"
-        );
-        // 断ったのだから、何も入っていない。
-        let (got, _) = open(&c).expect("読める");
-        assert!(got.corpus.is_empty());
-        assert_eq!(got.scenes(), vec!["試験"]);
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 他人の文書は場面を取らない() {
-        // 仕様の「越境はこの用途に限る」を、引数の形でそのまま言う。
-        let dir = temp_dir("other-scene");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "o");
-        let mut with = add_args(&c, &f, "other");
-        with.push("--scene".to_owned());
-        with.push("試験".to_owned());
-        assert_eq!(run(&with), Exit::Usage, "--scene を渡したら断る");
-        assert_eq!(run(&add_args(&c, &f, "other")), Exit::Pass);
-        let (got, _) = open(&c).expect("読める");
-        assert_eq!(got.corpus.for_humanness().len(), 1);
-        assert!(
-            got.corpus.in_scene("試験", Role::Other).is_empty(),
-            "場面で絞る口からは出てこない"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 場面ごとに指紋の欄が分かれる() {
-        // <strong>1 つの場面を build しても、ほかの場面の語彙は消えない。</strong>
-        // 割らずに 1 つの欄で持てば、2 つ目を作った時点で 1 つ目が上書きされる。
-        let dir = temp_dir("scene-fingerprint-split");
-        let c = empty_cassette(&dir);
-        assert_eq!(
-            run(&["scene".to_owned(), c.clone(), "チャット".to_owned()]),
-            Exit::Pass
-        );
-        let (mut cass, _) = open(&c).expect("読める");
-        cass.track_mut("試験").decided.boilerplate = vec!["この記事では".into()];
-        refresh(&mut cass);
-        let before = cass.fingerprint.clone();
-
-        cass.track_mut("チャット").decided.boilerplate = vec!["おつかれさまです".into()];
-        refresh(&mut cass);
-
-        assert_eq!(
-            before.scene_differences(&cass.fingerprint, "チャット"),
-            vec!["人が決めたこと"]
-        );
-        assert!(
-            before
-                .scene_differences(&cass.fingerprint, "試験")
-                .is_empty(),
-            "触っていない場面は動かない"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
     fn 作った直後の指紋は環境と合う() {
-        // 場面を入れ忘れると、作った直後から「合わない」になる。
         let dir = temp_dir("new-fingerprint");
         let c = empty_cassette(&dir);
         let (got, _) = open(&c).expect("読める");
@@ -4370,23 +4089,19 @@ mod tests {
             run(&[
                 "decide".to_owned(),
                 c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
                 "boilerplate".to_owned(),
                 "お世話になっており".to_owned(),
             ]),
             Exit::Pass
         );
         let after = fingerprint_with(&open(&c).expect("読める").0, mecab);
-        assert_eq!(before.differences(&after), vec!["試験 の人が決めたこと"]);
+        assert_eq!(before.differences(&after), vec!["人が決めたこと"]);
 
         let metric = measured_names().first().expect("指標が要る").clone();
         assert_eq!(
             run(&[
                 "decide".to_owned(),
                 c.clone(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
                 "movement".to_owned(),
                 metric,
                 "stuck".to_owned(),
@@ -4394,140 +4109,236 @@ mod tests {
             Exit::Pass
         );
         let stuck = fingerprint_with(&open(&c).expect("読める").0, mecab);
-        assert_eq!(after.differences(&stuck), vec!["試験 の人が決めたこと"]);
+        assert_eq!(after.differences(&stuck), vec!["人が決めたこと"]);
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn 作り方の違う基準は混ぜない() {
-        // 版が変われば出力が変わる。混ぜれば、測っているのが版の差になる。
-        let dir = temp_dir("baseline-mix");
-        let c = empty_cassette(&dir);
-        let args = |name: &str, version: &str| {
-            vec![
-                "add".to_owned(),
-                c.clone(),
-                a_document(&dir, name),
-                "--as".to_owned(),
-                "baseline".to_owned(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
-                "--model".to_owned(),
-                "m".to_owned(),
-                "--version".to_owned(),
-                version.to_owned(),
-            ]
+    fn 素材から作り直すと同じものが出る() {
+        // <strong>[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)が
+        // 本当かを確かめる。</strong> 通らなければ、派生物のどこかに原本が混ざっている
+        // ——気付かないまま運用すると、測り直した瞬間に人が決めたことが消える。
+        //
+        // <strong>実際に消して、実際に build する。</strong> 控えを戻す形では build を 1 度も
+        // 呼ばずに通ってしまう。
+        // <strong>辞書が無ければ目盛りは作れない。</strong> そのまま走らせると、捨てた派生物と
+        // 作り直した派生物がどちらも空で一致し、<strong>何も確かめずに緑になる。</strong>
+        let Some(_) = analyzer::resolve() else {
+            eprintln!("辞書が無いので飛ばす（{} を指す）", analyzer::DICDIR);
+            return;
         };
-        assert_eq!(run(&args("b1", "v1")), Exit::Pass);
-        assert_eq!(run(&args("b2", "v1")), Exit::Pass, "同じ版なら入る");
-        assert_eq!(run(&args("b3", "v2")), Exit::Usage, "違う版は断る");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 推論設定が違う基準は混ぜない() {
-        // 版が同じでも温度が違えば別の出力になる。<strong>そこまでが作り方である。</strong>
-        let dir = temp_dir("baseline-params");
-        let c = empty_cassette(&dir);
-        let args = |name: &str, temp: &str| {
-            vec![
-                "add".to_owned(),
-                c.clone(),
-                a_document(&dir, name),
-                "--as".to_owned(),
-                "baseline".to_owned(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
-                "--model".to_owned(),
-                "m".to_owned(),
-                "--version".to_owned(),
-                "v1".to_owned(),
-                "--param".to_owned(),
-                format!("temperature={temp}"),
-            ]
-        };
-        assert_eq!(run(&args("b1", "1.0")), Exit::Pass);
-        assert_eq!(run(&args("b2", "1.0")), Exit::Pass, "同じ設定なら入る");
-        assert_eq!(run(&args("b3", "0.2")), Exit::Usage, "違う設定は断る");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 推論設定を省いても消えない() {
-        // 空で上書きすれば、記録してあった設定が黙って消える。
-        let dir = temp_dir("baseline-params-keep");
-        let c = empty_cassette(&dir);
-        let mut first = vec![
-            "add".to_owned(),
+        let dir = temp_dir("rebuild");
+        let person = dir.join("person");
+        let baseline = dir.join("baseline");
+        std::fs::create_dir_all(&person).expect("作れる");
+        std::fs::create_dir_all(&baseline).expect("作れる");
+        // <strong>素材は目盛りが作れる形で置く。</strong> 作れなければ、捨てた派生物と
+        // 作り直した派生物がどちらも空で一致し、何も確かめていないことになる。
+        let (p, b) = fixture::corpus();
+        for (side, units) in [(&person, &p), (&baseline, &b)] {
+            for (name, doc) in units {
+                let body = kakiburi_metrics::humanness::joined(&doc.prose());
+                std::fs::write(side.join(format!("{name}.md")), body).expect("書ける");
+            }
+        }
+        let c = dir.join("c.kb").to_string_lossy().into_owned();
+        let build = vec![
+            "build".to_owned(),
             c.clone(),
-            a_document(&dir, "b1"),
-            "--as".to_owned(),
-            "baseline".to_owned(),
-            "--scene".to_owned(),
-            "試験".to_owned(),
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
+            "--person".to_owned(),
+            person.to_string_lossy().into_owned(),
+            "--baseline".to_owned(),
+            baseline.to_string_lossy().into_owned(),
+            // <strong>同梱の池ではないので、作り方を名乗る。</strong>
             "--model".to_owned(),
             "m".to_owned(),
             "--version".to_owned(),
             "v1".to_owned(),
         ];
-        first.push("--param".to_owned());
-        first.push("temperature=1.0".to_owned());
-        assert_eq!(run(&first), Exit::Pass);
-
-        let mut second = first[..first.len() - 2].to_vec();
-        second[2] = a_document(&dir, "b2");
-        assert_eq!(run(&second), Exit::Pass, "省いても入る");
-        let (got, _) = open(&c).expect("読める");
         assert_eq!(
-            got.track("試験")
-                .unwrap()
-                .decided
-                .baseline
-                .params
-                .get("temperature"),
-            Some(&"1.0".to_owned()),
-            "省いた設定が消えている"
+            run(&["new".to_owned(), c.clone(), "試験".to_owned()]),
+            Exit::Pass
+        );
+        assert_eq!(run(&build), Exit::Pass);
+        let before = open(&c).expect("読める").0;
+        assert!(before.derived.has_scale(), "目盛りができている");
+
+        let mut dropped = before.clone();
+        dropped.drop_derived();
+        assert!(!dropped.derived.has_scale(), "捨てられている");
+        std::fs::write(&c, store::write(&dropped)).expect("書ける");
+
+        assert_eq!(run(&build), Exit::Pass, "作り直せる");
+        let after = open(&c).expect("読める").0;
+        assert_eq!(after.derived, before.derived, "同じ派生物が出る");
+        assert_eq!(after.decided, before.decided, "決めたことも変わらない");
+        assert!(
+            after.fingerprint.matches(&before.fingerprint),
+            "指紋も同じ"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn 差し替えでも取り込み元が指紋に残る() {
-        // `add` だけが足すと、別の取り込み元で差し替えたことが指紋から読めない。
-        // 取り込み元の取り違えを検出する唯一の手がかりが動かなくなる。
-        let dir = temp_dir("replace-source");
-        let c = empty_cassette(&dir);
-        let f = a_document(&dir, "x");
-        assert_eq!(run(&add_args(&c, &f, "person")), Exit::Pass);
-        let before = open(&c).expect("読める").0;
+    fn quick_はカセットでないファイルを消さない() {
+        // <strong>在るものを消さない。</strong> 消してよいかは読んでみるまで分からない
+        // ——カセットでないファイルは、人の別のファイルである。
+        let dir = temp_dir("quick-not-a-cassette");
+        let person = dir.join("person");
+        std::fs::create_dir_all(&person).expect("作れる");
+        std::fs::write(person.join("a.md"), "これは、そうだ。\n").expect("書ける");
+        let victim = dir.join("大事.txt");
+        std::fs::write(&victim, "消えてはいけない").expect("書ける");
         assert_eq!(
-            before.fingerprint.inputs.common.normalization.sources,
-            vec!["plain-markdown"]
+            run(&[
+                "quick".to_owned(),
+                person.to_string_lossy().into_owned(),
+                "--cassette".to_owned(),
+                victim.to_string_lossy().into_owned(),
+            ]),
+            Exit::Usage
+        );
+        assert_eq!(
+            std::fs::read_to_string(&victim).expect("在る"),
+            "消えてはいけない",
+            "消されている"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn quick_は人が決めたことを引き継ぐ() {
+        // <strong>カセットだったとしても消さない。</strong> 人が決めたことは作り直せない
+        // ので、消せば落とす定型も動かない指標もそこで消える。
+        let dir = temp_dir("quick-keeps-decided");
+        let person = dir.join("person");
+        std::fs::create_dir_all(&person).expect("作れる");
+        std::fs::write(person.join("a.md"), "これは、そうだ。\n").expect("書ける");
+        let c = dir.join("c.kb").to_string_lossy().into_owned();
+        assert_eq!(
+            run(&["new".to_owned(), c.clone(), "default".to_owned()]),
+            Exit::Pass
         );
         assert_eq!(
             run(&[
-                "replace".to_owned(),
+                "decide".to_owned(),
                 c.clone(),
-                f,
-                "--id".to_owned(),
-                "x".to_owned(),
-                "--source".to_owned(),
-                "github-markdown".to_owned(),
+                "boilerplate".to_owned(),
+                "お世話になっており".to_owned(),
             ]),
             Exit::Pass
         );
-        let (after, _) = open(&c).expect("読める");
+        // 素材が足りないので目盛りは作れないが、<strong>作れなくても消してはいけない。</strong>
+        run(&[
+            "quick".to_owned(),
+            person.to_string_lossy().into_owned(),
+            "--cassette".to_owned(),
+            c.clone(),
+        ]);
+        let (got, _) = open(&c).expect("読める");
         assert_eq!(
-            after.fingerprint.inputs.common.normalization.sources,
-            vec!["github-markdown", "plain-markdown"],
-            "差し替えた取り込み元が残っていない"
+            got.decided.boilerplate,
+            vec!["お世話になっており"],
+            "人が決めたことが消えている"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 役を跨いで名前が重なれば断る() {
+        // <strong>測るときは名前で引く。</strong> 重なれば片方の測定値がもう片方で
+        // 置き換わり、<strong>本人の単位が基準の数字で測られる</strong>——壊れた帯が
+        // 正常な顔でカセットに入る。
+        let dir = temp_dir("dup-name");
+        let person = dir.join("person");
+        let baseline = dir.join("baseline");
+        std::fs::create_dir_all(&person).expect("作れる");
+        std::fs::create_dir_all(&baseline).expect("作れる");
+        // <strong>同じ題材を揃えるほど同じ名前が付きやすい。</strong>
+        for side in [&person, &baseline] {
+            std::fs::write(side.join("Rust入門.md"), "これは、そうだ。\n").expect("書ける");
+        }
+        let c = dir.join("c.kb").to_string_lossy().into_owned();
+        assert_eq!(
+            run(&["new".to_owned(), c.clone(), "試験".to_owned()]),
+            Exit::Pass
+        );
+        assert_eq!(
+            run(&[
+                "build".to_owned(),
+                c,
+                "--person".to_owned(),
+                person.to_string_lossy().into_owned(),
+                "--baseline".to_owned(),
+                baseline.to_string_lossy().into_owned(),
+                "--model".to_owned(),
+                "m".to_owned(),
+                "--version".to_owned(),
+                "v1".to_owned(),
+            ]),
+            Exit::Usage
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 同梱の池は自分で版を名乗る() {
+        // <strong>場所では決められない。</strong> 環境変数が同梱の池を指すのは普通の
+        // 使い方だが、どこを指しているかは道具に分からない——目印を池の中に置く。
+        let dir = temp_dir("pool-marker");
+        let pool = dir.join("pool");
+        std::fs::create_dir_all(&pool).expect("作れる");
+        assert_eq!(pool_version(&pool.to_string_lossy()), None, "目印が無い");
+        std::fs::write(pool.join(POOL_MARKER), "2026-09\n").expect("書ける");
+        assert_eq!(
+            pool_version(&pool.to_string_lossy()),
+            Some("2026-09".to_owned())
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 同梱でない基準には版が要る() {
+        // <strong>記録の無い基準で作った値は、次に測ったときに比べられない。</strong>
+        let dir = temp_dir("baseline-version");
+        let person = dir.join("person");
+        let baseline = dir.join("baseline");
+        std::fs::create_dir_all(&person).expect("作れる");
+        std::fs::create_dir_all(&baseline).expect("作れる");
+        std::fs::write(person.join("p.md"), "これは、そうだ。\n").expect("書ける");
+        std::fs::write(baseline.join("b.md"), "これは、そうだ。\n").expect("書ける");
+        let c = dir.join("c.kb").to_string_lossy().into_owned();
+        assert_eq!(
+            run(&["new".to_owned(), c.clone(), "試験".to_owned()]),
+            Exit::Pass
+        );
+        let base = vec![
+            "build".to_owned(),
+            c,
+            "--person".to_owned(),
+            person.to_string_lossy().into_owned(),
+            "--baseline".to_owned(),
+            baseline.to_string_lossy().into_owned(),
+        ];
+        assert_eq!(run(&base), Exit::Usage, "版が無い");
+        let mut with = base.clone();
+        with.extend([
+            "--model".to_owned(),
+            "m".to_owned(),
+            "--version".to_owned(),
+            "v1".to_owned(),
+        ]);
+        assert_ne!(run(&with), Exit::Usage, "名乗れば通る");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 束ねた単位は中身を名前にする() {
+        // 連番にすると束の構成がどこにも残らず、割りの表に名前だけが並ぶ。
+        let dir = temp_dir("bundle-name-members");
+        let files = vec![a_document(&dir, "b001"), a_document(&dir, "b002")];
+        let got = load_units(&files, &[vec![0, 1]]).expect("読める");
+        assert_eq!(got[0].0, "b001+b002");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4535,57 +4346,35 @@ mod tests {
     fn 束ねると_1_単位になる() {
         // 10 単位の下限は単位で数える。ファイルで数えれば、束ねた分だけ多く見える。
         let dir = temp_dir("bundle");
-        let c = empty_cassette(&dir);
-        for name in ["a", "b"] {
-            let f = a_document(&dir, name);
-            assert_eq!(
-                run(&[
-                    "add".to_owned(),
-                    c.clone(),
-                    f,
-                    "--as".to_owned(),
-                    "person".to_owned(),
-                    "--scene".to_owned(),
-                    "試験".to_owned(),
-                    "--source".to_owned(),
-                    "plain-markdown".to_owned(),
-                    "--unit".to_owned(),
-                    "束".to_owned(),
-                ]),
-                Exit::Pass
-            );
-        }
-        let (got, _) = open(&c).expect("読める");
-        assert_eq!(got.corpus.len(), 2, "取り込んだのは 2 本");
-        let bundles = got.bundles("試験", Role::Person);
-        assert_eq!(bundles.len(), 1, "測る単位は 1 つ");
-        assert_eq!(bundles[0].0, "束");
-        assert_eq!(bundles[0].1.nodes.len(), 2, "node の境界は残す");
+        let files = vec![a_document(&dir, "a"), a_document(&dir, "b")];
+        let alone = load_units(&files, &[]).expect("読める");
+        assert_eq!(alone.len(), 2, "束ねなければ 2 単位");
+        let bundled = load_units(&files, &[vec![0, 1]]).expect("読める");
+        assert_eq!(bundled.len(), 1, "測る単位は 1 つ");
+        assert_eq!(bundled[0].1.nodes.len(), 2, "node の境界は残す");
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn 単位は役を跨げない() {
-        // 1 つの単位が本人でも基準でもあることになる。
-        let dir = temp_dir("bundle-role");
-        let c = empty_cassette(&dir);
-        let args = |name: &str, role: &str| {
-            vec![
-                "add".to_owned(),
-                c.clone(),
-                a_document(&dir, name),
-                "--as".to_owned(),
-                role.to_owned(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
-                "--unit".to_owned(),
-                "束".to_owned(),
-            ]
-        };
-        assert_eq!(run(&args("a", "person")), Exit::Pass);
-        assert_eq!(run(&args("b", "baseline")), Exit::Usage);
+    fn 束ねない_1_本はファイル名を名乗る() {
+        // <strong>束ねた単位だけが自分の名前を名乗る。</strong> 1 本しか入っていない組に
+        // 別の名前を付けると、割りの表からどのファイルか引けなくなる。
+        let dir = temp_dir("bundle-name");
+        let files = vec![a_document(&dir, "記事")];
+        let got = load_units(&files, &[vec![0]]).expect("読める");
+        assert_eq!(got[0].0, "記事");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 読めない_1_本があれば何も返さない() {
+        // 黙って一部を落として通せば、欠けたまま目盛りが出来上がる。
+        let dir = temp_dir("load-partial");
+        let files = vec![
+            a_document(&dir, "a"),
+            dir.join("無い.md").to_string_lossy().into_owned(),
+        ];
+        assert!(load_units(&files, &[]).is_err());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4594,23 +4383,17 @@ mod tests {
         // 世代が進まなければ、同時に書いた片方の変更が正常終了のまま消える。
         let dir = temp_dir("generation");
         let c = empty_cassette(&dir);
-        assert_eq!(save::generation_of(&c), 2, "作って場面を足した時点で 2");
-        let f = a_document(&dir, "x");
+        assert_eq!(save::generation_of(&c), 1, "作った時点で 1");
         assert_eq!(
             run(&[
-                "add".to_owned(),
+                "decide".to_owned(),
                 c.clone(),
-                f,
-                "--as".to_owned(),
-                "person".to_owned(),
-                "--scene".to_owned(),
-                "試験".to_owned(),
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
+                "boilerplate".to_owned(),
+                "お世話になっており".to_owned(),
             ]),
             Exit::Pass
         );
-        assert_eq!(save::generation_of(&c), 3);
+        assert_eq!(save::generation_of(&c), 2);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4643,6 +4426,40 @@ mod tests {
     }
 
     #[test]
+    fn 言い回しの表は_2_つ以上の単位に出るものだけを持つ() {
+        // 1 つの単位にしか出てこない言い回しは、その記事の題材であって書きぶり
+        // ではない——<strong>持っても上限がほぼ 0 で、持たないのと同じ結論になる。</strong>
+        let (person, _) = fixture::corpus();
+        let table = phrase_table(&person, Some(&fixture::Chars));
+        let read = Cassette {
+            derived: Derived {
+                phrases: Some(table),
+                ..Derived::dropped()
+            },
+            ..fixture_cassette()
+        };
+        let got = read_phrase_table(&read);
+        assert!(!got.is_empty(), "共通の言い回しが拾えている");
+        assert!(got.values().all(|v| *v > 0.0), "上限は正である");
+        // <strong>表に無いものは上限 0 である。</strong> 本人が一度も使っていない言い回しを
+        // 草稿が繰り返していれば、それがそのまま指摘になる。
+        assert_eq!(person_ceiling(&got, "誰も書かない並び"), 0.0);
+    }
+
+    /// 言い回しの表だけを見るための、中身の無いカセット。
+    fn fixture_cassette() -> Cassette {
+        Cassette {
+            version: store::VERSION,
+            generation: 0,
+            fingerprint: current_fingerprint(),
+            provisional: vec![],
+            scene: "試験".into(),
+            decided: Decided::default(),
+            derived: Derived::dropped(),
+        }
+    }
+
+    #[test]
     fn 効くかの判定が無ければ判定できない() {
         // <strong>空と欠けを分ける。</strong> 判定がまだ入っていないカセットを「効く指標が 1 本も
         // 無い」と読んではいけない——読めば、指摘の出ない通るが返る。
@@ -4650,7 +4467,7 @@ mod tests {
         let cassette = cassette_with_scale(&dir);
         let raw = std::fs::read(&cassette).expect("読める");
         let mut c = store::read(&raw).expect("読める");
-        c.track_mut("試験").derived.effective = None;
+        c.derived.effective = None;
         std::fs::write(&cassette, store::write(&c)).expect("書ける");
 
         let target = dir.join("検める.md");
@@ -4660,8 +4477,6 @@ mod tests {
             target.to_string_lossy().into_owned(),
             "--cassette".to_owned(),
             cassette,
-            "--scene".to_owned(),
-            "試験".to_owned(),
             "--source".to_owned(),
             "plain-markdown".to_owned(),
         ];
@@ -4675,26 +4490,17 @@ mod tests {
     }
 
     #[test]
-    fn 相手集合が揃わなければ使う前の問題である() {
-        // 本文が入れ替わったカセットで測れば、比べたものに意味が無い。
-        //
-        // <strong>指紋は corpus を含まないので、ここが変わるのは相手集合の照合だけである。</strong>
-        // 同じカセットが[落とす前は判定できないを返す](目盛りを読んで検める)ことと
-        // 合わせて、通った経路が特定できる。
+    fn 相手集合のベクトルが欠ければ使う前の問題である() {
+        // <strong>カセットは本文を持たない。</strong> 相手集合のベクトルが目盛りの中で欠けて
+        // いれば、照合値はもう出せない——<strong>目盛りがあるのに判定できないが返る</strong>
+        // のは、壊れていることが正常に見えるということである。
         let dir = temp_dir("partners");
         let cassette = cassette_with_scale(&dir);
         let raw = std::fs::read(&cassette).expect("読める");
         let mut c = store::read(&raw).expect("読める");
-        // 相手集合の 1 本を落とす。
-        let mut units: Vec<Unit> = c
-            .corpus
-            .in_scene("試験", Role::Person)
-            .into_iter()
-            .chain(c.corpus.in_scene("試験", Role::BaselineOutput))
-            .cloned()
-            .collect();
-        units.retain(|u| u.name != "p00");
-        c.corpus = Corpus::new(units);
+        let mut scale = scale_json::read(c.derived.scale.as_deref().expect("在る")).expect("読める");
+        scale.partner_vectors.pop();
+        c.derived.scale = Some(scale_json::write(&scale));
         std::fs::write(&cassette, store::write(&c)).expect("書ける");
 
         let target = dir.join("検める.md");
@@ -4704,8 +4510,6 @@ mod tests {
             target.to_string_lossy().into_owned(),
             "--cassette".to_owned(),
             cassette,
-            "--scene".to_owned(),
-            "試験".to_owned(),
             "--source".to_owned(),
             "plain-markdown".to_owned(),
         ];

@@ -48,6 +48,9 @@ struct Measurements {
     once_only: Vec<String>,
     /// その単位に現れる語の並びと、位置と node の番号。<strong>型を取り出す材料。</strong>
     grams: Vec<(String, f64, usize)>,
+    /// その単位に現れる[語](kakiburi_metrics::word::goi)の語彙素と、品詞と回数。
+    /// <strong>語形が散っても 1 つに合流する。</strong>
+    goi: BTreeMap<String, (String, usize)>,
     /// 人らしさの次元。
     humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
@@ -112,6 +115,7 @@ impl Measurements {
             // <strong>「散らすな」と言うなら、どれが散らしているのかを言う。</strong>
             once_only: kakiburi_metrics::humanness::once_only(analyzed.as_ref(), ONCE_ONLY),
             grams: kakiburi_metrics::word::grams_with_position(analyzed.as_ref(), &KATA_N),
+            goi: kakiburi_metrics::word::goi(analyzed.as_ref()),
             humanness: Humanness::measure(&prose, analyzed.as_ref()),
             chars: sample.document.japanese_chars(),
             text: kakiburi_metrics::humanness::joined(&prose),
@@ -463,10 +467,40 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
             .collect()
     };
 
+    // <strong>相手集合のベクトルを取り置く。</strong> 検めるときに本文が無くても照合値を
+    // 出せるようにするためである——<strong>ここで作らなければ、素材を持っている瞬間が
+    // 二度と来ない。</strong>
+    let partner_vectors: Vec<crate::PartnerVector> = person_split
+        .partners
+        .iter()
+        .map(|u| {
+            let m = &measured[&u.name];
+            let parts = frozen
+                .iter()
+                .filter_map(|(name, set)| {
+                    let system = System::from_name(name)?;
+                    Some((name.clone(), set.project(m.parts.get(&system)?)?))
+                })
+                .collect();
+            (u.name.clone(), parts)
+        })
+        .collect();
+
+    // <strong>実例も取り置く。</strong> 検めるときに本文へ読みに行く道が無い。
+    let partner_samples: Vec<Sample<'_>> = m
+        .person
+        .iter()
+        .filter(|s| person_split.partners.iter().any(|u| u.name == s.name))
+        .copied()
+        .collect();
+    let examples = examples_for(&frozen, &partner_samples);
+
     Ok(Scale {
         frozen,
         calibration,
         band,
+        examples,
+        partner_vectors,
         selection: {
             let names = |us: &[Unit]| us.iter().map(|u| u.name.clone()).collect();
             crate::Selection {
@@ -492,6 +526,8 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         katas: katas_of(&person_units, &machine_units, &measured, KATAS),
         // <strong>役を入れ替えて、もう 1 度回す。</strong> 同じ仕組みで機械の型が出る。
         machine_katas: katas_of(&machine_units, &person_units, &measured, MACHINE_KATAS),
+        // <strong>並びで割れた癖を、語彙素で拾い直す。</strong>
+        machine_gois: gois_of(&machine_units, &person_units, &measured, MACHINE_GOIS),
     })
 }
 
@@ -594,6 +630,12 @@ pub const KATAS: usize = 6;
 /// 56% の「のではなく、」に押し出されていた。
 pub const MACHINE_KATAS: usize = 200;
 
+/// 残す機械の語の数。<strong>暫定値である。</strong>
+///
+/// [機械の型](MACHINE_KATAS)と同じ理由で多く持つ——この文章に<strong>出ている</strong>ものしか
+/// 言わないので、持っても指摘は増えない。
+pub const MACHINE_GOIS: usize = 200;
+
 /// 場所の型と認める、位置のばらつきの上限。<strong>暫定値である。</strong>
 ///
 /// <strong>短い並びは、決まった場所で使うときだけ型である。</strong> どこにでも出てくる短い
@@ -653,6 +695,136 @@ impl Kata {
             None => self.text.clone(),
         }
     }
+}
+
+/// 機械の語。<strong>基準がよく使い、本人が使わない[語](kakiburi_metrics::word::goi)。</strong>
+///
+/// <strong>[型](Kata)が取りこぼすものを取る。</strong> 型は表層の並びをそのまま照合するので、
+/// 同じ癖が語形ごとに割れて、どの綴りも床を割ることがある——実測で、基準の池 44 本の
+/// うち `地味` は 9 本（20%）に出るのに、`地味に` という綴りは 2 本にしかなく、
+/// 絞った後は 1 単位（5.6%）で<strong>床を割って一度も拾えなかった。</strong>
+///
+/// <strong>本人の側は作らない。</strong> 型には「入っていない本人の型を使え」と言う向きが
+/// あるが、語にそれは無い——<strong>形容詞を 1 つ足せと言われても直せない。</strong>
+/// 言えるのは「この語はその人のものではない」だけである。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Goi {
+    /// 語彙素。
+    pub text: String,
+    /// 基準の単位のうち、これが現れた割合。
+    pub rate: f64,
+    /// 本人の単位のうち、これが現れた割合。
+    pub base: f64,
+    /// 本人が<strong>同じ品詞で</strong>よく使う語彙素。<strong>置き換える先である。</strong>
+    ///
+    /// <strong>「別の言い方にする」だけでは直せない。</strong> 受け取った側は道具の外で
+    /// 語を探すことになり、そこで選んだ語が<strong>また本人の使わない語</strong>でありうる。
+    ///
+    /// <strong>言い換えの辞書は持たない。</strong> 同義語を出すのではなく、<strong>その人が現に
+    /// その品詞で何を使うか</strong>を並べる——選ぶのは書き手である。
+    pub theirs: Vec<String>,
+}
+
+/// 置き換える先として並べる、本人の語の数。<strong>暫定値である。</strong>
+///
+/// <strong>多く出すと選べない。</strong>[渡す軸は 3〜4 本が頂点](../../../docs/references/styleremix-2024.md)
+/// という報告と同じ向きで、ここも絞る。
+pub const GOI_THEIRS: usize = 5;
+
+/// 機械の語を取り出す。
+///
+/// 条件は[型](katas_of)と同じものを、語彙素に当てる——
+/// <strong>基準の[一定割合以上](KATA_PERSON_MIN)に現れ、本人には[ほとんど現れない](KATA_BASE_MAX)。</strong>
+/// <strong>新しい暫定値を増やさない。</strong> 同じ規則を別の単位に当てているだけである。
+fn gois_of(
+    baseline: &[Unit],
+    person: &[Unit],
+    measured: &BTreeMap<String, Measurements>,
+    cap: usize,
+) -> Vec<Goi> {
+    let df = |units: &[Unit]| -> BTreeMap<&str, usize> {
+        let mut out: BTreeMap<&str, usize> = BTreeMap::new();
+        for u in units {
+            let Some(m) = measured.get(&u.name) else {
+                continue;
+            };
+            for g in m.goi.keys() {
+                *out.entry(g.as_str()).or_insert(0) += 1;
+            }
+        }
+        out
+    };
+    let theirs = df(baseline);
+    let mine = df(person);
+    // <strong>置き換える先は本人の中から出す。</strong> 品詞ごとに、延べで多い順。
+    let mut by_pos: BTreeMap<&str, BTreeMap<&str, usize>> = BTreeMap::new();
+    for u in person {
+        let Some(m) = measured.get(&u.name) else {
+            continue;
+        };
+        for (lemma, (pos, n)) in &m.goi {
+            *by_pos
+                .entry(pos.as_str())
+                .or_default()
+                .entry(lemma.as_str())
+                .or_insert(0) += n;
+        }
+    }
+    let pos_of = |lemma: &str| -> Option<&str> {
+        baseline.iter().find_map(|u| {
+            measured
+                .get(&u.name)
+                .and_then(|m| m.goi.get(lemma))
+                .map(|(pos, _)| pos.as_str())
+        })
+    };
+    let suggest = |lemma: &str| -> Vec<String> {
+        let Some(pos) = pos_of(lemma) else {
+            return Vec::new();
+        };
+        let Some(words) = by_pos.get(pos) else {
+            return Vec::new();
+        };
+        // <strong>その語自身を候補にしない。</strong> 対象は本人が使う単位の割合で選ぶが、
+        // 候補は延べで並べるので、<strong>1 本に固めて使った語は両方に入る</strong>
+        // ——「X を言い換える。本人がよく使うのは X」という指示になる。
+        let mut v: Vec<(&&str, &usize)> = words.iter().filter(|(w, _)| **w != lemma).collect();
+        // <strong>延べで多い順。同じなら語彙素の順。</strong> 決めておかないと並びが実装で変わる。
+        v.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        v.into_iter()
+            .take(GOI_THEIRS)
+            .map(|(w, _)| (*w).to_owned())
+            .collect()
+    };
+    #[allow(clippy::cast_precision_loss)]
+    let (nb, np) = (baseline.len().max(1) as f64, person.len().max(1) as f64);
+    let mut out: Vec<Goi> = theirs
+        .into_iter()
+        .filter_map(|(text, k)| {
+            #[allow(clippy::cast_precision_loss)]
+            let rate = k as f64 / nb;
+            #[allow(clippy::cast_precision_loss)]
+            let base = mine.get(text).copied().unwrap_or(0) as f64 / np;
+            if rate < KATA_PERSON_MIN || base > KATA_BASE_MAX {
+                return None;
+            }
+            Some(Goi {
+                theirs: suggest(text),
+                text: text.to_owned(),
+                rate,
+                base,
+            })
+        })
+        .collect();
+    // <strong>広く使う順。同じなら語彙素の順。</strong> 決めておかないと並びが実装で変わる。
+    out.sort_by(|a, b| {
+        b.rate
+            .partial_cmp(&a.rate)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    out.truncate(cap);
+    out
 }
 
 /// 穴あきの型に繋ぐ。
@@ -971,35 +1143,32 @@ pub const ONCE_ONLY: usize = 8;
 /// <strong>目盛りは作り直さない。</strong> 語彙も重みも受け取ったものを使う——検める文書を見てから
 /// 作り直せる経路を持たない。
 ///
-/// `partners` は相手集合の単位である。<strong>照合値は相手集合との中央値である。</strong>
+/// <strong>相手集合は目盛りが持っている</strong>（[取り置いたベクトル](Scale::partner_vectors)）。
+/// 照合値は相手集合との中央値で、<strong>本文は要らない</strong>——投影し終えた値だけで足りる。
 #[must_use]
 pub fn measure_against(
     scale: &Scale,
     target: Sample<'_>,
-    partners: &[Sample<'_>],
     analyzer: Option<&dyn Analyzer>,
 ) -> Measured {
     // <strong>カセットが持つ辞書で測る。</strong> 作ったときと違う割り方をすれば、
     // 比べたものに意味が無い。
     let t = Measurements::of(target, analyzer, &scale.lexicon);
-    let ps: Vec<Measurements> = partners
-        .iter()
-        .map(|s| Measurements::of(*s, analyzer, &scale.lexicon))
-        .collect();
 
     let vector = |m: &Measurements, name: &str| -> Option<Vec<f64>> {
         let system = System::from_name(name)?;
         let set = &scale.frozen.iter().find(|(n, _)| n == name)?.1;
         set.project(m.parts.get(&system)?)
     };
-    let values: Vec<f64> = ps
+    let values: Vec<f64> = scale
+        .partner_vectors
         .iter()
-        .filter_map(|p| {
+        .filter_map(|(_, parts)| {
             scale
                 .calibration
                 .matching_value(&|n| {
                     let a = vector(&t, n)?;
-                    let b = vector(p, n)?;
+                    let b = parts.iter().find(|(m, _)| m == n)?.1.clone();
                     Some(cosine_delta(&a, &b))
                 })
                 .ok()
@@ -1191,14 +1360,13 @@ impl Divergence {
 fn matching_of(
     scale: &Scale,
     t: &Measurements,
-    ps: &[Measurements],
     swap: Option<(System, usize, f64)>,
 ) -> Option<f64> {
-    let vector = |m: &Measurements, name: &str, mine: bool| -> Option<Vec<f64>> {
+    let vector = |m: &Measurements, name: &str| -> Option<Vec<f64>> {
         let system = System::from_name(name)?;
         let set = &scale.frozen.iter().find(|(n, _)| n == name)?.1;
         let parts = m.parts.get(&system)?;
-        let Some((s, j, x)) = swap.filter(|_| mine) else {
+        let Some((s, j, x)) = swap else {
             return set.project(parts);
         };
         if s != system {
@@ -1220,14 +1388,15 @@ fn matching_of(
         }
         set.project(&shifted)
     };
-    let values: Vec<f64> = ps
+    let values: Vec<f64> = scale
+        .partner_vectors
         .iter()
-        .filter_map(|p| {
+        .filter_map(|(_, parts)| {
             scale
                 .calibration
                 .matching_value(&|n| {
-                    let a = vector(t, n, true)?;
-                    let b = vector(p, n, false)?;
+                    let a = vector(t, n)?;
+                    let b = parts.iter().find(|(m, _)| m == n)?.1.clone();
                     Some(cosine_delta(&a, &b))
                 })
                 .ok()
@@ -1244,14 +1413,9 @@ fn matching_of(
 pub fn distances_against(
     scale: &Scale,
     target: Sample<'_>,
-    partners: &[Sample<'_>],
     analyzer: Option<&dyn Analyzer>,
 ) -> Vec<(String, f64)> {
     let t = Measurements::of(target, analyzer, &scale.lexicon);
-    let ps: Vec<Measurements> = partners
-        .iter()
-        .map(|s| Measurements::of(*s, analyzer, &scale.lexicon))
-        .collect();
     let vector = |m: &Measurements, name: &str| -> Option<Vec<f64>> {
         let system = System::from_name(name)?;
         let set = &scale.frozen.iter().find(|(n, _)| n == name)?.1;
@@ -1261,12 +1425,13 @@ pub fn distances_against(
         .frozen
         .iter()
         .filter_map(|(name, _)| {
-            let ds: Vec<f64> = ps
+            let ds: Vec<f64> = scale
+                .partner_vectors
                 .iter()
-                .filter_map(|p| {
+                .filter_map(|(_, parts)| {
                     let a = vector(&t, name)?;
-                    let b = vector(p, name)?;
-                    Some(cosine_delta(&a, &b))
+                    let b = &parts.iter().find(|(m, _)| m == name)?.1;
+                    Some(cosine_delta(&a, b))
                 })
                 .collect();
             Some((name.clone(), median(&ds)?))
@@ -1287,16 +1452,11 @@ pub fn distances_against(
 pub fn diverging(
     scale: &Scale,
     target: Sample<'_>,
-    partners: &[Sample<'_>],
     analyzer: Option<&dyn Analyzer>,
     systems: &[System],
     top: usize,
 ) -> Vec<Divergence> {
     let t = Measurements::of(target, analyzer, &scale.lexicon);
-    let ps: Vec<Measurements> = partners
-        .iter()
-        .map(|s| Measurements::of(*s, analyzer, &scale.lexicon))
-        .collect();
 
     let mut out: Vec<Divergence> = Vec::new();
     for system in systems {
@@ -1319,9 +1479,10 @@ pub fn diverging(
         let Some(mine) = t.parts.get(system).and_then(|c| set.project(c)) else {
             continue;
         };
-        let theirs: Vec<Vec<f64>> = ps
+        let theirs: Vec<Vec<f64>> = scale
+            .partner_vectors
             .iter()
-            .filter_map(|p| p.parts.get(system).and_then(|c| set.project(c)))
+            .filter_map(|(_, parts)| parts.iter().find(|(m, _)| m == name).map(|(_, v)| v.clone()))
             .collect();
         if theirs.is_empty() {
             continue;
@@ -1332,8 +1493,8 @@ pub fn diverging(
             .flat_map(|f| f.dims())
             .map(String::as_str)
             .collect();
-        // <strong>いまの照合値を、この 1 本の相手ごとに控えておく。</strong> 差を取る相手である。
-        let now = matching_of(scale, &t, &ps, None);
+        // <strong>いまの照合値を控えておく。</strong> 差を取る相手である。
+        let now = matching_of(scale, &t, None);
         for (j, dim) in dims.iter().enumerate() {
             let Some(&m) = mine.get(j) else { continue };
             let mut col: Vec<f64> = theirs.iter().filter_map(|v| v.get(j).copied()).collect();
@@ -1343,7 +1504,7 @@ pub fn diverging(
             col.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let theirs_med = col[col.len() / 2];
             // <strong>その次元だけを本人の代表値に置いて、照合値を出し直す。</strong>
-            let fixed = matching_of(scale, &t, &ps, Some((*system, j, theirs_med)));
+            let fixed = matching_of(scale, &t, Some((*system, j, theirs_med)));
             let (Some(a), Some(b)) = (now, fixed) else {
                 continue;
             };
@@ -1376,9 +1537,45 @@ pub fn diverging(
     // <strong>渡すぶんだけ実例を探す。</strong> 全次元で探すと、使われない実例のために
     // 相手集合を何度も読み直すことになる。
     for d in &mut out {
-        d.examples = examples_of(&d.system, &d.dim, partners);
+        // <strong>目盛りが取り置いた実例を引く。</strong> 本文はもう手元に無い。
+        d.examples = scale
+            .examples
+            .iter()
+            .find(|(s, dim, _)| *s == d.system && *dim == d.dim)
+            .map(|(_, _, v)| v.clone())
+            .unwrap_or_default();
         // <strong>この文章のどこが、その次元を作っているか。</strong>
         d.spots = spots_of(&d.system, &d.dim, target);
+    }
+    out
+}
+
+/// 実例を拾う系統。<strong>次元が語や記号として読めるものだけである。</strong>
+///
+/// 品詞 bigram の「名詞-助詞」を増やせとは言えない。
+pub const EXAMPLE_SYSTEMS: [System; 3] = [System::FunctionWord, System::Comma, System::CharType];
+
+/// 読める系統の次元ごとに、本人の実例を拾っておく。
+///
+/// <strong>作るのはここだけである。</strong> 検めるときに本文へ読みに行く道が無い——
+/// カセットは[本文を持たない](../../../docs/spec/200-extract.md#素材を正本にする)。
+fn examples_for(
+    scale_frozen: &[(String, crate::vocabulary::FrozenSet)],
+    partners: &[Sample<'_>],
+) -> Vec<(String, String, Vec<String>)> {
+    let mut out = Vec::new();
+    for system in EXAMPLE_SYSTEMS {
+        let name = system.name();
+        let Some((_, set)) = scale_frozen.iter().find(|(n, _)| n == name) else {
+            continue;
+        };
+        for dim in set.parts().iter().flat_map(crate::vocabulary::Frozen::dims) {
+            let found = examples_of(name, dim, partners);
+            if found.is_empty() {
+                continue;
+            }
+            out.push((name.to_owned(), dim.clone(), found));
+        }
     }
     out
 }
@@ -1852,14 +2049,9 @@ mod tests {
             Some(&Chars),
         )
         .unwrap();
-        // 相手集合の 5 本を名前で引く。
-        let partners: Vec<Sample<'_>> = person
-            .iter()
-            .filter(|s| scale.partners().iter().any(|n| n == s.name))
-            .copied()
-            .collect();
-        assert_eq!(partners.len(), 5);
-        let got = measure_against(&scale, person[9], &partners, Some(&Chars));
+        // <strong>相手集合は目盛りが持っている。</strong> 本文はもう要らない。
+        assert_eq!(scale.partner_vectors.len(), 5);
+        let got = measure_against(&scale, person[9], Some(&Chars));
         assert!(got.matching.is_some(), "照合値が出る");
         assert!(got.humanness.is_some(), "人らしさ値が出る");
         assert!(got.missing_systems.is_empty());
@@ -1878,11 +2070,6 @@ mod tests {
             Some(&Chars),
         )
         .unwrap();
-        let partners: Vec<Sample<'_>> = person
-            .iter()
-            .filter(|s| scale.partners().iter().any(|n| n == s.name))
-            .copied()
-            .collect();
         // 短い文書は除外に掛かる。<strong>0 ではなく、出ないである。</strong>
         let short = Document::new(vec![Node::leaf(Kind::Paragraph, "短い。")]);
         let got = measure_against(
@@ -1891,7 +2078,6 @@ mod tests {
                 name: "短い",
                 document: &short,
             },
-            &partners,
             Some(&Chars),
         );
         assert_eq!(got.matching, None);

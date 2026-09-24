@@ -57,6 +57,13 @@ pub struct Review {
     /// <strong>判定には使わない。</strong> 基準がよく使う並びでも、本人が偶然そう書くことは
     /// ありうる——止める材料にはできない。
     pub machine_katas: Vec<String>,
+    /// 残っている機械の語。<strong>書きぶりの枠を奪わない。</strong>
+    ///
+    /// [機械の型](Self::machine_katas)が<strong>表層の並びで取りこぼすものを言う</strong>——
+    /// 同じ癖が語形ごとに割れると、どの綴りも床を割って一度も出てこない。
+    ///
+    /// <strong>判定には使わない。</strong> 型と同じ理由である。
+    pub machine_gois: Vec<String>,
     /// 本人の言い回しを使いすぎている箇所。<strong>書きぶりの枠を奪わない。</strong>
     ///
     /// <strong>「繰り返せ」と言う指摘には上限が要る</strong>——言わなければ、受け取った側は
@@ -64,6 +71,32 @@ pub struct Review {
     ///
     /// <strong>判定には使わない。</strong> その人がたまたま多く使う 1 本はありうる。
     pub overused_katas: Vec<String>,
+}
+
+/// 機械の語 1 つ。<strong>この文章に出ているものだけを渡す。</strong>
+///
+/// [型](Kata)と別に持つのは、<strong>照らし方が違う</strong>からである——型は書かれた文字列を
+/// そのまま探すが、語は<strong>解析してから語彙素で照らす。</strong> そうしないと
+/// `地味な` と `地味に` が別のものになる。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Goi {
+    /// 語彙素。
+    pub text: String,
+    /// 基準の単位のうち、これが現れた割合。
+    pub rate: f64,
+    /// <strong>本人</strong>の単位のうち、これが現れた割合。
+    ///
+    /// <strong>0 とは限らない。</strong> 選ぶ条件は本人側の割合に上限を置いているだけなので、
+    /// <strong>本人が時々使う語もここに来る</strong>——「本人は使わない」と言い切れば、
+    /// 受け取った側は自分の文章に現に在る語を無いと言われる。
+    pub base: f64,
+    /// この文章に現れた回数。
+    pub times: usize,
+    /// 本人が<strong>同じ品詞で</strong>よく使う語。<strong>置き換える先である。</strong>
+    ///
+    /// <strong>「別の言い方にする」だけでは直せない。</strong> 受け取った側は道具の外で語を
+    /// 探すことになり、<strong>そこで選んだ語がまた本人の使わない語でありうる。</strong>
+    pub theirs: Vec<String>,
 }
 
 /// その人の型 1 つ。
@@ -94,6 +127,11 @@ pub struct Kata {
     pub density: f64,
     /// 本人が 1 本の中で使う、日本語 1,000 字あたりの最大。
     pub ceiling: f64,
+    /// <strong>本人</strong>の単位のうち、これが現れた割合。
+    ///
+    /// <strong>0 とは限らない。</strong> 機械の型を選ぶ条件は本人側の割合に上限を置いて
+    /// いるだけなので、<strong>本人が時々使う並びもここに来る。</strong>
+    pub base: f64,
 }
 
 /// 本人の言い回しを使いすぎていると言う、本人の上限に対する倍率。<strong>暫定値である。</strong>
@@ -142,6 +180,12 @@ fn overused_katas(katas: &[Kata]) -> Vec<String> {
 ///
 /// <strong>「減らせ」と「繰り返せ」が同じ言い回しに出ないよう、1 箇所で決める。</strong>
 /// 分かれていたときは、同じ言い回しに増やせと減らせが同時に出ていた。
+///
+/// <strong>上限 0 のものは言わない。</strong> ここへ来る一覧には、道具が勧めた言い回しだけで
+/// なく[草稿が繰り返している並び](Kata)も入っており、その多くは題材の語である
+/// ——<strong>本人が使わない語をすべて挙げれば、指摘が題材で埋まる。</strong>
+/// 本人が使わない言い回しのうち<strong>機械が使うもの</strong>は、
+/// [機械の型と機械の語](Review::machine_katas)が別に名指しする。
 fn over_used(katas: &[Kata]) -> Vec<&Kata> {
     katas
         .iter()
@@ -181,6 +225,62 @@ fn kata_remedies(katas: &[Kata]) -> Vec<String> {
         .collect()
 }
 
+/// 残っている機械の語の渡し方。
+///
+/// <strong>[機械の型](machine_kata_remedies)が取りこぼすものを言う。</strong> 型は表層の並びを
+/// そのまま照合するので、同じ癖が語形ごとに割れると、どの綴りも床を割る——実測で、
+/// 基準の池 44 本のうち `地味` は 9 本（20%）に出るのに、`地味に` という綴りは
+/// 2 本にしかなく、<strong>並びとしては一度も指摘に出せなかった。</strong>
+///
+/// <strong>箇所は言わない。</strong> 語形が変わるので、語彙素をそのまま探しても当たらない
+/// ——`地味` を探しても `地味な` の前半に当たるだけで、直す場所として渡す意味が無い。
+fn machine_goi_remedies(gois: &[Goi]) -> Vec<String> {
+    let mut used: Vec<&Goi> = gois.iter().filter(|g| g.times > 0).collect();
+    // <strong>草稿で繰り返している順。</strong>[機械の型](machine_kata_remedies)と揃える。
+    used.sort_by(|a, b| {
+        b.times.cmp(&a.times).then_with(|| {
+            b.rate
+                .partial_cmp(&a.rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.text.cmp(&b.text))
+        })
+    });
+    used.into_iter()
+        .take(MAX_POINTS)
+        .map(|g| {
+            // <strong>置き換える先まで言う。</strong> 言わなければ、受け取った側が道具の外で
+            // 語を探すことになり、そこで選んだ語がまた本人の使わない語でありうる。
+            let instead = if g.theirs.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " 本人が同じ品詞でよく使うのは「{}」。",
+                    g.theirs.join("」「")
+                )
+            };
+            format!(
+                "「{}」をこの文章に {} 回。基準の {:.0}% が使い、{}。{instead}",
+                g.text,
+                g.times,
+                g.rate * 100.0,
+                person_side(g.base)
+            )
+        })
+        .collect()
+}
+
+/// 本人の側をどう言うか。<strong>使わないのか、たまに使うのか。</strong>
+///
+/// <strong>言い切らない。</strong> 選ぶ条件は本人側の割合に上限を置いているだけで、
+/// 0 を求めていない——<strong>言い切れば、自分の文章に現に在る語を無いと言われる。</strong>
+fn person_side(base: f64) -> String {
+    if base <= 0.0 {
+        "本人は使わない".to_owned()
+    } else {
+        format!("本人は {:.0}% でしか使わない", base * 100.0)
+    }
+}
+
 /// 残っている機械の型の渡し方。
 ///
 /// <strong>使われている側を渡す。</strong>[その人の型](kata_remedies)とは向きが逆で、
@@ -205,10 +305,11 @@ fn machine_kata_remedies(katas: &[Kata]) -> Vec<String> {
                 format!(" 出ている箇所: {}", k.spots.join("／"))
             };
             format!(
-                "「{}」がこの文章に {} 回。基準の {:.0}% が使い、本人は使わない。言い換える。{where_}",
+                "「{}」がこの文章に {} 回。基準の {:.0}% が使い、{}。言い換える。{where_}",
                 k.text,
                 k.times,
-                k.rate * 100.0
+                k.rate * 100.0,
+                person_side(k.base)
             )
         })
         .collect()
@@ -312,6 +413,8 @@ pub struct Observations<'a> {
     pub katas: &'a [Kata],
     /// 機械の型と、この文章で使われているか。
     pub machine_katas: &'a [Kata],
+    /// 機械の語と、この文章に出てきた回数。<strong>語彙素で照らしたもの。</strong>
+    pub machine_gois: &'a [Goi],
     /// 直し方に載せた言い回しと、この文章での使われ方。
     ///
     /// <strong>型とは別に渡す。</strong> 使いすぎが起きるのは<strong>道具自身が「繰り返せ」と
@@ -382,6 +485,8 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
     // <strong>こちらは人らしさで止まったときにも出す。</strong> 機械の言い回しが残っている
     // ことは、機械の側で止まった理由そのものでありうる。
     let machine_katas = machine_kata_remedies(o.machine_katas);
+    // <strong>並びで割れた癖を、語彙素で拾い直す。</strong>
+    let machine_gois = machine_goi_remedies(o.machine_gois);
     // <strong>本人の型を使いすぎていないか。</strong> 寄せろと言った側が行きすぎるのを止める。
     let overused_katas = overused_katas(o.phrases);
     // <strong>型と同じ扱いである。</strong> その人へ寄せるためのものなので、人らしさの段では出さない。
@@ -401,6 +506,7 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
         habits,
         katas,
         machine_katas,
+        machine_gois,
         overused_katas,
     }
 }
@@ -577,6 +683,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -627,6 +734,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -654,6 +762,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -680,6 +789,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -702,6 +812,7 @@ mod tests {
                 diverging: &v,
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -728,6 +839,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -757,6 +869,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -782,6 +895,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -816,6 +930,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[dense("しています。", 10, 4.4, 2.8)],
             },
             &All,
@@ -857,6 +972,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -885,6 +1001,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -916,6 +1033,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -939,6 +1057,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -964,6 +1083,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -987,6 +1107,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1014,6 +1135,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1032,6 +1154,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1065,6 +1188,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &UpperOnly,
@@ -1088,6 +1212,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &None_,
@@ -1110,6 +1235,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1132,6 +1258,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1157,6 +1284,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1182,6 +1310,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1210,6 +1339,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &None_,
@@ -1234,6 +1364,7 @@ mod tests {
                 diverging: &[],
                 katas: &[],
                 machine_katas: &[],
+                machine_gois: &[],
                 phrases: &[],
             },
             &All,
@@ -1243,6 +1374,7 @@ mod tests {
 
     fn dense(text: &str, times: usize, density: f64, ceiling: f64) -> Kata {
         Kata {
+            base: 0.0,
             text: text.into(),
             rate: 0.5,
             at: 0.5,
@@ -1269,6 +1401,30 @@ mod tests {
     }
 
     #[test]
+    fn 本人も使う語を使わないと言い切らない() {
+        // <strong>選ぶ条件は本人側の割合に上限を置いているだけで、0 を求めていない。</strong>
+        // 言い切れば、自分の文章に現に在る語を無いと言われる。
+        let goi = |base: f64| Goi {
+            text: "地味".to_owned(),
+            rate: 0.33,
+            base,
+            times: 7,
+            theirs: vec!["簡単".to_owned()],
+        };
+        let never = machine_goi_remedies(&[goi(0.0)]);
+        assert!(never[0].contains("本人は使わない"), "{never:?}");
+        let sometimes = machine_goi_remedies(&[goi(0.05)]);
+        assert!(
+            sometimes[0].contains("本人は 5% でしか使わない"),
+            "{sometimes:?}"
+        );
+        assert!(
+            !sometimes[0].contains("本人は使わない"),
+            "使うのに使わないと言っている: {sometimes:?}"
+        );
+    }
+
+    #[test]
     fn 本人が使わない並びは使いすぎと言わない() {
         // 上限が 0 のものは、そもそも本人の型ではない。
         assert!(overused_katas(&[dense("と考えています", 9, 2.0, 0.0)]).is_empty());
@@ -1276,6 +1432,7 @@ mod tests {
 
     fn kata(text: &str, rate: f64, at: f64, used: bool) -> Kata {
         Kata {
+            base: 0.0,
             text: text.into(),
             rate,
             at,

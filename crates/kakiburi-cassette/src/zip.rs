@@ -256,8 +256,8 @@ mod tests {
         let mut e = Entries::new();
         e.insert("manifest.json".into(), b"{\"version\":1}".to_vec());
         e.insert(
-            "corpus/person/p01.json".into(),
-            "本文である。".as_bytes().to_vec(),
+            "decided/baseline.json".into(),
+            "{\"model\":\"m\"}".as_bytes().to_vec(),
         );
         e.insert("derived/scale.json".into(), b"{}".to_vec());
         e
@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "corpus/person/p01.json".to_owned(),
+                "decided/baseline.json".to_owned(),
                 "derived/scale.json".to_owned(),
                 "manifest.json".to_owned(),
             ],
@@ -341,8 +341,8 @@ mod tests {
             b"{\"new\":true}"
         );
         assert_eq!(
-            read_one(&bytes, "corpus/person/p01.json").unwrap(),
-            "本文である。".as_bytes(),
+            read_one(&bytes, "decided/baseline.json").unwrap(),
+            "{\"model\":\"m\"}".as_bytes(),
             "原本は変わらない"
         );
     }
@@ -350,9 +350,15 @@ mod tests {
     #[test]
     fn 検査値が合わなければ断る() {
         let mut bytes = write(&entries());
-        // 中身を 1 バイト壊す。
-        let n = bytes.len();
-        bytes[n / 3] ^= 0xFF;
+        // <strong>中身を 1 バイト壊す。</strong> 位置を割合で決めると、中身が短くなった
+        // ときに検査値の掛かっていない欄を壊すだけになり、<strong>試験が黙って
+        // 何も確かめなくなる</strong>——実際に書いた中身を探して、そこを壊す。
+        let body = b"{\"model\":\"m\"}";
+        let at = bytes
+            .windows(body.len())
+            .position(|w| w == body)
+            .expect("書いた中身が在る");
+        bytes[at] ^= 0xFF;
         let r = read(&bytes);
         assert!(r.is_err(), "壊れたものを読んでしまった");
     }

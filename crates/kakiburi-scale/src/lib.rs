@@ -163,6 +163,11 @@ pub fn length_range_ok(person: &[usize], baseline: &[usize]) -> Result<(), Scale
     Ok(())
 }
 
+/// 相手集合の 1 単位ぶんの、系統ごとの部分ベクトル。
+///
+/// 単位の名前と、<strong>系統の名前から投影し終えた値への並び</strong>である。
+pub type PartnerVector = (String, Vec<(String, Vec<f64>)>);
+
 /// 作り終えた目盛り。
 ///
 /// <strong>検めはこれを受け取る。</strong> 中の語彙も重みも読めるが、<strong>作り直す道は無い</strong>——
@@ -177,6 +182,24 @@ pub struct Scale {
     pub band: Band,
     /// 単位をどう割ったか。<strong>検めは相手集合と対にする。</strong>
     pub selection: Selection,
+    /// 相手集合の本文から拾った実例。<strong>系統・次元ごとに数本。</strong>
+    ///
+    /// <strong>「増やせ」と言うだけでは、どこに置くのかが分からない。</strong> 数値と向きだけを
+    /// 渡された側は、結局その人の文章を自分で読みに行くことになる——
+    /// <strong>カセットは本文を持たない</strong>ので、読みに行く先が無い。
+    ///
+    /// <strong>どの次元を訊かれるかは検めるまで決まらない。</strong> だから
+    /// [読める系統](EXAMPLE_SYSTEMS)の次元を<strong>全部ここで拾っておく。</strong>
+    pub examples: Vec<(String, String, Vec<String>)>,
+    /// 相手集合の、系統ごとの部分ベクトル。<strong>本文の代わりである。</strong>
+    ///
+    /// 照合値は相手集合との中央値なので、検めるには相手の側の値が要る。
+    /// <strong>カセットは本文を持たない</strong>（[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）
+    /// ので、<strong>投影し終えたベクトルだけを持つ</strong>——ここから本文は戻らないし、
+    /// 戻す必要も無い。
+    ///
+    /// 外側が単位で、内側が系統である。並びは[固定した語彙](Self::frozen)に従う。
+    pub partner_vectors: Vec<PartnerVector>,
     /// 人らしさの較正。
     pub humanness: HumannessScale,
     /// 人らしさ値の帯。<strong>天井にあたるのが人の側、床にあたるのが機械の側。</strong>
@@ -220,6 +243,13 @@ pub struct Scale {
     /// 実測で、本人が 50 単位中 1 度も使わない「地味に〜」を、基準は 21 単位中 3 本で
     /// 使っていた。<strong>元の草稿にそのまま残り、判定は通っていた。</strong>
     pub machine_katas: Vec<assemble::Kata>,
+    /// <strong>機械の語。</strong> 基準がよく使い、本人が使わない語彙素。
+    ///
+    /// [機械の型](Self::machine_katas)が<strong>表層の並びで取りこぼすものを拾う</strong>——
+    /// 同じ癖が語形ごとに割れると、どの綴りも床を割る。実測で、基準の池 44 本のうち
+    /// `地味` は 9 本に出るのに `地味に` という綴りは 2 本にしかなく、
+    /// <strong>並びとしては一度も拾えなかった。</strong>
+    pub machine_gois: Vec<assemble::Goi>,
 }
 
 impl Scale {
@@ -227,6 +257,38 @@ impl Scale {
     #[must_use]
     pub fn partners(&self) -> &[String] {
         &self.selection.person_partners
+    }
+
+    /// [取り置いたベクトル](Self::partner_vectors)が目盛りと噛み合っているか。
+    ///
+    /// <strong>読めることと、噛み合っていることは別である。</strong> 次元の数がずれていても
+    /// [距離](crate::vocabulary::cosine_delta)は短いほうまでで計算されるので、
+    /// <strong>エラーにならずに違う照合値が出る</strong>——目盛りがあるのに壊れている
+    /// という、いちばん見えにくい形になる。
+    ///
+    /// <strong>欠けた系統も同じである。</strong> 相手ごと落ちるだけで、残りの相手で
+    /// 中央値が出てしまう。
+    #[must_use]
+    pub fn partner_vectors_ok(&self) -> bool {
+        if self.partner_vectors.len() != self.selection.person_partners.len() {
+            return false;
+        }
+        for ((unit, parts), want) in self
+            .partner_vectors
+            .iter()
+            .zip(&self.selection.person_partners)
+        {
+            if unit != want || parts.len() != self.frozen.len() {
+                return false;
+            }
+            for ((name, v), (fname, set)) in parts.iter().zip(&self.frozen) {
+                let dims: usize = set.parts().iter().map(crate::vocabulary::Frozen::len).sum();
+                if name != fname || v.len() != dims || v.iter().any(|x| !x.is_finite()) {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }
 

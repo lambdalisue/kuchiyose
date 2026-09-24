@@ -165,6 +165,62 @@ pub fn write(s: &Scale) -> String {
                 ),
             ]),
         ),
+        // <strong>実例を書く。</strong> 数値と向きだけを渡された側は、その人の文章を
+        // 自分で読みに行くことになる——読みに行く先がもう無い。
+        (
+            "実例".to_owned(),
+            Value::Array(
+                s.examples
+                    .iter()
+                    .map(|(system, dim, found)| {
+                        Value::obj([
+                            ("系統".to_owned(), Value::s(system)),
+                            ("次元".to_owned(), Value::s(dim)),
+                            ("例".to_owned(), strings(found)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        // <strong>相手集合のベクトルを書く。</strong> カセットは本文を持たないので、
+        // ここに無ければ検めるときに照合値を出せない。
+        // <strong>並びを保つ。</strong> 対象にすると鍵の順で並び替わり、系統の並びが
+        // 語彙の並びと食い違う。
+        (
+            "相手集合のベクトル".to_owned(),
+            Value::Array(
+                s.partner_vectors
+                    .iter()
+                    .map(|(unit, parts)| {
+                        Value::obj([
+                            ("単位".to_owned(), Value::s(unit)),
+                            (
+                                "系統".to_owned(),
+                                Value::Array(
+                                    parts
+                                        .iter()
+                                        .map(|(system, v)| {
+                                            Value::obj([
+                                                ("名前".to_owned(), Value::s(system)),
+                                                (
+                                                    "値".to_owned(),
+                                                    Value::Array(
+                                                        v.iter()
+                                                            .copied()
+                                                            .map(Value::Number)
+                                                            .collect(),
+                                                    ),
+                                                ),
+                                            ])
+                                        })
+                                        .collect(),
+                                ),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
         ("人らしさ".to_owned(), humanness),
         ("人らしさの帯".to_owned(), band(s.humanness_band)),
         (
@@ -254,8 +310,58 @@ pub fn write(s: &Scale) -> String {
                     .collect(),
             ),
         ),
+        // <strong>並びで割れた癖を、語彙素でも持つ。</strong> 同じ癖が語形ごとに割れると、
+        // どの綴りも床を割って機械の型に出てこない。
+        (
+            "機械の語".to_owned(),
+            Value::Array(
+                s.machine_gois
+                    .iter()
+                    .map(|g| {
+                        Value::obj([
+                            ("語彙素".to_owned(), Value::s(&g.text)),
+                            ("出現割合".to_owned(), Value::Number(g.rate)),
+                            ("相手側".to_owned(), Value::Number(g.base)),
+                            // <strong>置き換える先も持つ。</strong> 「別の言い方にする」だけでは、
+                            // 受け取った側が道具の外で語を探すことになる。
+                            (
+                                "本人の語".to_owned(),
+                                Value::Array(g.theirs.iter().map(Value::s).collect()),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
     ])
     .write()
+}
+
+/// 語の配列を読み戻す。<strong>無くてもよい</strong>——持たない版のカセットは指摘が 1 本減る。
+fn gois_at(v: &Value, key: &str) -> Vec<kakiburi_scale::assemble::Goi> {
+    v.get(key)
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| {
+                    Some(kakiburi_scale::assemble::Goi {
+                        text: x.get("語彙素")?.as_str()?.to_owned(),
+                        rate: x.get("出現割合")?.as_f64()?,
+                        base: x.get("相手側").and_then(Value::as_f64).unwrap_or(0.0),
+                        theirs: x
+                            .get("本人の語")
+                            .and_then(Value::as_array)
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|w| w.as_str().map(str::to_owned))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// 型の配列を読み戻す。<strong>無くてもよい</strong>——持たない版のカセットは指摘が 1 本減る。
@@ -326,6 +432,49 @@ pub fn read(text: &str) -> Option<Scale> {
                 baseline_points: read_strings(s.get("基準の床の点"))?,
             }
         },
+        // <strong>無くてもよい。</strong> 実例を持たない目盛りは、直し方に例が付かない
+        // だけで判定は変わらない。
+        examples: v
+            .get("実例")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| {
+                        Some((
+                            x.get("系統")?.as_str()?.to_owned(),
+                            x.get("次元")?.as_str()?.to_owned(),
+                            read_strings(x.get("例"))?,
+                        ))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        // <strong>欠けていたら読まない。</strong> 空で通せば照合値が出なくなり、
+        // <strong>目盛りがあるのに判定できないが返る</strong>——壊れていることが正常に見える。
+        partner_vectors: v
+            .get("相手集合のベクトル")?
+            .as_array()?
+            .iter()
+            .map(|u| {
+                Some((
+                    u.get("単位")?.as_str()?.to_owned(),
+                    u.get("系統")?
+                        .as_array()?
+                        .iter()
+                        .map(|s| {
+                            Some((
+                                s.get("名前")?.as_str()?.to_owned(),
+                                s.get("値")?
+                                    .as_array()?
+                                    .iter()
+                                    .map(Value::as_f64)
+                                    .collect::<Option<Vec<f64>>>()?,
+                            ))
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()?,
         humanness,
         humanness_band: read_band(v.get("人らしさの帯")?)?,
         // <strong>無くてもよい。</strong> 持たない版のカセットは、直し方の並びが粗くなる
@@ -362,6 +511,7 @@ pub fn read(text: &str) -> Option<Scale> {
         ),
         katas: katas_at(&v, "型"),
         machine_katas: katas_at(&v, "機械の型"),
+        machine_gois: gois_at(&v, "機械の語"),
         phrases: v
             .get("言い回し")
             .and_then(Value::as_array)

@@ -81,24 +81,22 @@
 | 基準の LLM の版と推論設定 |
 | 係り受け解析器の辞書と版（保留中。使うと決めたら要る） |
 | 人が決めたこと（<strong>場面</strong>・落とす定型・<strong>基準の題材</strong>・指示して動くか） |
-| <strong>場面が増えた</strong> |
 
 <strong>1 行ずつ書く。</strong> まとめて回すと、覆えていない入力が 1 つあっても他が通って緑になる。
 
-### 共通部分と場面ごとの部分が別に動くこと
+### 道具の部分と場面の部分が別に動くこと
 
 <strong>[指紋は 2 つに割れる](100-cassette.md#指紋は組み立てを型で守る)。</strong> 割ったことが
 効いているかを確かめる。
 
 | 確かめること | 通らなければ |
 | --- | --- |
-| 場面ごとの材料を変えると、<strong>その場面の欄だけ</strong>が動く | 1 つの場面を `build` するとほかの場面の語彙が消える |
-| 場面ごとの材料を変えても、<strong>共通部分は動かない</strong> | 語彙が変わっただけで「辞書が変わった」と言われる |
-| <strong>片方にしか無い場面</strong>が違いとして出る | 場面を消したことが差にならない |
-| <strong>2 つの場面の中身を入れ替える</strong>と指紋が変わる | 場面の名前が指紋に写っていない |
+| 場面の材料を変えても、<strong>共通部分は動かない</strong> | 語彙が変わっただけで「辞書が変わった」と言われる |
+| <strong>場面の名前を変える</strong>と指紋が変わる | 名前だけを変えたことが差にならない |
+| <strong>作った直後の指紋が環境と合う</strong> | <strong>1 度も使えないカセットが出来上がる</strong> |
 
-<strong>最後の 1 行が、名前を落としていないことの試験である。</strong> 材料だけを並べれば、
-中身の入れ替えは同じ文字列になる。
+<strong>最後の 1 行が、組み直し忘れの試験である。</strong> 場面は指紋の材料なので、
+`new` が組み直さなければ作った瞬間から「合わない」になる。
 
 <strong>指紋を作る関数が全部の材料を引数に取る</strong>ので、材料が増えれば型が変わって既存の呼び
 出しが壊れる。<strong>試験を書き忘れても、コンパイルが止める。</strong>
@@ -289,7 +287,7 @@
 
 ## 作り直せることを試験する
 
-<strong>[3 つに分けて持つ](../spec/200-extract.md#3-つに分けて持つ)が本当かを確かめる。</strong>
+<strong>[素材を正本にする](../spec/200-extract.md#素材を正本にする)が本当かを確かめる。</strong>
 
 ```
 カセットから derived/ を丸ごと消して build し直すと
@@ -315,19 +313,16 @@
 | `manifest.json` を 2 つ持つ zip | <strong>壊れているとして断る</strong> |
 | `manifest.json` を持たない zip | 同上 |
 | 知らない `version` | <strong>知らない版として断る。</strong> 壊れているとは別の理由で返す |
-| 既にある `id` を `add` | <strong>断る。</strong> 原本が消えない |
-| 別の役で使われている `unit` を `add` | <strong>断る</strong> |
-| <strong>同じ役だが別の取り込み元</strong>の `unit` を `add` | <strong>断る</strong> |
-| <strong>無い `id` を `replace`</strong> | <strong>断る</strong> |
-| <strong>束の一部だけを別の役へ `replace`</strong> | <strong>断る</strong> |
-| <strong>`add` / `replace` のあとに `review`</strong> | <strong>判定できないを返す。</strong> 古い派生物を読まない |
+| `decided/` の 1 つが欠けたカセット | <strong>壊れているとして断る。</strong> 空で埋めない |
+| `movement.json` の知らない値 | <strong>断る。</strong> 捨てれば `stuck` が黙って未知に戻る |
+| <strong>場面を名乗らないカセット</strong> | <strong>壊れているとして断る</strong> |
+| <strong>相手集合のベクトルが欠けた目盛り</strong> | <strong>使う前の問題として断る</strong>（[理由](100-cassette.md#scalejson-は相手集合も持つ)） |
+| <strong>`decide` のあとに `review`</strong> | <strong>判定できないを返す。</strong> 古い派生物を読まない |
 | 2 つの書き込みを同時に走らせる | <strong>片方が断られる。</strong> どちらの変更も消えない |
 | <strong>既に在るところへ `new`</strong> | <strong>断る。</strong> 中身が変わらない |
-| <strong>知らない場面へ `add` / `decide` / `review`</strong> | <strong>断る</strong> |
-| <strong>場面の無い `person` を持つカセット</strong> | <strong>壊れているとして断る</strong> |
 
-<strong>`new` の 1 行が、この表でいちばん失うものが大きい。</strong> 取り込みには時間が掛かり、
-原本は作り直せない。
+<strong>`new` の 1 行が、この表でいちばん失うものが大きい。</strong>
+[人が決めたことは作り直せない](100-cassette.md#何を収めるか)。
 
 <strong>どれも、通らなければ原本が黙って消える種類の失敗である。</strong> 値が変わるまで誰も
 気付かない。

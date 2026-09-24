@@ -56,14 +56,22 @@ K=./target/release/kakiburi
 $K quick ~/articles
 
 # 草稿を検める
-$K review draft.md --cassette ~/articles.kb --scene 既定 --source directive-markdown
+$K review draft.md --cassette ~/articles.kb --source directive-markdown
 ```
 
-カセットは `<フォルダ名>.kb` にできる。`--cassette` と `--scene` で変えられる。
+カセットは `<フォルダ名>.kb` にできる。`--cassette` で変えられる。
+
+<strong>1 カセットが 1 場面である。</strong> 場面を分けるならファイルを分ける——
+<strong>どのカセットを渡すかが、そのまま場面の指定になる</strong>ので、`review` は場面を訊かない。
+`quick` が作る場面の名前は `default` である。
+
+<strong>カセットは本文を持たない。</strong> 素材のフォルダが原本で、カセットはそこから作った
+目盛りだけを持つ——<strong>作り直すたびにフォルダを読む</strong>ので、素材は消さずに置いておく。
 
 `--source` に既定は無い。<strong>取り違えてもエラーにならず、数だけが変わる。</strong>
 `github-markdown` / `directive-markdown` / `html` / `plain-markdown` から選ぶ。
-`quick` の中だけは拡張子から判別する——`.html` は html、ほかは directive-markdown。
+<strong>フォルダを渡す口だけは拡張子から判別する</strong>——`.html` は html、ほかは
+directive-markdown。
 
 ### 返ってくるもの
 
@@ -100,8 +108,11 @@ $K review draft.md --cassette ~/articles.kb --scene 既定 --source directive-ma
 $K doctor ~/articles.kb
 ```
 
-<strong>本人がいちばん高く出ることが、目盛りが壊れていないことの最低条件である。</strong>
-場面ごとに検める。
+指紋が環境と合っているか、派生物が揃っているか、帯が全体を覆っていないかを見る。
+<strong>素材は要らない</strong>ので、フォルダを消したあとでも打てる。
+
+<strong>本人がいちばん高く出るかは `build` が出す。</strong> それを測るには素材が要り、
+カセットは本文を持たないので、<strong>測れる瞬間は目盛りを作るときしかない。</strong>
 
 ### 手間の配分
 
@@ -117,19 +128,19 @@ $K doctor ~/articles.kb
 そのまま順に打てる。
 
 ```sh
-$K new alisue.kb
-$K scene alisue.kb 技術記事
+$K new alisue.kb 技術記事
 
-$K add alisue.kb articles/*.md \
-  --as person --scene 技術記事 --source directive-markdown
-
-# 基準を入れる。版と推論設定は指紋に入るので必ず申告する
-$K add alisue.kb baseline/*.md \
-  --as baseline --scene 技術記事 --source directive-markdown \
+# 基準を自分で用意するなら、版と推論設定も渡す。指紋に入る
+$K build alisue.kb --person articles --baseline baseline \
   --model claude --version 2026-08
-
-$K build alisue.kb
 ```
+
+<strong>素材は 1 本ずつではなくフォルダで渡す。</strong> カセットが本文を持たないので、
+入れておく先が無い——<strong>足したいならフォルダに置いて `build` し直す。</strong>
+
+他人の文章を人らしさの較正に足したいときは `--other` で渡す。そこだけが場面を
+跨げる——見ているのは<strong>機械の書きぶりが残っていないか</strong>であって、その人らしさ
+ではないからである。
 
 ### 基準を自分で作るなら
 
@@ -185,7 +196,9 @@ LLM は、プラグイン名もコマンド名も版番号もほとんど書か�
 | 読点 | 10 個（読点の打ち方） |
 | 単位の数 | 本人・基準それぞれ 10 |
 
-短い文書は `--unit` で何本かを束ねて 1 単位にできる。
+<strong>短い文書は `build` が自分で束ねる。</strong> どう束ねるかは作ってみるまで分からない
+——長さの範囲は<strong>測れた単位だけ</strong>で測られ、どれが測れるかは全文を解析するまで
+決まらない。
 
 <strong>数えるのは入れた本数ではなく、測れた本数である。</strong> 10 本入れても足りないことがある。
 
@@ -196,10 +209,11 @@ LLM は、プラグイン名もコマンド名も版番号もほとんど書か�
 | 言われたこと | どうするか |
 | --- | --- |
 | `--source を渡す` | 既定を置いていない。取り違えても数が変わるだけなので選ばせている |
-| `基準の池が見つからない` | `quick` は作業ディレクトリの `baselines` を見る。リポジトリの外から呼ぶなら `KAKIBURI_BASELINES` か `--baseline` で渡す |
-| `知らない場面` | `scene` で先に作る。いまある場面も一緒に出る |
+| `基準が見つからない` | 作業ディレクトリの `baselines` を見る。リポジトリの外から呼ぶなら `KAKIBURI_BASELINES` か `--baseline` で渡す |
+| `同梱の池でない基準には --model と --version が要る` | 自分で作った基準は版まで名乗る。<strong>同梱の池は中の `POOL` が版を名乗っている</strong> |
+| `--person に本人の記事が入ったフォルダを渡す` | カセットは本文を持たない。作り直すたびに素材を読む |
 | `目盛りを作らない: 測れた単位が N 本で、10 本に届かない` | 素材を足す。<strong>どの単位がどの指標で落ちたかまで出る</strong> |
-| `目盛りが無い。素材が足りずに作れなかった` | `build` がまだ通っていない。`show` で足りない側を見る |
+| `目盛りが無い。素材が足りずに作れなかった` | `build` がまだ通っていない。素材を足して打ち直す |
 | `指紋が環境と合わない` | 辞書か版が変わった。`build` し直す。過去の値とは比べられない |
 | `日本語以外が主` | `--source` の取り違えか、日本語の文章ではない |
 
@@ -211,15 +225,12 @@ LLM は、プラグイン名もコマンド名も版番号もほとんど書か�
 quick     フォルダを指すだけで目盛りまで作る
 measure   1 本を測る。カセットが無くても動く
 compare   3 本以上を並べて比べる
-new       1 人分の入れ物を作る
-scene     場面を作る
-add       正規化して入れる
-replace   既にある 1 本を差し替える
-decide    コーパスから導けないものを人が書く
-build     目盛りを作る
+new       1 場面ぶんの入れ物を作る
+decide    素材から導けないものを人が書く
+build     素材のフォルダを読んで目盛りを作る
 review    検める。3 値と指摘を返す
-show      コーパス全体の分布を出す
-doctor    自分を検査する
+show      カセットの中身を出す
+doctor    カセットを検査する
 metrics   指標の一覧を出す
 ```
 
