@@ -1,13 +1,13 @@
 # 文書
 
-<strong>仕様・設計・先行研究・スパイクに分かれている。</strong> 読む順は目的で決まる。
+<strong>仕様・設計・先行研究に分かれている。</strong> 読む順は目的で決まる。
 
 | 層 | 何が書いてあるか |
 | --- | --- |
+| [用語集](glossary.md) | <strong>言葉の意味。</strong> カセット・照合値・帯など、自前の用語 |
 | [仕様](#仕様) | <strong>なぜそうなっているか。</strong> 判断とその理由 |
 | [設計](#設計) | <strong>どう作られているか。</strong> クレート・保存・コマンド・テスト |
 | [先行研究](#先行研究) | <strong>何を根拠にしているか。</strong> 借りたものと借りなかったもの |
-| [スパイク](#スパイク) | <strong>何を試して何が起きたか。</strong> 日付の付いた実験の記録 |
 
 <strong>仕様と設計を混ぜない。</strong> 仕様は「なぜ」を書き、設計は「どう」を書く。
 実装の都合で仕様が変わることはあるが、そのときは仕様のほうを先に直す。
@@ -16,6 +16,7 @@
 
 | 知りたいこと | 行き先 |
 | --- | --- |
+| この言葉は何を指すのか | [用語集](glossary.md) |
 | この道具は何に賭けているのか | [仕様 000-axis](spec/000-axis.md) |
 | 使い方 | [README](../README.md) |
 | なぜ判定が 3 値なのか | [仕様 010-strategy](spec/010-strategy.md) |
@@ -23,7 +24,6 @@
 | 目盛りはどう作られるか | [仕様 200-extract](spec/200-extract.md) |
 | コードのどこに何があるか | [設計 000-architecture](design/000-architecture.md) |
 | カセットの中身 | [設計 100-cassette](design/100-cassette.md) |
-| この数字はどこから来たのか | [スパイク](#スパイク) |
 
 <strong>いちばん短い道は [仕様 000-axis](spec/000-axis.md) である。</strong> 目的・仮説・
 反証のしかた・確かめられていないことが 1 枚に収まっている。
@@ -65,19 +65,6 @@
 層 2 として、<strong>効くかの判定を通るまで同じ重さで扱わない</strong>
 （[100-metrics](spec/100-metrics.md)）。
 
-## スパイク
-
-<strong>何を試して何が起きたかの記録。</strong> 日付が数字を固定するので、あとから書き換えない。
-
-| | |
-| --- | --- |
-| [000-separation](spike/000-separation.md) | 骨格。何かを分離できるか |
-| [100-ceiling-floor](spike/100-ceiling-floor.md) | 天井と床は分離するか |
-| [200-calibration](spike/200-calibration.md) | 較正を入れる。相手集合を回す |
-| [300-baseline-scene](spike/300-baseline-scene.md) | 基準の場面をそろえる |
-| [400-revise-loop](spike/400-revise-loop.md) | 指摘どおりに直すと数値は動くか |
-| [500-directive-loop](spike/500-directive-loop.md) | 指示できる指標を直す |
-| [600-implementation](spike/600-implementation.md) | 実装が仕様の穴を見つける |
 
 ## 書くときの約束
 
