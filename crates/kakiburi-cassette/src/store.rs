@@ -611,7 +611,7 @@ mod tests {
                     compressor: Tool::unused(),
                     external_tables: [("Unicode".to_owned(), "15.1".to_owned())].into(),
                     normalization: Normalization {
-                        sources: vec!["directive-markdown".into()],
+                        sources: vec!["markdown".into()],
                         implementation: "kakiburi-normalize".into(),
                         version: "0.0.0".into(),
                         mapping: [("message".to_owned(), "補足".to_owned())].into(),

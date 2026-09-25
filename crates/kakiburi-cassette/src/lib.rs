@@ -190,7 +190,7 @@ mod tests {
                     compressor: Tool::unused(),
                     external_tables: BTreeMap::new(),
                     normalization: Normalization {
-                        sources: vec!["directive-markdown".into()],
+                        sources: vec!["markdown".into()],
                         implementation: "kakiburi-normalize".into(),
                         version: "0.0.0".into(),
                         mapping: BTreeMap::new(),

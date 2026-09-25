@@ -6,17 +6,17 @@ use kakiburi_doc::node::Kind;
 
 /// 取り込み元の種類。
 ///
-/// 内容から判定しない。呼ぶ側が指定する——推測を混ぜれば決定的でなくなる。
+/// 内容から判定しない。拡張子で決まる粒度にとどめる——推測を混ぜれば決定的でなくなる。
+///
+/// Markdown を方言に分けない。 Alert（`> [!NOTE]`）と directive（`:::note`）は構文として
+/// 重ならないので、1 つの読み方で両方を認識できる。分ければ名乗り違えが生まれ、
+/// directive の側で読んだ `> [!NOTE]` は黙って引用に化ける。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Source {
-    /// GitHub Flavored Markdown + Alert 記法。
-    GithubMarkdown,
-    /// CommonMark + directive 記法（`:::note`）。
-    DirectiveMarkdown,
+    /// Markdown + Alert 記法（`> [!NOTE]`）+ directive 記法（`:::note`）。
+    Markdown,
     /// HTML。
     Html,
-    /// 素の CommonMark。
-    PlainMarkdown,
 }
 
 /// 記法で書けるか。
@@ -35,7 +35,7 @@ pub enum Writable {
 ///
 /// 升目そのものも指紋に出るので、上げ忘れても中身の差で気付ける。逆も同じで、
 /// 升目が同じまま解釈だけを変えたときは、この版でしか気付けない。
-pub const MAPPING_VERSION: &str = "対応表 1";
+pub const MAPPING_VERSION: &str = "対応表 2";
 
 /// 升目が分かれる node。これ以外はどの取り込み元でも書ける。
 const GATED: [Kind; 5] = [
@@ -49,13 +49,8 @@ const GATED: [Kind; 5] = [
 impl Source {
     /// 扱う取り込み元をすべて。指紋は全部の升目を写す。
     #[must_use]
-    pub fn all() -> [Source; 4] {
-        [
-            Source::GithubMarkdown,
-            Source::DirectiveMarkdown,
-            Source::Html,
-            Source::PlainMarkdown,
-        ]
+    pub fn all() -> [Source; 2] {
+        [Source::Markdown, Source::Html]
     }
 
     /// 升目の中身。指紋に入る。
@@ -83,10 +78,8 @@ impl Source {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
-            Source::GithubMarkdown => "github-markdown",
-            Source::DirectiveMarkdown => "directive-markdown",
+            Source::Markdown => "markdown",
             Source::Html => "html",
-            Source::PlainMarkdown => "plain-markdown",
         }
     }
 
@@ -94,10 +87,8 @@ impl Source {
     #[must_use]
     pub fn from_name(name: impl AsRef<str>) -> Option<Self> {
         match name.as_ref() {
-            "github-markdown" => Some(Source::GithubMarkdown),
-            "directive-markdown" => Some(Source::DirectiveMarkdown),
+            "markdown" => Some(Source::Markdown),
             "html" => Some(Source::Html),
-            "plain-markdown" => Some(Source::PlainMarkdown),
             _ => None,
         }
     }
@@ -107,15 +98,11 @@ impl Source {
     /// 仕様の升目をそのまま写す。書けない升目は「測れない」を返す根拠になる。
     #[must_use]
     pub fn writable(self, kind: Kind) -> Writable {
-        use Kind::{Details, Footnote, Note, Table, Warning};
+        use Kind::{Details, Footnote, Note, Table};
         let yes = match self {
-            Source::GithubMarkdown | Source::DirectiveMarkdown => {
-                matches!(kind, Note | Warning | Footnote | Details | Table)
-            }
+            Source::Markdown => true,
             // HTML に警告の記法は無い。`<aside>` は補足に落ちる。
             Source::Html => matches!(kind, Note | Footnote | Details | Table),
-            // 素の CommonMark には 5 つとも無い。
-            Source::PlainMarkdown => false,
         };
         // 上の 5 つ以外は、どの取り込み元でも書ける記法がある。
         if yes || !GATED.contains(&kind) {
@@ -132,38 +119,17 @@ mod tests {
 
     #[test]
     fn 名前は往復する() {
-        for s in [
-            Source::GithubMarkdown,
-            Source::DirectiveMarkdown,
-            Source::Html,
-            Source::PlainMarkdown,
-        ] {
+        for s in [Source::Markdown, Source::Html] {
             assert_eq!(Source::from_name(s.name()), Some(s));
         }
     }
 
     #[test]
     fn 対応表に無い名前は受けない() {
-        assert_eq!(Source::from_name("markdown"), None);
+        assert_eq!(Source::from_name("github-markdown"), None);
+        assert_eq!(Source::from_name("directive-markdown"), None);
+        assert_eq!(Source::from_name("plain-markdown"), None);
         assert_eq!(Source::from_name("rst"), None);
-    }
-
-    #[test]
-    fn 素の_commonmark_では_5_つとも書けない() {
-        // 0 を返せば「補足を使わない人」と判定される。ここは測れない。
-        for k in [
-            Kind::Note,
-            Kind::Warning,
-            Kind::Footnote,
-            Kind::Details,
-            Kind::Table,
-        ] {
-            assert_eq!(
-                Source::PlainMarkdown.writable(k),
-                Writable::No,
-                "{k:?} は素の CommonMark で書けない"
-            );
-        }
     }
 
     #[test]
@@ -177,12 +143,7 @@ mod tests {
 
     #[test]
     fn 段落や見出しはどの取り込み元でも書ける() {
-        for s in [
-            Source::GithubMarkdown,
-            Source::DirectiveMarkdown,
-            Source::Html,
-            Source::PlainMarkdown,
-        ] {
+        for s in [Source::Markdown, Source::Html] {
             for k in [Kind::Paragraph, Kind::Heading, Kind::Bullet, Kind::Quote] {
                 assert_eq!(s.writable(k), Writable::Yes, "{s:?} の {k:?}");
             }

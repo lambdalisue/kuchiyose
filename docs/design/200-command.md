@@ -69,15 +69,17 @@ kakiburi build <本人の記事のフォルダ> [--baseline <フォルダ>] [--o
 
 #### 取り込み元は拡張子から決める
 
-[正規化](../spec/030-normalize.md)の取り込み元を、<strong>`.html` は html、ほかは
-directive-markdown</strong> として読む。
+[正規化](../spec/030-normalize.md)の取り込み元を、<strong>`.html` と `.htm` は html、ほかは
+markdown</strong> として読む。<strong>文書を取るコマンドはどれもこの 1 つの規則で決める</strong>——
+`build` がフォルダを読むときも、`review` / `measure` / `compare` が 1 本を読むときも。
 
-<strong>これは既定ではなく判別である。</strong> 既定を置けば、渡し忘れが静かに別の読み方で通る
-——[間違えれば黙って 0 が並ぶ](../spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)。
+<strong>人に名乗らせない。</strong> 名乗らせれば毎回手間がかかり、名乗り違えは
+[黙って 0 を並べる](../spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)。
 <strong>拡張子は文書が自分で名乗っているものである。</strong>
 
-<strong>Markdown 3 種は拡張子で分かれない。</strong> だからいちばん広い
-directive-markdown で読む——<strong>どれで読んでも同じ値が出る文書がほとんどである。</strong>
+<strong>拡張子より細かくは分けない。</strong> Markdown の方言は
+[1 つにまとめてある](../spec/030-normalize.md#markdown-を方言に分けない)ので、中身を見て
+決めるものが残っていない。
 
 <strong>読んだ取り込み元は指紋に足す。</strong> 足さなければ、別の取り込み元で読み直したことが
 指紋から読めず、<strong>取り違えを検出する唯一の手がかりが止まる。</strong>
@@ -292,14 +294,13 @@ kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--s
 ### review
 
 ```
-kakiburi review <ファイル> --cassette <カセット> --source <取り込み元> [--json]
+kakiburi review <ファイル> --cassette <カセット> [--json]
 ```
 
 <strong>3 値と指摘を返す。</strong>
 
-<strong>`--source` が要る。</strong> 検める文書も[同じ手順で正規化する](../spec/300-revise.md#同じ測り方で測る)
-以上、取り込み元が決まらなければ通せない。<strong>推測しない</strong>——
-[間違えれば黙って 0 が並ぶ](../spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)。
+<strong>取り込み元は[拡張子から決める](#取り込み元は拡張子から決める)。</strong> 検める文書も
+[同じ手順で正規化する](../spec/300-revise.md#同じ測り方で測る)以上、`build` と同じ規則で決める。
 
 <strong>場面は取らない。</strong>[1 カセットが 1 場面](100-cassette.md#1-カセット-1-場面)なので、
 <strong>どのファイルを渡すかが場面の指定そのものである。</strong>
@@ -402,14 +403,14 @@ kakiburi は書かせる側を持たないので防げない。<strong>だから
 そのまま 3 つのコマンドにする。
 
 ```
-kakiburi measure <ファイル> --source <取り込み元> [--cassette <カセット>] [--json]
-kakiburi compare <ファイル>... --source <取り込み元> [--cassette <カセット>]
+kakiburi measure <ファイル> [--cassette <カセット>] [--json]
+kakiburi compare <ファイル>... [--cassette <カセット>]
 ```
 
 <strong>`measure` は 1 本を測り、`compare` は並べて比べる。</strong> カセットの中身を覗くのは
 [`doctor`](#doctor) である——<strong>覗くことと検めることを分けない。</strong>
 
-<strong>文書を取るものには `--source` が要る。</strong>
+<strong>取り込み元は[拡張子から決める](#取り込み元は拡張子から決める)。</strong>
 <strong>`compare` の複数のファイルは、同じ取り込み元でなければならない</strong>：違えば
 [升目が単位ごとに変わり](../spec/030-normalize.md#対応表は取り込み元ごとに持つ)、
 測れないの出方が揃わない。

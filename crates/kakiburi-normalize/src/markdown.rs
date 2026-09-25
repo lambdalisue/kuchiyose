@@ -7,16 +7,14 @@ use kakiburi_doc::Document;
 
 use crate::markup;
 use crate::refuse::Refusal;
-use crate::source::Source;
 
 /// Markdown を読む。
 ///
 /// 対応表に無い記法を見つけたら断る。推測して補足に落とさない。
-pub fn parse(input: impl AsRef<str>, source: Source) -> Result<Document, Refusal> {
+pub fn parse(input: impl AsRef<str>) -> Result<Document, Refusal> {
     let mut p = Parser {
         lines: input.as_ref().lines().collect(),
         at: 0,
-        source,
     };
     p.skip_front_matter();
     let mut nodes = Vec::new();
@@ -40,7 +38,6 @@ pub fn parse(input: impl AsRef<str>, source: Source) -> Result<Document, Refusal
 struct Parser<'a> {
     lines: Vec<&'a str>,
     at: usize,
-    source: Source,
 }
 
 impl<'a> Parser<'a> {
@@ -74,7 +71,6 @@ impl<'a> Parser<'a> {
         let mut p = Parser {
             lines: body.to_vec(),
             at: 0,
-            source: self.source,
         };
         let mut nodes = Vec::new();
         while p.at < p.lines.len() {
@@ -127,18 +123,7 @@ impl<'a> Parser<'a> {
             return self.quote_or_alert().map(Some);
         }
         if let Some(name) = directive_open(line) {
-            if markup::has_directives(self.source) {
-                return self.directive(name).map(Some);
-            }
-            // 対応表に無い記法である。断る。
-            //
-            // 地の文に流すと `:::` が記号として数えられ、しかも補足と警告に
-            // 0 が並ぶ。実測では、Zenn の記事を github-markdown として読むと
-            // 補足 18 箇所と警告 2 箇所が消え、段落の数まで変わった。
-            // エラーにならないので、取り込み元の申告違いに気付けない。
-            return Err(Refusal::UnknownMarkup {
-                markup: format!(":::{name}"),
-            });
+            return self.directive(name).map(Some);
         }
         if is_table_row(line) {
             return self.table().map(Some);
@@ -177,15 +162,13 @@ impl<'a> Parser<'a> {
     /// 0 が並ぶ。エラーにならないので、ここを間違えても気付けない。
     fn quote_or_alert(&mut self) -> Result<Node, Refusal> {
         let body = self.take_quote_body();
-        if markup::has_alerts(self.source) {
-            if let Some(name) = alert_marker(body.first().copied().unwrap_or("")) {
-                let Some(kind) = markup::alert_kind(name) else {
-                    return Err(Refusal::UnknownMarkup {
-                        markup: format!("[!{name}]"),
-                    });
-                };
-                return self.container(kind, &body[1..]);
-            }
+        if let Some(name) = alert_marker(body.first().copied().unwrap_or("")) {
+            let Some(kind) = markup::alert_kind(name) else {
+                return Err(Refusal::UnknownMarkup {
+                    markup: format!("[!{name}]"),
+                });
+            };
+            return self.container(kind, &body[1..]);
         }
         self.container(Kind::Quote, &body)
     }
@@ -347,7 +330,7 @@ impl<'a> Parser<'a> {
             || is_table_row(line)
             || list_marker(line).is_some()
             || footnote_definition(line).is_some()
-            || (markup::has_directives(self.source) && directive_open(line).is_some())
+            || directive_open(line).is_some()
     }
 }
 
@@ -663,7 +646,7 @@ mod tests {
         // ここを間違えると引用の密度が高く出て、補足の密度に 0 が並ぶ。
         // エラーにならないので気付けない。
         let md = "> [!NOTE]\n> ここは補足である。\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         assert_eq!(kinds(&d), vec![Kind::Note]);
         // 中身は子が持つ。畳めば内側の構造が消える。
         assert_eq!(d.nodes[0].children.len(), 1);
@@ -675,7 +658,7 @@ mod tests {
     fn 引用の中の構造は残る() {
         // 畳めば、内側のリストも表もコードブロックも消える。
         let md = "> 説明である。\n>\n> - ひとつ\n> - ふたつ\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         assert_eq!(kinds(&d), vec![Kind::Quote]);
         let inner: Vec<Kind> = d.nodes[0].children.iter().map(|n| n.kind).collect();
         assert_eq!(inner, vec![Kind::Paragraph, Kind::Bullet], "{inner:?}");
@@ -685,49 +668,41 @@ mod tests {
     fn 引用の中のコードは地の文に混ざらない() {
         // 畳めば `let x = 1;` が地の文に入り、記号の率が題材で動く。
         let md = "> 例である。\n>\n> ```\n> let x = 1;\n> ```\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         let joined: String = d.prose().iter().map(|s| s.text.clone()).collect();
         assert!(!joined.contains("let x"), "{joined:?}");
     }
 
     #[test]
     fn important_は警告に落ちる() {
-        let d = parse("> [!IMPORTANT]\n> 読み飛ばすな。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("> [!IMPORTANT]\n> 読み飛ばすな。\n").unwrap();
         assert_eq!(kinds(&d), vec![Kind::Warning]);
-    }
-
-    #[test]
-    fn alert_記法を持たない取り込み元では引用のままである() {
-        // 素の CommonMark に Alert は無い。引用として読むのが正しい。
-        let md = "> [!NOTE]\n> ここは引用である。\n";
-        let d = parse(md, Source::PlainMarkdown).unwrap();
-        assert_eq!(kinds(&d), vec![Kind::Quote]);
     }
 
     #[test]
     fn 対応表に無い_alert_は断る() {
         let md = "> [!HINT]\n> これは何か。\n";
-        let e = parse(md, Source::GithubMarkdown).unwrap_err();
+        let e = parse(md).unwrap_err();
         assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
     }
 
     #[test]
     fn 普通の引用は引用である() {
-        let d = parse("> 引用である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("> 引用である。\n").unwrap();
         assert_eq!(kinds(&d), vec![Kind::Quote]);
     }
 
     #[test]
     fn directive_は補足と警告に分かれる() {
         let md = ":::note\n補足。\n:::\n\n:::warning\n警告。\n:::\n";
-        let d = parse(md, Source::DirectiveMarkdown).unwrap();
+        let d = parse(md).unwrap();
         assert_eq!(kinds(&d), vec![Kind::Note, Kind::Warning]);
     }
 
     #[test]
     fn zenn_の_message_は補足で_alert_つきは警告() {
         let md = ":::message\n補足。\n:::\n\n:::message alert\n警告。\n:::\n";
-        let d = parse(md, Source::DirectiveMarkdown).unwrap();
+        let d = parse(md).unwrap();
         assert_eq!(kinds(&d), vec![Kind::Note, Kind::Warning]);
     }
 
@@ -747,7 +722,7 @@ mod tests {
             "|\n",
             "::\n",
         ] {
-            let r = parse(md, Source::GithubMarkdown);
+            let r = parse(md);
             // 断るのはよい。回り続けるのが駄目である。
             let _ = r;
         }
@@ -757,18 +732,27 @@ mod tests {
     fn 進まない行があれば断る() {
         // 不変条件そのものを試す。壊れたら止まらずに断る。
         let md = ":::\n";
-        let d = parse(md, Source::DirectiveMarkdown);
+        let d = parse(md);
         // `:::` だけの行は directive の開きではない。段落として消費される。
         assert!(d.is_ok(), "{d:?}");
     }
 
     #[test]
-    fn 取り込み元を間違えたら断る() {
-        // Zenn の記事を github-markdown として読むと、補足と警告に 0 が並び、
-        // 段落の数まで変わる。エラーにならないので気付けない。
-        let md = ":::message\n補足である。\n:::\n";
-        let e = parse(md, Source::GithubMarkdown).unwrap_err();
+    fn 対応表に無い_directive_は断る() {
+        // 地の文に流せば `:::` が記号として数えられ、中身が段落として数えられる。
+        // エラーにならない。
+        let md = ":::hint\n補足である。\n:::\n";
+        let e = parse(md).unwrap_err();
         assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn alert_と_directive_は同じ文書に並べられる() {
+        // 2 つの記法は構文として重ならない。 だから方言を分けて名乗らせる
+        // 理由が無い——分ければ、名乗り違えたときに Alert が引用に化ける。
+        let md = "> [!NOTE]\n> 補足。\n\n:::message alert\n警告。\n:::\n";
+        let d = parse(md).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Note, Kind::Warning]);
     }
 
     #[test]
@@ -777,7 +761,7 @@ mod tests {
         // directive は決して閉じられない。整形器が箇条書きの直後の `:::` を
         // 下げることは実素材で普通に起きる。
         let md = ":::message\n- あ\n- い\n  :::\n";
-        let doc = parse(md, Source::DirectiveMarkdown).expect("通る");
+        let doc = parse(md).expect("通る");
         assert_eq!(doc.nodes.len(), 1);
         assert_eq!(doc.nodes[0].kind, Kind::Note);
     }
@@ -785,26 +769,26 @@ mod tests {
     #[test]
     fn 字下げして開いた_directive_も閉じる() {
         let md = "  :::message\n  補足である。\n  :::\n";
-        let doc = parse(md, Source::DirectiveMarkdown).expect("通る");
+        let doc = parse(md).expect("通る");
         assert_eq!(doc.nodes[0].kind, Kind::Note);
     }
 
     #[test]
     fn 閉じていない_directive_は断る() {
-        let e = parse(":::note\n補足。\n", Source::DirectiveMarkdown).unwrap_err();
+        let e = parse(":::note\n補足。\n").unwrap_err();
         assert!(matches!(e, Refusal::Broken { .. }), "{e:?}");
     }
 
     #[test]
     fn 閉じていないコードブロックは断る() {
-        let e = parse("```rust\nlet x = 1;\n", Source::GithubMarkdown).unwrap_err();
+        let e = parse("```rust\nlet x = 1;\n").unwrap_err();
         assert!(matches!(e, Refusal::Broken { .. }), "{e:?}");
     }
 
     #[test]
     fn コードブロックの中身は地の文に入らない() {
         let md = "説明。\n\n```rust\nlet x = 1;\n```\n\n続き。\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         let p = d.prose();
         assert_eq!(p.len(), 2);
         assert!(!p.iter().any(|s| s.text.contains("let")));
@@ -814,11 +798,7 @@ mod tests {
     fn 箇条書きの記法は潰す() {
         // `-` と `*` と `+` は記法の違いであって書きぶりではない。
         for m in ['-', '*', '+'] {
-            let d = parse(
-                format!("{m} ひとつめ\n{m} ふたつめ\n"),
-                Source::GithubMarkdown,
-            )
-            .unwrap();
+            let d = parse(format!("{m} ひとつめ\n{m} ふたつめ\n")).unwrap();
             assert_eq!(kinds(&d), vec![Kind::Bullet], "{m} が箇条書きにならない");
             assert_eq!(d.items().len(), 2);
         }
@@ -827,14 +807,14 @@ mod tests {
     #[test]
     fn 番号リストは箇条書きと分けたままにする() {
         // どちらを選ぶかは書き手の選択で、別の指標が測る。
-        let d = parse("1. ひとつめ\n2. ふたつめ\n", Source::GithubMarkdown).unwrap();
+        let d = parse("1. ひとつめ\n2. ふたつめ\n").unwrap();
         assert_eq!(kinds(&d), vec![Kind::Ordered]);
     }
 
     #[test]
     fn 表はセルごとに_1_本になる() {
         let md = "| 機能 | あり |\n| --- | --- |\n| リモート | o |\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         let p = d.prose();
         // 区切り行は落ちる。`o` だけのセルは地の文に入らない。
         let texts: Vec<&str> = p.iter().map(|s| s.text.as_str()).collect();
@@ -843,58 +823,50 @@ mod tests {
 
     #[test]
     fn 見出しの深さは記法から取る() {
-        let d = parse("# 章\n## 節\n### 項\n", Source::GithubMarkdown).unwrap();
+        let d = parse("# 章\n## 節\n### 項\n").unwrap();
         assert_eq!(d.heading_depth(&d.nodes[0]), Some(1));
         assert_eq!(d.heading_depth(&d.nodes[2]), Some(3));
     }
 
     #[test]
     fn 空白の無い井桁は見出しではない() {
-        let d = parse("#タグではない\n", Source::GithubMarkdown).unwrap();
+        let d = parse("#タグではない\n").unwrap();
         assert_eq!(kinds(&d), vec![Kind::Paragraph]);
     }
 
     #[test]
     fn インラインコードの中身は落ちる() {
-        let d = parse("設定は `--force` である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("設定は `--force` である。\n").unwrap();
         // 跡に空白を残さない。**両側の空白ごと落ちる。**
         assert_eq!(d.nodes[0].text, "設定はである。");
         // 和欧のあいだなら、表示されるぶんの空白 1 個が残る。
-        let d = parse("run the `--force` flag\n", Source::GithubMarkdown).unwrap();
+        let d = parse("run the `--force` flag\n").unwrap();
         assert_eq!(d.nodes[0].text, "run the flag");
     }
 
     #[test]
     fn リンクは中身だけ残り参照先は落ちる() {
-        let d = parse(
-            "詳細は [こちら](https://example.com) を見る。\n",
-            Source::GithubMarkdown,
-        )
-        .unwrap();
+        let d = parse("詳細は [こちら](https://example.com) を見る。\n").unwrap();
         assert_eq!(d.nodes[0].text, "詳細は こちら を見る。");
     }
 
     #[test]
     fn 参照形式のリンクも参照先が落ちる() {
-        let d = parse(
-            "[Netrw][] と [Fern][fern] を比べる。\n",
-            Source::GithubMarkdown,
-        )
-        .unwrap();
+        let d = parse("[Netrw][] と [Fern][fern] を比べる。\n").unwrap();
         assert_eq!(d.nodes[0].text, "Netrw と Fern を比べる。");
     }
 
     #[test]
     fn 画像は代替文字ごと落ちる() {
-        let d = parse("図。![構成図](a.png)\n", Source::GithubMarkdown).unwrap();
+        let d = parse("図。![構成図](a.png)\n").unwrap();
         assert_eq!(d.nodes[0].text, "図。");
     }
 
     #[test]
     fn 強調の記法は潰れて中身が残る() {
-        let d = parse("ここが **大事** である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("ここが **大事** である。\n").unwrap();
         assert_eq!(d.nodes[0].text, "ここが 大事 である。");
-        let d = parse("ここが __大事__ である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("ここが __大事__ である。\n").unwrap();
         assert_eq!(d.nodes[0].text, "ここが 大事 である。");
     }
 
@@ -902,34 +874,26 @@ mod tests {
     fn 対応表にある_html_の札は潰れて中身が残る() {
         // Markdown の中にインライン HTML は来る。落とさなければ `<strong>` が
         // 地の文に入り、記号の率が上がる。
-        let d = parse("ここが <em>大事</em> である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("ここが <em>大事</em> である。\n").unwrap();
         assert_eq!(d.nodes[0].text, "ここが 大事 である。");
     }
 
     #[test]
     fn 属性つきの札も潰れる() {
-        let d = parse(
-            "詳細は <a href=\"https://example.com\">こちら</a>。\n",
-            Source::GithubMarkdown,
-        )
-        .unwrap();
+        let d = parse("詳細は <a href=\"https://example.com\">こちら</a>。\n").unwrap();
         assert_eq!(d.nodes[0].text, "詳細は こちら。");
     }
 
     #[test]
     fn 対応表に無い_html_の札は断る() {
-        let e = parse(
-            "これは <blink>点滅</blink> する。\n",
-            Source::GithubMarkdown,
-        )
-        .unwrap_err();
+        let e = parse("これは <blink>点滅</blink> する。\n").unwrap_err();
         assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
     }
 
     #[test]
     fn 閉じていない不等号は地の文である() {
         // `a < b` は記法ではない。断ってはいけない。
-        let d = parse("条件は a < b である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("条件は a < b である。\n").unwrap();
         assert_eq!(d.nodes[0].text, "条件は a < b である。");
     }
 
@@ -939,7 +903,7 @@ mod tests {
         // エラーにならないので、実際の記事に当てるまで気付けない。
         let stars = "\u{2A}\u{2A}";
         let md = format!("ここが {stars}大事{stars} である。\n");
-        let d = parse(&md, Source::GithubMarkdown).unwrap();
+        let d = parse(&md).unwrap();
         assert_eq!(d.nodes[0].text, "ここが 大事 である。");
         let n = d.nodes[0]
             .children
@@ -953,7 +917,7 @@ mod tests {
     fn 強調の中身は二重に入らない() {
         let stars = "\u{2A}\u{2A}";
         let md = format!("{stars}大事{stars}である。\n");
-        let d = parse(&md, Source::GithubMarkdown).unwrap();
+        let d = parse(&md).unwrap();
         let p = d.prose();
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].text, "大事である。", "地の文に 1 度だけ入る");
@@ -961,7 +925,7 @@ mod tests {
 
     #[test]
     fn html_の強調も数える() {
-        let d = parse("ここが <em>大事</em> である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("ここが <em>大事</em> である。\n").unwrap();
         let n = d.nodes[0]
             .children
             .iter()
@@ -974,7 +938,7 @@ mod tests {
     fn 太字始まりの項目は強調が先頭に来る() {
         let stars = "\u{2A}\u{2A}";
         let md = format!("- {stars}見出し{stars}: 説明である\n- 普通の項目\n");
-        let d = parse(&md, Source::GithubMarkdown).unwrap();
+        let d = parse(&md).unwrap();
         let items = d.items();
         assert_eq!(items.len(), 2);
         assert_eq!(
@@ -993,11 +957,7 @@ mod tests {
 
     #[test]
     fn インラインコードとリンクも_node_になる() {
-        let d = parse(
-            "設定は `--force` で、詳細は [こちら](https://example.com)。\n",
-            Source::GithubMarkdown,
-        )
-        .unwrap();
+        let d = parse("設定は `--force` で、詳細は [こちら](https://example.com)。\n").unwrap();
         let kinds: Vec<Kind> = d.nodes[0].children.iter().map(|c| c.kind).collect();
         assert!(kinds.contains(&Kind::InlineCode), "{kinds:?}");
         assert!(kinds.contains(&Kind::Link), "{kinds:?}");
@@ -1007,7 +967,7 @@ mod tests {
     fn 表記は潰さない() {
         // 字種・字幅・空白の入れ方はそのまま残る。
         let md = "全角（かっこ）と半角(paren)、〜 と ～、… と ……。Rust と Ｒｕｓｔ。\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         assert_eq!(
             d.nodes[0].text,
             "全角（かっこ）と半角(paren)、〜 と ～、… と ……。Rust と Ｒｕｓｔ。"
@@ -1017,20 +977,20 @@ mod tests {
     #[test]
     fn front_matter_は本文ではない() {
         let md = "---\ntitle: 題\n---\n\n本文である。\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         assert_eq!(kinds(&d), vec![Kind::Paragraph]);
         assert_eq!(d.nodes[0].text, "本文である。");
     }
 
     #[test]
     fn 区切り線は箇条書きではない() {
-        let d = parse("---\n", Source::GithubMarkdown).unwrap();
+        let d = parse("---\n").unwrap();
         assert_eq!(kinds(&d), vec![Kind::Divider]);
     }
 
     #[test]
     fn 脚注の定義は脚注になる() {
-        let d = parse("[^1]: これは脚注である。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("[^1]: これは脚注である。\n").unwrap();
         assert_eq!(kinds(&d), vec![Kind::Footnote]);
         assert_eq!(d.nodes[0].text, "これは脚注である。");
     }
@@ -1038,7 +998,7 @@ mod tests {
     #[test]
     fn 入れ子の項目は親の項目として数えない() {
         let md = "- 外側\n  - 内側\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         // 最も外側のリストの直接の子だけ——「外側」の 1 つ。
         // 内側のリストは入れ子なので、それ自身も子も数えない。
         let items = d.items();
@@ -1053,14 +1013,14 @@ mod tests {
 
     #[test]
     fn 段落は空行で切れる() {
-        let d = parse("ひとつめ。\n\nふたつめ。\n", Source::GithubMarkdown).unwrap();
+        let d = parse("ひとつめ。\n\nふたつめ。\n").unwrap();
         assert_eq!(d.paragraphs().len(), 2);
     }
 
     #[test]
     fn 段落は見出しや箇条書きで切れる() {
         let md = "本文。\n# 見出し\n- 項目\n| 表 |\n";
-        let d = parse(md, Source::GithubMarkdown).unwrap();
+        let d = parse(md).unwrap();
         assert_eq!(
             kinds(&d),
             vec![Kind::Paragraph, Kind::Heading, Kind::Bullet, Kind::Table]
@@ -1070,16 +1030,16 @@ mod tests {
     #[test]
     fn 同じ内容は書式が違っても同じ正規形になる() {
         // 揃えなければ、測っているのは書き手ではなく取り込み元である。
-        let a = parse("- ひとつ\n- ふたつ\n", Source::GithubMarkdown).unwrap();
-        let b = parse("* ひとつ\n* ふたつ\n", Source::GithubMarkdown).unwrap();
+        let a = parse("- ひとつ\n- ふたつ\n").unwrap();
+        let b = parse("* ひとつ\n* ふたつ\n").unwrap();
         assert_eq!(a, b);
     }
 
     #[test]
     fn 決定的である() {
         let md = "# 章\n\n本文である。\n\n> [!TIP]\n> 補足。\n";
-        let a = parse(md, Source::GithubMarkdown).unwrap();
-        let b = parse(md, Source::GithubMarkdown).unwrap();
+        let a = parse(md).unwrap();
+        let b = parse(md).unwrap();
         assert_eq!(a, b);
     }
 }

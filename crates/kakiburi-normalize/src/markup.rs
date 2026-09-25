@@ -6,8 +6,6 @@
 
 use kakiburi_doc::node::Kind;
 
-use crate::source::Source;
-
 /// Alert の名前から node を引く。
 ///
 /// `IMPORTANT` を警告に入れるのは、書き手が「読み飛ばすな」と示している側だから
@@ -83,20 +81,6 @@ pub fn is_transparent(tag: impl AsRef<str>) -> bool {
     matches!(tag.as_ref(), "thead" | "tbody" | "tfoot" | "tr")
 }
 
-/// この取り込み元が Alert 記法を持つか。
-///
-/// 持つなら、引用より先に Alert を認識する。
-#[must_use]
-pub fn has_alerts(source: Source) -> bool {
-    source == Source::GithubMarkdown
-}
-
-/// この取り込み元が directive 記法を持つか。
-#[must_use]
-pub fn has_directives(source: Source) -> bool {
-    source == Source::DirectiveMarkdown
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,25 +126,5 @@ mod tests {
         // 「書けない」升目。0 ではなく測れないになる。
         assert!(!html_kind("aside").iter().any(|&k| k == Kind::Warning));
         assert_eq!(html_kind("warning"), None);
-    }
-
-    #[test]
-    fn alert_を持つのは_github_だけ() {
-        assert!(has_alerts(Source::GithubMarkdown));
-        for s in [
-            Source::DirectiveMarkdown,
-            Source::Html,
-            Source::PlainMarkdown,
-        ] {
-            assert!(!has_alerts(s), "{s:?} は Alert を持たない");
-        }
-    }
-
-    #[test]
-    fn directive_を持つのは_directive_markdown_だけ() {
-        assert!(has_directives(Source::DirectiveMarkdown));
-        for s in [Source::GithubMarkdown, Source::Html, Source::PlainMarkdown] {
-            assert!(!has_directives(s), "{s:?} は directive を持たない");
-        }
     }
 }

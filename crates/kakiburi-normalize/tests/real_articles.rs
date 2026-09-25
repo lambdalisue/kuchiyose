@@ -31,8 +31,8 @@ fn 基準の記事はすべて通る() {
         return;
     }
     for (name, body) in &files {
-        let doc = normalize(body, Source::GithubMarkdown)
-            .unwrap_or_else(|e| panic!("{name} が断られた: {e}"));
+        let doc =
+            normalize(body, Source::Markdown).unwrap_or_else(|e| panic!("{name} が断られた: {e}"));
         assert!(
             doc.japanese_chars() >= 1000,
             "{name} の日本語が 1,000 字に届かない: {}",
@@ -52,8 +52,7 @@ fn 検める文も通る() {
         return;
     }
     for (name, body) in &files {
-        normalize(body, Source::GithubMarkdown)
-            .unwrap_or_else(|e| panic!("{name} が断られた: {e}"));
+        normalize(body, Source::Markdown).unwrap_or_else(|e| panic!("{name} が断られた: {e}"));
     }
 }
 
@@ -65,20 +64,8 @@ fn 同じ入力からは同じ正規形が出る() {
         return;
     }
     for (name, body) in &files {
-        let a = normalize(body, Source::GithubMarkdown).unwrap();
-        let b = normalize(body, Source::GithubMarkdown).unwrap();
+        let a = normalize(body, Source::Markdown).unwrap();
+        let b = normalize(body, Source::Markdown).unwrap();
         assert_eq!(a, b, "{name} で正規形が揺れた");
     }
-}
-
-#[test]
-fn 取り込み元を変えると正規形が変わりうる() {
-    // Alert を持つかで補足と引用が入れ替わる。だから取り込み元は指紋に入る。
-    let md = "> [!NOTE]\n> 補足である。これは十分に長い日本語の文章であり、\n> 断られない程度の分量を持っている。\n";
-    let gh = normalize(md, Source::GithubMarkdown).unwrap();
-    let plain = normalize(md, Source::PlainMarkdown).unwrap();
-    assert_ne!(
-        gh, plain,
-        "取り込み元を変えても同じでは、対応表が効いていない"
-    );
 }

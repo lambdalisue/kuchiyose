@@ -60,7 +60,7 @@ const METRICS: &[Metric] = &[
 
 fn main() {
     let dir = std::env::args().nth(1).expect("ディレクトリを渡す");
-    let source = std::env::args().nth(2).map_or(Source::GithubMarkdown, |n| {
+    let source = std::env::args().nth(2).map_or(Source::Markdown, |n| {
         Source::from_name(&n).expect("対応表に無い取り込み元")
     });
 

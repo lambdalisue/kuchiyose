@@ -82,7 +82,7 @@ fn section(name: &str) -> Option<&'static str> {
 }
 
 const MEASURE: &str = "\
-kakiburi measure <ファイル> --source <取り込み元> [--cassette <カセット>] [--json]
+kakiburi measure <ファイル> [--cassette <カセット>] [--json]
     1 本を測る。カセットが無くても動く。
     カセットを渡すと、照合値・人らしさ値・系統の距離も出る。
     渡さなければ指示できる指標だけ——語彙が無いので、その場で選べば違う軸の
@@ -105,7 +105,6 @@ kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--s
     カセットの経路の既定は <フォルダ>.kb、場面の既定は default。
 
     カセットは本文を持たないので、作り直すたびにフォルダを読む。
-    取り込み元は拡張子から決める——.html は html、ほかは directive-markdown。
     作らずに終わる条件を持つ——止まっても失敗ではない。作れたら割りを出す。
 
     フォルダは 3 つある。
@@ -121,7 +120,7 @@ kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--s
     届かない分は池の記事を束ねて 1 単位にし、断られたら束ね方を変えて作り直す。";
 
 const REVIEW: &str = "\
-kakiburi review <ファイル> --cassette <カセット> --source <取り込み元> [--json]
+kakiburi review <ファイル> --cassette <カセット> [--json]
     検める。3 値と指摘を返す。
     どの場面として検めるかはカセットが言う——1 カセットが 1 場面なので、
     入れ物を選ぶことが場面を選ぶことである。
@@ -129,7 +128,7 @@ kakiburi review <ファイル> --cassette <カセット> --source <取り込み�
     かったのは正常な状態である。";
 
 const COMPARE: &str = "\
-kakiburi compare <ファイル>... --source <取り込み元> [--cassette <カセット>]
+kakiburi compare <ファイル>... [--cassette <カセット>]
     並べて比べる。3 本以上を取る——n 周した草稿を並べて散らばりを見る。
     カセットを渡すと、照合値・人らしさ値・系統の距離と帯も出る。
     渡さなければ指示できる指標だけ——それでは天井と比べられない。";
@@ -185,8 +184,7 @@ fn print_help() {
         println!("{s}");
     }
     println!();
-    println!("取り込み元: {}", source_names().join(" / "));
-    println!("  --source に既定は無い。 取り違えても数が変わるだけで、エラーにならない。");
+    println!("取り込み元は拡張子から決める——.html と .htm は HTML、ほかは Markdown。");
     println!();
     println!("{ENVIRONMENT}");
     println!();
@@ -336,19 +334,9 @@ fn phrase_table_len(c: &Cassette) -> usize {
 /// その場で選べば違う軸のベクトルどうしの距離になる。
 fn compare(args: &[String]) -> Exit {
     let mut files: Vec<String> = Vec::new();
-    let mut source: Option<Source> = None;
     let mut cassette: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
-        if args[i] == "--source" {
-            let Some(s) = args.get(i + 1).and_then(Source::from_name) else {
-                eprintln!("対応表に無い取り込み元");
-                return Exit::Usage;
-            };
-            source = Some(s);
-            i += 2;
-            continue;
-        }
         if args[i] == "--cassette" {
             let Some(v) = args.get(i + 1) else {
                 eprintln!("--cassette にカセットを渡す");
@@ -365,9 +353,11 @@ fn compare(args: &[String]) -> Exit {
         eprintln!("比べるファイルを 2 本以上渡す");
         return Exit::Usage;
     }
-    let Some(source) = source else {
-        return missing_source();
-    };
+    // 取り込み元が違えば升目が単位ごとに変わり、測れないの出方が揃わない。
+    if files.iter().any(|f| source_of(f) != source_of(&files[0])) {
+        eprintln!("断る: 取り込み元の違うものを並べようとした（.html と .md が混ざっている）");
+        return Exit::Usage;
+    }
 
     // 目盛りがあれば、目盛りに載せた値も出す。 指示できる指標だけでは
     // [周回ごとの散らばりを天井と比べる](../../../docs/design/100-cassette.md#周回のあいだの観測は外でやる)
@@ -393,7 +383,7 @@ fn compare(args: &[String]) -> Exit {
             eprintln!("読めない: {f}");
             return Exit::Unreadable;
         };
-        let doc = match normalize(&body, source) {
+        let doc = match normalize(&body, source_of(f)) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("断る: {f}: {e}");
@@ -1121,12 +1111,9 @@ fn japanese_chars_of(files: &[String]) -> Vec<usize> {
         .iter()
         .filter_map(|f| {
             let body = std::fs::read_to_string(f).ok()?;
-            let source = if f.ends_with(".html") || f.ends_with(".htm") {
-                Source::Html
-            } else {
-                Source::DirectiveMarkdown
-            };
-            normalize(&body, source).ok().map(|d| d.japanese_chars())
+            normalize(&body, source_of(f))
+                .ok()
+                .map(|d| d.japanese_chars())
         })
         .collect()
 }
@@ -1232,11 +1219,13 @@ fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> 
 }
 
 /// 拡張子から取り込み元を決める。
+///
+/// 中身は見ない。 Markdown の方言は 1 つなので、見て決めるものが無い。
 fn source_of(path: &str) -> Source {
     if path.ends_with(".html") || path.ends_with(".htm") {
         Source::Html
     } else {
-        Source::DirectiveMarkdown
+        Source::Markdown
     }
 }
 
@@ -2286,7 +2275,6 @@ fn review(args: &[String]) -> Exit {
         return Exit::Usage;
     };
     let mut cassette = None;
-    let mut source: Option<Source> = None;
     let mut json = false;
     let mut i = 1;
     while i < args.len() {
@@ -2297,18 +2285,6 @@ fn review(args: &[String]) -> Exit {
                     return Exit::Usage;
                 };
                 cassette = Some(v.clone());
-                i += 2;
-            }
-            "--source" => {
-                let Some(name) = args.get(i + 1) else {
-                    eprintln!("--source に取り込み元が要る");
-                    return Exit::Usage;
-                };
-                let Some(s) = Source::from_name(name) else {
-                    eprintln!("対応表に無い取り込み元: {name}");
-                    return Exit::Usage;
-                };
-                source = Some(s);
                 i += 2;
             }
             "--json" => {
@@ -2325,9 +2301,7 @@ fn review(args: &[String]) -> Exit {
         eprintln!("--cassette が要る");
         return Exit::Usage;
     };
-    let Some(source) = source else {
-        return missing_source();
-    };
+    let source = source_of(path);
 
     let Ok(body) = std::fs::read_to_string(path) else {
         eprintln!("読めない: {path}");
@@ -3142,23 +3116,6 @@ fn z_scores_of(scale: Option<&Scale>) -> BTreeMap<String, Vec<(f64, f64)>> {
     out
 }
 
-/// 取り込み元を渡していない。
-///
-/// 取り込み元に既定を置かない。 役に既定を置かないのと同じ理由である——
-/// 取り違えても、エラーは出ない。 HTML を `github-markdown` として読めば、
-/// 見出しも箇条書きも記法として認識されず、節も項目も文も違う数になる。
-/// 値だけが静かに変わるので、出力を見ても間違いに気付けない。
-fn missing_source() -> Exit {
-    eprintln!("--source を渡す（{}）", source_names().join(" / "));
-    eprintln!("既定を置かない。 取り違えても数が変わるだけで、エラーにならない");
-    Exit::Usage
-}
-
-/// 使える取り込み元の名前。
-fn source_names() -> Vec<&'static str> {
-    Source::all().iter().map(|s| s.name()).collect()
-}
-
 /// 人が決めたこと。指紋に入る。
 ///
 /// 場面がいちばん効く。 どのカセットのファイルを渡すかが場面の指定になっている
@@ -3281,24 +3238,10 @@ fn measure(args: &[String]) -> Exit {
         eprintln!("ファイルを渡す");
         return Exit::Usage;
     };
-    let mut source: Option<Source> = None;
     let mut cassette: Option<String> = None;
     let mut json = false;
     let mut i = 1;
     while i < args.len() {
-        if args[i] == "--source" {
-            let Some(name) = args.get(i + 1) else {
-                eprintln!("--source に取り込み元が要る");
-                return Exit::Usage;
-            };
-            let Some(s) = Source::from_name(name) else {
-                eprintln!("対応表に無い取り込み元: {name}");
-                return Exit::Usage;
-            };
-            source = Some(s);
-            i += 2;
-            continue;
-        }
         if args[i] == "--cassette" {
             let Some(v) = args.get(i + 1) else {
                 eprintln!("--cassette にカセットを渡す");
@@ -3316,9 +3259,7 @@ fn measure(args: &[String]) -> Exit {
         eprintln!("知らない引数: {}", args[i]);
         return Exit::Usage;
     }
-    let Some(source) = source else {
-        return missing_source();
-    };
+    let source = source_of(path);
 
     let Ok(body) = std::fs::read_to_string(path) else {
         eprintln!("読めない: {path}");
@@ -3676,7 +3617,7 @@ mod tests {
         // 圧縮率の下限を越える長さが要る。 越えないとどちらも「測っていない」に
         // なり、同じ値として通ってしまう。
         let body = "ここでは denops.vim という名前のプラグインを書いていきます。\n\n".repeat(200);
-        let doc = normalize(&body, Source::PlainMarkdown).expect("正規化できる");
+        let doc = normalize(&body, Source::Markdown).expect("正規化できる");
         let masked = humanness_of(&doc, None);
         let raw = kakiburi_metrics::Humanness::measure(&doc.prose(), None);
         assert_ne!(
@@ -3694,7 +3635,7 @@ mod tests {
         // 同じ解析器を渡したのに出し方で結果が違うことである。
         let doc = normalize(
             "あらためて取得し直す。\n\n次の段落。",
-            Source::PlainMarkdown,
+            Source::Markdown,
         )
         .expect("正規化できる");
         let a = analyzed_of(&doc.prose(), None);
@@ -3797,23 +3738,10 @@ mod tests {
     }
 
     #[test]
-    fn 対応表に無い取り込み元は使い方の誤りである() {
-        let args = [
-            "measure".to_owned(),
-            "/dev/null".to_owned(),
-            "--source".to_owned(),
-            "rst".to_owned(),
-        ];
-        assert_eq!(run(&args), Exit::Usage);
-    }
-
-    #[test]
     fn 読めないファイルは_65_である() {
         let args = [
             "measure".to_owned(),
             "/存在しない経路/x.md".to_owned(),
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
         ];
         assert_eq!(run(&args), Exit::Unreadable);
     }
@@ -3840,31 +3768,52 @@ mod tests {
     }
 
     #[test]
-    fn 取り込み元を省いたら断る() {
-        // HTML を github-markdown として読めば、節も項目も文も違う数になる——
-        // エラーは出ず、値だけが静かに変わる。
+    fn 取り込み元を省いたら拡張子から決める() {
+        // build がフォルダを読むときと同じ決め方である。 1 本を渡す口だけが
+        // 名乗らせると、同じ文書が口によって別の取り込み元で読まれうる。
         let dir = temp_dir("no-source");
         let f = a_document(&dir, "x");
         let c = empty_cassette(&dir);
         assert_eq!(
             run(&["measure".to_owned(), f.clone()]),
-            Exit::Usage,
+            Exit::Pass,
             "measure"
         );
         assert_eq!(
-            run(&["compare".to_owned(), f.clone(), f.clone()]),
-            Exit::Usage,
+            run(&["compare".to_owned(), f.clone(), f.clone(), f.clone()]),
+            Exit::Pass,
             "compare"
         );
+        // 目盛りの無いカセットなので、判定できないまで進む。
         assert_eq!(
-            run(&["review".to_owned(), f, "--cassette".to_owned(), c.clone(),]),
-            Exit::Usage,
+            run(&["review".to_owned(), f, "--cassette".to_owned(), c]),
+            Exit::Unknown,
             "review"
         );
-        // 断ったのだから、目盛りもできていない。
-        let (got, _) = open(&c).expect("読める");
-        assert!(!got.derived.has_scale());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 取り込み元の違うものは並べない() {
+        // 升目が単位ごとに変わり、測れないの出方が揃わない。
+        let dir = temp_dir("compare-mixed");
+        let md = a_document(&dir, "x");
+        let html = dir.join("y.html");
+        std::fs::write(&html, "<p>これは、そうだ。</p>").expect("書ける");
+        let html = html.to_string_lossy().into_owned();
+        assert_eq!(
+            run(&["compare".to_owned(), md.clone(), html, md]),
+            Exit::Usage
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 取り込み元は拡張子だけで決まる() {
+        assert_eq!(source_of("a/b.html"), Source::Html);
+        assert_eq!(source_of("a/b.htm"), Source::Html);
+        assert_eq!(source_of("a/b.md"), Source::Markdown);
+        assert_eq!(source_of("a/b.txt"), Source::Markdown);
     }
 
     #[test]
@@ -3954,8 +3903,6 @@ mod tests {
             target.to_string_lossy().into_owned(),
             "--cassette".to_owned(),
             cassette,
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
         ];
         // 短い 1 本なので除外に掛かる。0 ではなく「測れていない」が返るので、
         // 1 段目で止まって判定できないになる。
@@ -3978,8 +3925,6 @@ mod tests {
                 target.to_string_lossy().into_owned(),
                 "--cassette".to_owned(),
                 cassette,
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
                 "--scene".to_owned(),
                 "試験".to_owned(),
             ]),
@@ -4062,8 +4007,6 @@ mod tests {
             "compare".to_owned(),
             a,
             b,
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
         ];
         assert_eq!(run(&args), Exit::Pass);
         std::fs::remove_dir_all(&dir).ok();
@@ -4083,8 +4026,6 @@ mod tests {
                 args.push(b.clone());
             }
             args.extend([
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
                 "--cassette".to_owned(),
                 cassette.clone(),
             ]);
@@ -4166,8 +4107,6 @@ mod tests {
             run(&[
                 "measure".to_owned(),
                 a.clone(),
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
                 "--cassette".to_owned(),
                 cassette.clone(),
             ]),
@@ -4185,8 +4124,6 @@ mod tests {
                 a,
                 "--cassette".to_owned(),
                 cassette,
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
             ]),
             Exit::Unreadable,
             "review だけ別の診断になっている"
@@ -4215,8 +4152,6 @@ mod tests {
                 args.push(a.clone());
             }
             args.extend([
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
                 "--cassette".to_owned(),
                 cassette.clone(),
             ]);
@@ -4235,8 +4170,6 @@ mod tests {
         let args = [
             "measure".to_owned(),
             a,
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
             "--cassette".to_owned(),
             c,
         ];
@@ -4433,10 +4366,6 @@ mod tests {
         for gone in ["KAKIBURI_UNIDIC", "KAKIBURI_MECAB", "unidic-mecab-2.1.2_bin.zip"] {
             assert!(!ENVIRONMENT.contains(gone), "{gone} が残っている");
         }
-        // 一覧を 2 か所に書かない。
-        for s in source_names() {
-            assert!(Source::from_name(s).is_some(), "{s}");
-        }
     }
 
     #[test]
@@ -4448,8 +4377,6 @@ mod tests {
             run(&[
                 "measure".to_owned(),
                 f,
-                "--source".to_owned(),
-                "plain-markdown".to_owned(),
                 "--json".to_owned(),
             ]),
             Exit::Pass
@@ -4877,8 +4804,6 @@ mod tests {
             target.to_string_lossy().into_owned(),
             "--cassette".to_owned(),
             cassette,
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
         ];
         assert_eq!(run(&args), Exit::Unknown);
         // 途中で抜ける道でも JSON を出す。 出さなければ、道具の側が
@@ -4910,8 +4835,6 @@ mod tests {
             target.to_string_lossy().into_owned(),
             "--cassette".to_owned(),
             cassette,
-            "--source".to_owned(),
-            "plain-markdown".to_owned(),
         ];
         assert_eq!(run(&args), Exit::FingerprintMismatch);
         std::fs::remove_dir_all(&dir).ok();

@@ -23,9 +23,7 @@ pub use source::{Source, Writable};
 /// 決定的でなくなる。
 pub fn normalize(input: impl AsRef<str>, source: Source) -> Result<Document, Refusal> {
     let doc = match source {
-        Source::GithubMarkdown | Source::DirectiveMarkdown | Source::PlainMarkdown => {
-            markdown::parse(input, source)?
-        }
+        Source::Markdown => markdown::parse(input)?,
         Source::Html => html::parse(input)?,
     };
     refuse::admit(&doc)?;
@@ -48,22 +46,21 @@ mod tests {
 
     #[test]
     fn 日本語以外が主なら取り込みで断る() {
-        let e = normalize("this is english only text\n", Source::PlainMarkdown).unwrap_err();
+        let e = normalize("this is english only text\n", Source::Markdown).unwrap_err();
         assert!(matches!(e, Refusal::NotJapanese { .. }), "{e:?}");
     }
 
     #[test]
     fn 日本語の文書は通る() {
         let md = "# 題\n\nこれは日本語の文章である。十分な長さを持っている。\n";
-        let d = normalize(md, Source::GithubMarkdown).unwrap();
+        let d = normalize(md, Source::Markdown).unwrap();
         assert_eq!(d.paragraphs().len(), 1);
     }
 
     #[test]
     fn 書けない記法は測れないになる() {
-        assert!(!measurable(Source::PlainMarkdown, Kind::Note));
         assert!(!measurable(Source::Html, Kind::Warning));
-        assert!(measurable(Source::GithubMarkdown, Kind::Note));
+        assert!(measurable(Source::Markdown, Kind::Note));
     }
 
     #[test]
@@ -85,15 +82,15 @@ mod tests {
 
     #[test]
     fn 取り込み元ごとに正規形が変わる() {
-        // 同じ意味を、記法の違う 4 つで書いても同じ node に落ちる。
+        // 同じ意味を違う記法で書いても、同じ node に落ちる。
         let gh = normalize(
             "> [!NOTE]\n> 補足である。十分に長い日本語の文章。\n",
-            Source::GithubMarkdown,
+            Source::Markdown,
         )
         .unwrap();
         let dir = normalize(
             ":::note\n補足である。十分に長い日本語の文章。\n:::\n",
-            Source::DirectiveMarkdown,
+            Source::Markdown,
         )
         .unwrap();
         let h = normalize(
