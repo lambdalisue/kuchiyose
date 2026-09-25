@@ -60,7 +60,7 @@ perl tools/checklinks.pl .
 
 ## スパイク
 
-実験の道具である。検査器ではない。記録は [docs/spike/](../docs/spike/) にある。
+実験の道具である。検査器ではない。
 
 | | 何を通すか |
 | --- | --- |
@@ -70,14 +70,14 @@ perl tools/checklinks.pl .
 | `spike-rotate.pl` | 相手集合を 10 通り回す |
 | `spike-directive.pl` | <strong>指示できる指標</strong>を測る。`--values` は基準を要らない |
 
-<strong>スパイクは仕様に従わせる。</strong> 6 つの欠陥が[このやり方で見つかった](../docs/spike/300-baseline-scene.md#途中でスパイクの欠陥が-6-つ出た)
+<strong>スパイクは仕様に従わせる。</strong> 6 つの欠陥がこのやり方で見つかった
 ——直すたびに数字が動いた。<strong>スパイクを緩めて通すのは順序が逆である。</strong>
 
 ## 実装
 
 `crates/` は仕様の写しである。試験の名前が仕様の主張になっている——
 `約物は日本語の文字ではない`、`文は_node_を跨がない`、`層は系統から引くしかない`、
-`取り込み元を間違えたら断る`。
+`対応表に無い_directive_は断る`。
 
 ```
 nix develop --command cargo test
@@ -99,7 +99,7 @@ kakiburi metrics
 KAKIBURI_UNIDIC=/path/to/unidic-mecab-2.1.2_bin kakiburi build <カセット>
 ```
 
-<strong>実装が仕様の穴を 11 個見つけた</strong>（[経緯](../docs/spike/600-implementation.md)）。
+<strong>実装が仕様の穴を 11 個見つけた</strong>。
 最初の試験で `・` が Katakana ブロックの中にあることが出て、実際の記事に当てたら
 無限ループと「補足 18 箇所が 0 になる」が出た。外の解析器を繋いだら、
 <strong>辞書の設定が出力の形を決め、知らない語で解析器が死に、長い行が黙って分割された。</strong>
