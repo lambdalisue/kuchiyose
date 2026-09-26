@@ -20,9 +20,11 @@ pub fn inputs(defs: &FromDefinitions, sources: Vec<String>) -> Inputs {
         // 本数を指紋にしない。 同じ本数のまま数え方・除外・直し方を変えれば、
         // 値の意味が変わったのに指紋が動かず、古い統計値が使い回される。
         metric_definitions: defs.digest(),
+        // パッケージの版ではなく、各クレートが持つ測り方の版を入れる。 パッケージの版は
+        // 測り方と無関係に上がるので、入れれば版を上げるたびに形代が全部使えなくなる。
         unit_definitions: format!(
             "kuchiyose-doc {} / Unicode {}",
-            env!("CARGO_PKG_VERSION"),
+            kuchiyose_doc::UNIT_REVISION,
             kuchiyose_doc::text::UNICODE_VERSION,
         ),
         morphology: analyzer::tool(),
@@ -33,7 +35,7 @@ pub fn inputs(defs: &FromDefinitions, sources: Vec<String>) -> Inputs {
         normalization: Normalization {
             sources,
             implementation: "kuchiyose-normalize".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
+            version: kuchiyose_normalize::REVISION.into(),
             mapping: normalization_mapping(),
         },
         measurement: measurement(),
@@ -150,6 +152,36 @@ mod tests {
             check(&c, &FromDefinitions::load()),
             Err(vec!["測り方の設定: metrics::floor::TOKENS".to_owned()])
         );
+    }
+
+    #[test]
+    fn 数える単位と正規化は各クレートの測り方の版を名乗る() {
+        let c = katashiro();
+        assert!(
+            c.inputs
+                .unit_definitions
+                .contains(kuchiyose_doc::UNIT_REVISION),
+            "{}",
+            c.inputs.unit_definitions
+        );
+        assert_eq!(
+            c.inputs.normalization.version,
+            kuchiyose_normalize::REVISION
+        );
+    }
+
+    #[test]
+    fn パッケージの版は指紋の材料に入らない() {
+        // 入れれば、測り方を変えずに版を上げただけで、同梱の基準も含めて
+        // それまでの形代が全部使えなくなる。
+        let c = katashiro();
+        let version = env!("CARGO_PKG_VERSION");
+        assert!(
+            !c.inputs.unit_definitions.contains(version),
+            "{}",
+            c.inputs.unit_definitions
+        );
+        assert_ne!(c.inputs.normalization.version, version);
     }
 
     #[test]

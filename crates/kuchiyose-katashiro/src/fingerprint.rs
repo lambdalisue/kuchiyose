@@ -26,6 +26,8 @@ pub struct Inputs {
     /// 指標の定義そのもの。登録簿から。
     pub metric_definitions: String,
     /// 数える単位の定義。地の文に何が入るか、日本語の文字の範囲。
+    ///
+    /// 定義の版で表す。パッケージの版は測り方と無関係に上がるので使わない。
     pub unit_definitions: String,
     /// 形態素解析器の辞書と版。
     pub morphology: Tool,
@@ -73,7 +75,7 @@ pub struct Normalization {
     pub sources: Vec<String>,
     /// 変換の実装。
     pub implementation: String,
-    /// その版。
+    /// 変換の版。変換を変えたときに上げる版であって、パッケージの版ではない。
     pub version: String,
     /// 適用した対応表。
     pub mapping: BTreeMap<String, String>,
@@ -210,7 +212,7 @@ mod tests {
     fn inputs() -> Inputs {
         Inputs {
             metric_definitions: "定義 51 本 fnv1a:0".into(),
-            unit_definitions: "kuchiyose-doc 0.0.0 / Unicode 15.1".into(),
+            unit_definitions: "kuchiyose-doc 数える単位 1 / Unicode 15.1".into(),
             morphology: Tool {
                 name: "Lindera".into(),
                 version: "6.0".into(),
@@ -226,7 +228,7 @@ mod tests {
             normalization: Normalization {
                 sources: vec!["markdown".into()],
                 implementation: "kuchiyose-normalize".into(),
-                version: "0.0.0".into(),
+                version: "変換 1".into(),
                 mapping: [("markdown".to_owned(), "表 1".to_owned())].into(),
             },
             measurement: [
@@ -330,7 +332,9 @@ mod tests {
         changes("取り込み元の種類", |i| {
             i.normalization.sources.push("html".into());
         });
-        changes("変換の版", |i| i.normalization.version = "0.0.1".into());
+        changes("変換の版", |i| {
+            i.normalization.version = "変換 2".into()
+        });
         changes("対応表", |i| {
             i.normalization.mapping.insert("html".into(), "表 1".into());
         });

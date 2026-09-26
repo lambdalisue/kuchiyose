@@ -13,6 +13,17 @@ pub mod text;
 use node::{Kind, Node};
 use prose::Segment;
 
+/// 数える単位の定義の版。指紋に出る。
+///
+/// 地の文に何が入るか、文・段落・節・項目の区切り方、日本語の文字の範囲の
+/// どれかを変えて、同じ文書から違う数が出るようになったら手で上げる。
+///
+/// パッケージの版は使わない。 版は測り方と無関係に上がるので、指紋に入れれば
+/// 測り方が同じでも版を上げるたびに形代が全部使えなくなり、測り方を変えても
+/// 版を上げるまでは指紋が動かない。 日本語の文字の範囲が従う Unicode の版は
+/// [`text::UNICODE_VERSION`] が別に持つ。
+pub const UNIT_REVISION: &str = "数える単位 1";
+
 /// 正規形の文書。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
