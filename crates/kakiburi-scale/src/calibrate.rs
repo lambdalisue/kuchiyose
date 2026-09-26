@@ -9,6 +9,22 @@
 /// 正則化の強さ。暫定値である。
 pub const LAMBDA: f64 = 0.1;
 
+/// 勾配降下の歩幅。標準化した次元に対するものである。
+pub const LEARNING_RATE: f64 = 0.5;
+
+/// 勾配降下を回す回数。
+pub const ITERATIONS: usize = 4000;
+
+/// 1 系統だけ欠けた文書で、その系統に置く代わりの値。合算の入力の標準偏差で数える。
+///
+/// 平均からこれだけ機械の側へ置く。 平均を置けば、欠けたことが得になりうる
+/// ——欠けた系統ほど、その文書で特徴的だった可能性がある。
+///
+/// この値で出した照合値は「通る」にしか使わない。 機械の側に寄せた値が
+/// それでも人の側に出たなら、欠けた系統がどう出ても人の側に留まる見込みが
+/// 高い。 床の側や帯の中に出ても、それは置いた値のせいでありうる。
+pub const SUBSTITUTE_SIGMA: f64 = 2.0;
+
 /// 標本の事前オッズの対数。切片から引く。
 ///
 /// 素のロジスティック回帰が返すのは事後オッズの対数であって、尤度比ではない。
@@ -73,7 +89,7 @@ impl Weights {
     /// `rows` は 1 行が 1 対、`labels` は 1（同じ人）/ 0（違う人）。
     ///
     /// 仮定は対数尤度比が入力の 1 次式で書けることである。仮定が無いのではなく、
-    /// 置く場所が違う——残差を見て確かめる。
+    /// 置く場所が違う——残差はまだ見ていないので、この仮定が当てはまっているかは確かめていない。
     ///
     /// 目的関数は標本ごとの負の対数尤度の平均 + `λ` × 傾きの二乗和で、これを
     /// 最小化する。和ではなく平均にするのは `λ` の意味を標本数から切り離すため
@@ -125,8 +141,8 @@ impl Weights {
             .collect();
 
         let mut w = vec![0.0; p + 1];
-        let lr = 0.5;
-        for _ in 0..4000 {
+        let lr = LEARNING_RATE;
+        for _ in 0..ITERATIONS {
             let mut g = vec![0.0; p + 1];
             for (row, &y) in z.iter().zip(labels) {
                 let s = w[0] + row.iter().zip(&w[1..]).map(|(x, b)| x * b).sum::<f64>();
@@ -350,6 +366,47 @@ impl Calibration {
             return Err(MatchError::MissingSystems { names: missing });
         }
         Ok(self.fusion.log_lr(&llrs))
+    }
+
+    /// 1 系統だけ欠けた文書の照合値。欠けた系統に[代わりの値](SUBSTITUTE_SIGMA)を置く。
+    ///
+    /// 置くのは `substitute` に名指しした系統だけである。 ほかが欠けていれば
+    /// [`Self::matching_value`]と同じく出さない。 系統が 1 つしか無い較正でも
+    /// 出さない——置けば、入力を 1 つも見ない定数が照合値になる。
+    ///
+    /// 出た値は、そろった文書の照合値と同じ目盛りに載っていない。 機械の側へ
+    /// 寄せて置いたので、人の側に出たときだけ言えることがある。
+    pub fn matching_value_substituting(
+        &self,
+        distances: &dyn Fn(&str) -> Option<f64>,
+        substitute: &str,
+    ) -> Result<f64, MatchError> {
+        let mut missing = Vec::new();
+        let mut llrs = Vec::with_capacity(self.systems.len());
+        for (j, (name, w)) in self.systems.iter().zip(&self.per_system).enumerate() {
+            if name == substitute && self.systems.len() >= 2 {
+                llrs.push(self.substitute_input(j));
+                continue;
+            }
+            match distances(name) {
+                Some(d) => llrs.push(w.log_lr(&[d])),
+                None => missing.push(name.clone()),
+            }
+        }
+        if !missing.is_empty() {
+            return Err(MatchError::MissingSystems { names: missing });
+        }
+        Ok(self.fusion.log_lr(&llrs))
+    }
+
+    /// 合算の `j` 番目の入力に置く代わりの値。
+    ///
+    /// 系統ごとの対数尤度比は大きいほど同じ人らしく、合算の重みは負に
+    /// ならない。 だから平均から引く向きが、照合値を下げる向きである。
+    fn substitute_input(&self, j: usize) -> f64 {
+        let c = self.fusion.centers().get(j).copied().unwrap_or(0.0);
+        let s = self.fusion.scales().get(j).copied().unwrap_or(1.0);
+        c - SUBSTITUTE_SIGMA * s
     }
 
     /// 系統ごとの重み。指紋に入る。
@@ -598,6 +655,72 @@ mod tests {
         let e = c.matching_value(&|n| if n == "s0" { Some(0.1) } else { None });
         let MatchError::MissingSystems { names } = e.unwrap_err();
         assert_eq!(names, vec!["s1".to_string(), "s2".to_string()]);
+    }
+
+    /// 3 系統とも、近いほど同じ人に出る較正。
+    fn three_systems() -> Calibration {
+        let distances = vec![
+            vec![0.1, 0.2, 0.1],
+            vec![0.15, 0.25, 0.15],
+            vec![0.12, 0.22, 0.2],
+            vec![0.8, 0.7, 0.9],
+            vec![0.85, 0.75, 0.95],
+            vec![0.7, 0.8, 0.85],
+        ];
+        Calibration::fit(&names(3), &distances, &[1, 1, 1, 0, 0, 0])
+    }
+
+    #[test]
+    fn 欠けた_1_系統には機械の側の代わりの値を置く() {
+        // 合算の入力で平均から標準偏差 2 つ分、同じ人らしくない側に置く。
+        let c = three_systems();
+        let got = c
+            .matching_value_substituting(&|n| (n != "s1").then_some(0.1), "s1")
+            .unwrap();
+        let f = c.fusion();
+        let substitute = f.centers()[1] - SUBSTITUTE_SIGMA * f.scales()[1];
+        let expected = f.log_lr(&[
+            c.per_system()[0].log_lr(&[0.1]),
+            substitute,
+            c.per_system()[2].log_lr(&[0.1]),
+        ]);
+        assert!((got - expected).abs() < 1e-12, "{got} vs {expected}");
+    }
+
+    #[test]
+    fn 代わりの値は平均を置くより照合値を下げる() {
+        // 欠けた系統ほどその文書で特徴的だった可能性がある。 どちらとも
+        // 言えない値を置けば、欠けたことが得になりうる。
+        let c = three_systems();
+        let got = c
+            .matching_value_substituting(&|n| (n != "s1").then_some(0.1), "s1")
+            .unwrap();
+        let f = c.fusion();
+        let neutral = f.log_lr(&[
+            c.per_system()[0].log_lr(&[0.1]),
+            f.centers()[1],
+            c.per_system()[2].log_lr(&[0.1]),
+        ]);
+        assert!(got <= neutral, "{got} vs {neutral}");
+    }
+
+    #[test]
+    fn 代わりの値を置くのは名指しした_1_系統だけ() {
+        let c = three_systems();
+        let e = c
+            .matching_value_substituting(&|n| (n == "s0").then_some(0.1), "s1")
+            .unwrap_err();
+        let MatchError::MissingSystems { names } = e;
+        assert_eq!(names, vec!["s2".to_string()]);
+    }
+
+    #[test]
+    fn 系統が_1_つしか無ければ代わりの値を置かない() {
+        // 置けば、入力を 1 つも見ない定数が照合値として出る。
+        let c = Calibration::fit(&names(1), &[vec![0.1], vec![0.9]], &[1, 0]);
+        let e = c.matching_value_substituting(&|_| None, "s0").unwrap_err();
+        let MatchError::MissingSystems { names } = e;
+        assert_eq!(names, vec!["s0".to_string()]);
     }
 
     #[test]

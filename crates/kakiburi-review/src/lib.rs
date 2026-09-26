@@ -6,14 +6,17 @@
 //!
 //! この境界は `Cargo.toml` が守っている——`kakiburi-scale` を依存に持たない。
 
+pub mod own_writing;
 pub mod point;
 pub mod range;
 pub mod verdict;
 
+pub use own_writing::{OwnWriting, OWN_WRITING_CAVEAT};
 pub use point::{Point, PointError, Remedies};
 pub use range::{appearance_size, Lower, Outside, Range, APPEARANCE_FLOOR};
 pub use verdict::{
-    judge, pick_points, Inspected, Observed, Outcome, Side, Stage, Verdict, MAX_POINTS,
+    judge, judge_with, pick_points, Inspected, Notes, Observed, Outcome, Side, Stage, Verdict,
+    MAX_POINTS,
 };
 
 /// 検めた結果。3 値と指摘を返す。
@@ -433,6 +436,14 @@ pub struct Observations<'a> {
     pub humanness: Option<Side>,
     /// 照合値がどちら側か。2 段目。
     pub matching: Option<Side>,
+    /// 照合値を代わりの値で出したなら、欠けていた系統。
+    ///
+    /// そのとき照合値は人の側に出たときにしか使わない（[`judge_with`]）。
+    pub matching_substituted: Option<&'a str>,
+    /// 素材の下限に届かない短さ。届いていれば `None`。
+    ///
+    /// 値が出なかった段の理由に使う（[`Notes::too_short`]）。
+    pub too_short: Option<&'a str>,
     /// 前に出す指標の観測。3 段目。
     pub directives: &'a [Observed],
     /// 一貫しているだけの指標の観測。判定には使わない。
@@ -567,7 +578,16 @@ fn first_person_remedies(person: &[(String, f64)], draft: &[(String, usize)]) ->
 pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
     let (humanness_by_metric, diverging, directives) =
         (o.humanness_by_metric, o.diverging, o.directives);
-    let outcome = judge(o.inspections, o.humanness, o.matching, directives);
+    let outcome = judge_with(
+        o.inspections,
+        o.humanness,
+        o.matching,
+        Notes {
+            substituted: o.matching_substituted,
+            too_short: o.too_short,
+        },
+        directives,
+    );
     // 3 段目まで進んだときだけ書きぶりの指摘を組む。 前の段で止まったなら、
     // 出しても受け取った側は逆向きの直しをする。
     let points = if outcome.stage == Stage::Directive {
@@ -625,7 +645,8 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
     let machine_gois = machine_goi_remedies(o.machine_gois);
     // 本人の型を使いすぎていないか。 寄せろと言った側が行きすぎるのを止める。
     let overused_katas = overused_katas(o.phrases);
-    // 型と同じ扱いである。 その人へ寄せるためのものなので、人らしさの段では出さない。
+    // その人へ寄せるための知らせなので、人らしさの段では出さない。 型は全段で出すが、
+    // 癖は照合値の段と指示できる指標の段でだけ出す。
     let habits = if matches!(outcome.stage, Stage::Matching | Stage::Directive) {
         pick_points(o.habits)
             .into_iter()
@@ -729,9 +750,12 @@ fn humanness_remedies(
             } else {
                 remedies.upper(&o.name).or_else(|| remedies.lower(&o.name))
             }?;
-            let way = if o.target > o.value { "足りない" } else { "多い" };
+            // 並べる値はその指標だけで見た人らしさであって、指標そのものの
+            // 量ではない。 「密度が本人より足りない」と書けば、続く直し方の
+            // 「減らす」と食い違って読める。
+            let way = if o.target > o.value { "低い" } else { "高い" };
             let mut line = format!(
-                "{}が本人より{way}（この文章 {:.3} / 本人 {:.3}）。{remedy}人らしさ値が {:+.3} 動く。",
+                "{}の人らしさが本人より{way}（この文章 {:.3} / 本人 {:.3}）。{remedy}人らしさ値が {:+.3} 動く。",
                 o.name, o.value, o.target, o.effect
             );
             // 本人が現に繰り返している言い回しを添える。 添えなければ、
@@ -772,6 +796,27 @@ fn humanness_remedies(
         .collect()
 }
 
+/// 判定と指摘を決める閾値。指紋に入れる材料である。
+///
+/// 平文で返す。 ハッシュにすると、合わないときにどれが変わったかを言えない。
+///
+/// ここで返すのは、このクレートが持つ閾値だけである。 目盛りの側の閾値は
+/// `kakiburi-scale` が自分で返す——ここから手を伸ばせば、
+/// [依存してはいけない向き](../../../docs/design/000-architecture.md#kakiburi-review)の
+/// 依存ができる。
+#[must_use]
+pub fn settings() -> Vec<(&'static str, String)> {
+    vec![
+        ("review::APPEARANCE_FLOOR", APPEARANCE_FLOOR.to_string()),
+        ("review::OVERUSE", OVERUSE.to_string()),
+        ("review::MAX_POINTS", MAX_POINTS.to_string()),
+        ("review::OPENING_MIN", OPENING_MIN.to_string()),
+        ("review::OPENING_SHARE", OPENING_SHARE.to_string()),
+        ("review::FIRST_PERSON_MIN", FIRST_PERSON_MIN.to_string()),
+        ("review::FIRST_PERSON_SHARE", FIRST_PERSON_SHARE.to_string()),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -806,6 +851,7 @@ mod tests {
                 units: 10,
             },
             lower: Lower::Spread,
+            direct: false,
         }
     }
 
@@ -817,6 +863,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -838,6 +886,35 @@ mod tests {
     }
 
     #[test]
+    fn 代わりの値で出した照合値は検めでも通らないにしない() {
+        let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
+        let r = review(
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Human),
+                matching: Some(Side::Machine),
+                matching_substituted: Some("読点の打ち方"),
+                too_short: None,
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[],
+                diverging: &[],
+                katas: &[],
+                machine_katas: &[],
+                machine_gois: &[],
+                phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
+            },
+            &All,
+        );
+        assert_eq!(r.outcome.verdict, Verdict::Unknown);
+        assert_eq!(r.outcome.stage, Stage::Matching);
+    }
+
+    #[test]
     fn 通っても幅の外の知らせは残る() {
         // 判定を止めない軸が幅の外にあるとき、「すべて幅の中にある」と
         // 「幅の外にある」が同じ画面に並ぶ。見せる側が分けられるように、
@@ -849,6 +926,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &h,
                 humanness_by_metric: &[],
@@ -971,6 +1050,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::InBand),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1003,6 +1084,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::InBand),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1034,6 +1117,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::InBand),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1061,6 +1146,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1092,6 +1179,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[ok, done],
@@ -1115,6 +1204,72 @@ mod tests {
     }
 
     #[test]
+    fn 閾値は名前と値を平文で返す() {
+        // どれが変わったかを指紋の差として名指せるようにする。
+        let s = settings();
+        assert!(
+            s.contains(&("review::APPEARANCE_FLOOR", APPEARANCE_FLOOR.to_string())),
+            "{s:?}"
+        );
+        assert!(
+            s.contains(&("review::OVERUSE", OVERUSE.to_string())),
+            "{s:?}"
+        );
+        let mut names: Vec<&str> = s.iter().map(|(n, _)| *n).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), s.len(), "名前が重なれば片方が消える");
+    }
+
+    #[test]
+    fn 人らしさの直し方は並べた値が人らしさだと言う() {
+        // 並べる値は指標ごとの人らしさであって、指標そのものの密度ではない。
+        // 「句読点の密度が本人より足りない」と書くと、続く「読点を減らす」と
+        // 食い違って読める。
+        let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
+        let mut down = human("句読点の密度", -0.9);
+        down.raise = false;
+        let r = review(
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
+                directives: &d,
+                habits: &[],
+                humanness_by_metric: &[down],
+                diverging: &[],
+                katas: &[],
+                machine_katas: &[],
+                machine_gois: &[],
+                phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
+            },
+            &All,
+        );
+        assert_eq!(r.humanness.len(), 1, "{:?}", r.humanness);
+        let line = &r.humanness[0];
+        assert!(
+            line.starts_with(
+                "句読点の密度の人らしさが本人より低い（この文章 -0.900 / 本人 1.000）"
+            ),
+            "{line}"
+        );
+        assert!(
+            line.contains("句読点の密度を減らす。"),
+            "直し方は残す: {line}"
+        );
+        assert!(
+            line.contains("人らしさ値が +0.100 動く"),
+            "動く量も残す: {line}"
+        );
+    }
+
+    #[test]
     fn 減らす側では繰り返しすぎているものを名指す() {
         // 「減らせ」と言うなら、どれを減らすのかを言わなければ直せない。
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
@@ -1126,6 +1281,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[h],
@@ -1156,6 +1313,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[h],
@@ -1195,6 +1354,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[h],
@@ -1241,6 +1402,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[bad, good],
@@ -1274,6 +1437,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[deep, shallow],
@@ -1310,6 +1475,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[a, b],
@@ -1338,6 +1505,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::InBand),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &h,
@@ -1368,6 +1537,8 @@ mod tests {
                 inspections: &[],
                 humanness: None,
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1396,6 +1567,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &h,
@@ -1428,6 +1601,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[down],
@@ -1451,6 +1626,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[human("圧縮率", -0.9)],
@@ -1489,6 +1666,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &h,
@@ -1517,6 +1696,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &h,
@@ -1544,6 +1725,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Machine),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1571,6 +1754,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::InBand),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1601,6 +1786,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1631,6 +1818,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1664,6 +1853,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],
@@ -1693,6 +1884,8 @@ mod tests {
                 inspections: &[],
                 humanness: Some(Side::Human),
                 matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
                 directives: &d,
                 habits: &[],
                 humanness_by_metric: &[],

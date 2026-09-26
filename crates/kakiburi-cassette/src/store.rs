@@ -295,6 +295,10 @@ fn inputs_json(i: &Inputs) -> Value {
                     ),
                 ),
                 ("normalization".into(), normalization_json(&c.normalization)),
+                (
+                    "settings".into(),
+                    Value::obj(c.settings.iter().map(|(k, v)| (k.clone(), Value::s(v)))),
+                ),
             ]),
         ),
         ("scene".into(), {
@@ -480,6 +484,9 @@ fn read_fingerprint(manifest: &Value) -> Result<Fingerprint, StoreError> {
                 mapping: read_map(n.and_then(|v| v.get("mapping"))),
             }
         },
+        // 欠けていれば空で読む。 設定を持たない頃のカセットは、照らしたときに
+        // 較正の設定の名前を全部挙げて合わない——作り直しを案内するのが正しい。
+        settings: read_map(i.get("settings")),
     };
     let scene = match raw.get("scene") {
         Some(s) => SceneInputs {
@@ -616,6 +623,11 @@ mod tests {
                         version: "0.0.0".into(),
                         mapping: [("message".to_owned(), "補足".to_owned())].into(),
                     },
+                    settings: [
+                        ("scale::band::GAP_MARGIN".to_owned(), "0.05".to_owned()),
+                        ("review::OVERUSE".to_owned(), "1".to_owned()),
+                    ]
+                    .into(),
                 },
                 scene: SceneInputs {
                     vocabulary: [("文字bigram".to_owned(), vec!["あい".to_owned()])].into(),
@@ -838,6 +850,38 @@ mod tests {
             .replace("\"stuck\"", "\"うごかない\"");
         e.insert("decided/movement.json".into(), body.into_bytes());
         assert!(read(&zip::write(&e)).is_err());
+    }
+
+    #[test]
+    fn 較正の設定が往復する() {
+        // 落ちれば、閾値を動かす前のカセットと後のカセットが同じ指紋になる。
+        let back = read(&write(&cassette())).unwrap();
+        assert_eq!(
+            back.fingerprint.inputs.common.settings,
+            cassette().fingerprint.inputs.common.settings
+        );
+        assert!(back.fingerprint.matches(&cassette().fingerprint));
+    }
+
+    #[test]
+    fn 設定を持たないカセットは閾値を名指して合わない() {
+        // 設定を指紋に入れる前に作ったカセットである。 空で読んで照らせば、
+        // 何が足りないかを名前で言える。
+        let mut e = zip::read(&write(&cassette())).unwrap();
+        let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
+        e.insert(
+            "manifest.json".into(),
+            m.replace("\"settings\"", "\"古い欄\"").into_bytes(),
+        );
+        let old = read(&zip::write(&e)).expect("読める");
+        assert!(old.fingerprint.inputs.common.settings.is_empty());
+        assert_eq!(
+            old.fingerprint.differences(&cassette().fingerprint),
+            vec![
+                "較正の設定: review::OVERUSE",
+                "較正の設定: scale::band::GAP_MARGIN",
+            ]
+        );
     }
 
     #[test]

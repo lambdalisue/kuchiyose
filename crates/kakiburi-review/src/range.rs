@@ -95,6 +95,25 @@ impl Range {
         self.high - self.low
     }
 
+    /// 外れと数えない大きさの上限。幅を 1 とした倍数で、1/(n−1)。
+    ///
+    /// 幅は本人の単位 n 本の最小から最大までで、本人の広がりそのものより狭い。
+    /// 一様分布の順序統計量で、端ごとに平均して幅 ÷ (n−1) だけ取りこぼす。
+    /// その内側の外れは、書き手が動いたのではなく、幅を作った標本が少なかった
+    /// ことの影である。
+    ///
+    /// 2 本に満たなければ見積もれないので 0 とする。 幅が 0 の指標の外れの
+    /// 大きさは n なので、この上限を必ず越える。
+    #[must_use]
+    pub fn tolerance(self) -> f64 {
+        if self.units < 2 {
+            return 0.0;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let gaps = (self.units - 1) as f64;
+        1.0 / gaps
+    }
+
     /// 下端の見方を選んで判定する。
     ///
     /// 密度・個数の下端は幅で見ない。 上端はどちらでも幅で見る——多すぎる側は
@@ -307,6 +326,29 @@ mod tests {
         assert_eq!(r.locate(1.0), Outside::Above { size: 10.0 });
         assert_eq!(r.locate(-1.0), Outside::Below { size: 10.0 });
         assert_eq!(r.locate(0.0), Outside::Inside);
+    }
+
+    #[test]
+    fn 数えない大きさは単位の本数から決まる() {
+        assert!((range(0.0, 1.0).tolerance() - 1.0 / 9.0).abs() < 1e-12);
+        let two = Range {
+            low: 0.0,
+            high: 1.0,
+            units: 2,
+        };
+        assert!((two.tolerance() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn 単位が_2_本に満たなければ数えない大きさを持たない() {
+        for units in [0, 1] {
+            let r = Range {
+                low: 0.0,
+                high: 0.0,
+                units,
+            };
+            assert_eq!(r.tolerance(), 0.0, "{units} 本");
+        }
     }
 
     #[test]

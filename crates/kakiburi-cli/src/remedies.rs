@@ -117,6 +117,15 @@ impl FromDefinitions {
             .is_none_or(|e| e.tag.layer() == Some(kakiburi_metrics::Layer::Three))
     }
 
+    /// 切り口そのものを調べた研究があるか。定義ファイルの `直接。` の行で名乗る。
+    ///
+    /// 読めなければ拡張として扱う。 名乗らないものの既定が拡張である
+    /// （[直接だけを名乗らせる](../../../docs/spec/100-metrics.md#直接だけを名乗らせる)）。
+    #[must_use]
+    pub fn is_direct(&self, name: &str) -> bool {
+        self.defs.iter().any(|d| d.name == name && d.direct)
+    }
+
     /// 検査の指標か。幅ではなく線で見る。
     ///
     /// 効くかの判定にも指摘にも入れない。比べる先が本人ではないので、
@@ -199,6 +208,14 @@ mod tests {
         }
         assert_eq!(r.upper("段落長の変動係数"), None, "下限だけの指標である");
         assert!(r.lower("段落長の変動係数").is_some());
+    }
+
+    #[test]
+    fn 名乗らない指標と知らない指標は直接でない() {
+        let r = FromDefinitions::load();
+        // 接続詞直後の読点は、個人差を見た報告が無いので名乗らない。
+        assert!(!r.is_direct("接続詞直後の読点"));
+        assert!(!r.is_direct("存在しない指標"));
     }
 
     #[test]

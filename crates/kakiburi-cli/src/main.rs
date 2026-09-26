@@ -110,7 +110,8 @@ kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--s
     フォルダは 3 つある。
       位置引数      本人の文書。照合の相手集合と天井になる
       --baseline  基準。LLM の既定出力。床になる。省くと同梱の池
-      --other     他人の文書。 人らしさの人の側の較正にだけ効く
+      --other     他人の文書。照合値の較正の違う人の側と、人らしさの人の側に足す
+                  2 つ目の床は作らない
 
     同梱でない基準には --model と --version が要る（--param / --topic も取る）。
     記録の無い基準で作った値は、次に測ったときに比べられない。
@@ -120,12 +121,19 @@ kakiburi build <本人の記事のフォルダ> [--cassette <カセット>] [--s
     届かない分は池の記事を束ねて 1 単位にし、断られたら束ね方を変えて作り直す。";
 
 const REVIEW: &str = "\
-kakiburi review <ファイル> --cassette <カセット> [--json]
+kakiburi review <ファイル> --cassette <カセット>
+                [--own-writing shown|not-shown|unknown] [--json]
     検める。3 値と指摘を返す。
     どの場面として検めるかはカセットが言う——1 カセットが 1 場面なので、
     入れ物を選ぶことが場面を選ぶことである。
     目盛りの無いカセットは判定できない（2）を返す——素材が足りずに作れな
-    かったのは正常な状態である。";
+    かったのは正常な状態である。
+
+    --own-writing  草稿を書かせるときに、本人の文章を LLM に見せたか。
+                   shown は見せた、not-shown は見せていない、unknown は知らない。
+                   既定は unknown——申告が無いことを「見せていない」と読まない。
+                   shown と unknown では、3 値のどれを返すときも但し書きを添える。
+                   本人の文章を見せて書かせた草稿では測定が膨らむ。判定は変えない。";
 
 const COMPARE: &str = "\
 kakiburi compare <ファイル>... [--cassette <カセット>]
@@ -184,7 +192,8 @@ fn print_help() {
         println!("{s}");
     }
     println!();
-    println!("取り込み元は拡張子から決める——.html と .htm は HTML、ほかは Markdown。");
+    println!("{EXTENSIONS}");
+    println!("フォルダからは読める拡張子のファイルだけを拾い、ほかは見ない。");
     println!();
     println!("{ENVIRONMENT}");
     println!();
@@ -241,7 +250,7 @@ fn store_back(path: &str, c: &Cassette, generation: u64) -> Result<(), Exit> {
 fn set_sources(c: &mut Cassette, files: &[String]) {
     let mut sources: Vec<String> = files
         .iter()
-        .map(|f| source_of(f).name().to_owned())
+        .filter_map(|f| source_of(f).map(|s| s.name().to_owned()))
         .collect();
     sources.sort_unstable();
     sources.dedup();
@@ -353,8 +362,15 @@ fn compare(args: &[String]) -> Exit {
         eprintln!("比べるファイルを 2 本以上渡す");
         return Exit::Usage;
     }
+    let mut sources: Vec<Source> = Vec::with_capacity(files.len());
+    for f in &files {
+        match source_or_refuse(f) {
+            Ok(s) => sources.push(s),
+            Err(e) => return e,
+        }
+    }
     // 取り込み元が違えば升目が単位ごとに変わり、測れないの出方が揃わない。
-    if files.iter().any(|f| source_of(f) != source_of(&files[0])) {
+    if sources.iter().any(|s| *s != sources[0]) {
         eprintln!("断る: 取り込み元の違うものを並べようとした（.html と .md が混ざっている）");
         return Exit::Usage;
     }
@@ -378,12 +394,12 @@ fn compare(args: &[String]) -> Exit {
     let boilerplate: &[String] = loaded.as_ref().map_or(&[], |(c, _)| &c.decided.boilerplate);
     let mut columns: Vec<(String, Vec<(String, Measured)>)> = Vec::new();
     let mut docs: Vec<(String, kakiburi_doc::Document)> = Vec::new();
-    for f in &files {
+    for (f, source) in files.iter().zip(&sources) {
         let Ok(body) = std::fs::read_to_string(f) else {
             eprintln!("読めない: {f}");
             return Exit::Unreadable;
         };
-        let doc = match normalize(&body, source_of(f)) {
+        let doc = match normalize(&body, *source) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("断る: {f}: {e}");
@@ -713,13 +729,11 @@ fn check_person_higher(
     a: Option<&dyn kakiburi_metrics::morph::Analyzer>,
     say: &dyn Fn(String),
 ) -> usize {
-    // 相手集合そのものは測らない。 自分との距離を測ることになる。
     let side = |samples: &[Sample<'_>]| -> Vec<(String, f64)> {
-        samples
-            .iter()
-            .filter(|s| !scale.partners().iter().any(|n| n == s.name))
+        self_check_units(scale, samples)
+            .into_iter()
             .filter_map(|s| {
-                measure_against(scale, *s, a)
+                measure_against(scale, s, a)
                     .matching
                     .map(|v| (s.name.to_owned(), v))
             })
@@ -754,6 +768,23 @@ fn check_person_higher(
     }
 }
 
+
+/// 自己検査で測る単位。較正に使った単位を除く。
+///
+/// 本人の相手集合を測れば、自分との距離を測ることになる。 基準の較正分も
+/// 除く——照合値の較正は「基準の較正分 × 相手集合」を違う人の対として合わせて
+/// いるので、それを測り直せば、分けるように合わせたものの分け具合を測る
+/// ことになる。
+fn self_check_units<'a>(scale: &Scale, samples: &[Sample<'a>]) -> Vec<Sample<'a>> {
+    let used = |name: &str| {
+        scale
+            .partners()
+            .iter()
+            .chain(&scale.selection.baseline_partners)
+            .any(|n| n == name)
+    };
+    samples.iter().filter(|s| !used(s.name)).copied().collect()
+}
 
 /// 本人が基準より高く出た対の割合。逆に出た対も返す。
 ///
@@ -1087,19 +1118,18 @@ fn pool_version(dir: &str) -> Option<String> {
 }
 
 /// フォルダの中の、読める文書。決定的に並べる。
+///
+/// [取り込み元が決まる](source_of)ものだけを拾い、ほかは見ない。 素材の
+/// フォルダには README や控えが混ざる——拾ってから断れば、
+/// [1 本の断りでフォルダごと使えなくなる](load_units)。
 fn readable_files(dir: &str) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
     let mut out: Vec<String> = entries
         .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| {
-            p.extension()
-                .and_then(|x| x.to_str())
-                .is_some_and(|x| matches!(x, "md" | "markdown" | "html" | "htm" | "txt"))
-        })
-        .filter_map(|p| p.to_str().map(str::to_owned))
+        .filter_map(|e| e.path().to_str().map(str::to_owned))
+        .filter(|p| source_of(p).is_some())
         .collect();
     out.sort();
     out
@@ -1111,7 +1141,7 @@ fn japanese_chars_of(files: &[String]) -> Vec<usize> {
         .iter()
         .filter_map(|f| {
             let body = std::fs::read_to_string(f).ok()?;
-            normalize(&body, source_of(f))
+            normalize(&body, source_of(f)?)
                 .ok()
                 .map(|d| d.japanese_chars())
         })
@@ -1135,7 +1165,7 @@ fn measurable_chars_of(files: &[String]) -> Vec<usize> {
         .iter()
         .filter_map(|f| {
             let body = std::fs::read_to_string(f).ok()?;
-            let doc = normalize(&body, source_of(f)).ok()?;
+            let doc = normalize(&body, source_of(f)?).ok()?;
             let chars = doc.japanese_chars();
             if chars < kakiburi_metrics::floor::JAPANESE_CHARS {
                 return None;
@@ -1182,7 +1212,9 @@ fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> 
             let Ok(body) = std::fs::read_to_string(f) else {
                 continue;
             };
-            let source = source_of(f);
+            let Some(source) = source_of(f) else {
+                continue;
+            };
             let Ok(doc) = normalize(&body, source) else {
                 continue;
             };
@@ -1218,16 +1250,195 @@ fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> 
     picked
 }
 
-/// 拡張子から取り込み元を決める。
+/// 敬体率がこれ以上なら敬体の文書とする。暫定値である。
 ///
-/// 中身は見ない。 Markdown の方言は 1 つなので、見て決めるものが無い。
-fn source_of(path: &str) -> Source {
-    if path.ends_with(".html") || path.ends_with(".htm") {
-        Source::Html
-    } else {
-        Source::Markdown
+/// 敬体と常体の真ん中に置いた。 本人の記事も池の文書もどちらかに大きく
+/// 寄っているので、境目の位置で分け方はほとんど変わらない。
+const POLITE_SHARE_MIN: f64 = 0.5;
+
+/// 文書の文体。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Register {
+    /// です・ます。
+    Polite,
+    /// だ・である。
+    Plain,
+}
+
+impl Register {
+    fn name(self) -> &'static str {
+        match self {
+            Register::Polite => "敬体",
+            Register::Plain => "常体",
+        }
     }
 }
+
+/// 1 本の文体。[敬体率](structure::register_rates)の段落の値で分ける。
+///
+/// ファイル名では分けない。 池の敬体版は名前でそれと分かるが、名前は中身を
+/// 保証しない——生成が常体で返した分まで敬体として数えることになる。
+///
+/// 段落だけを見る。 同じ書き手が項目や見出しを常体で書くのは普通で、文書の
+/// 文体を決めているのは段落である。敬体率は体言止めを分母から落とすので、
+/// 体言止めの多い文書でも敬体と常体の比だけが出る。
+///
+/// 測れない文書（敬体か常体で終わった文が下限に届かない）は分けない。
+fn register_of_file(path: &str) -> Option<Register> {
+    let body = std::fs::read_to_string(path).ok()?;
+    let doc = normalize(&body, source_of(path)?).ok()?;
+    let name = format!("敬体率・{}", kakiburi_doc::node::Kind::Paragraph.name());
+    let share = structure::register_rates(&doc.prose(), None)
+        .into_iter()
+        .find(|(n, _)| *n == name)
+        .and_then(|(_, m)| m.value())?;
+    Some(if share >= POLITE_SHARE_MIN {
+        Register::Polite
+    } else {
+        Register::Plain
+    })
+}
+
+/// 文体ごとの本数。分けられなかった文書は数えない。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct RegisterCount {
+    polite: usize,
+    plain: usize,
+}
+
+impl RegisterCount {
+    fn of(files: &[String]) -> Self {
+        let mut out = Self::default();
+        for f in files {
+            match register_of_file(f) {
+                Some(Register::Polite) => out.polite += 1,
+                Some(Register::Plain) => out.plain += 1,
+                None => {}
+            }
+        }
+        out
+    }
+
+    /// 多い方。同数なら決めない——1 本も分けられなかったときも同数である。
+    fn majority(self) -> Option<Register> {
+        match self.polite.cmp(&self.plain) {
+            std::cmp::Ordering::Greater => Some(Register::Polite),
+            std::cmp::Ordering::Less => Some(Register::Plain),
+            std::cmp::Ordering::Equal => None,
+        }
+    }
+}
+
+/// 池を本人の文体で絞った結果。進み方として言うために返す。
+#[derive(Debug, PartialEq, Eq)]
+enum RegisterFilter {
+    /// 本人の文体の分だけを候補にした。
+    Matched {
+        register: Register,
+        person: RegisterCount,
+        candidates: usize,
+    },
+    /// 本人の文体が決まらなかった。池を全部候補にした。
+    Undecided { person: RegisterCount },
+    /// 池に本人の文体の文書が無かった。池を全部候補にした。
+    Missing {
+        register: Register,
+        person: RegisterCount,
+    },
+}
+
+/// 池のうち、本人と同じ文体の分。
+///
+/// 文体を揃えないと、床が本人の文体から外れたところにできる。 常体の基準で
+/// 作った床は敬体の機械文より下にあり、本人が敬体なら、敬体の機械文が床と
+/// 本人の隙間に落ちて通る——取り置きで 104 本中 8 本がそうして通り、
+/// 敬体の機械文を基準に足すと 0 本になった。
+///
+/// 絞れないときは池を全部使う。 本人の文体が決まらないとき（同数、または
+/// 1 本も分けられない）と、池に本人の文体が無いときである。 絞って 0 本に
+/// すれば目盛りが作れないので、揃えられないことを言って作るのは止めない。
+fn restrict_to_register(person: &[String], pool: Vec<String>) -> (Vec<String>, RegisterFilter) {
+    let counted = RegisterCount::of(person);
+    let Some(register) = counted.majority() else {
+        return (pool, RegisterFilter::Undecided { person: counted });
+    };
+    let matched: Vec<String> = pool
+        .iter()
+        .filter(|f| register_of_file(f) == Some(register))
+        .cloned()
+        .collect();
+    if matched.is_empty() {
+        return (
+            pool,
+            RegisterFilter::Missing {
+                register,
+                person: counted,
+            },
+        );
+    }
+    let candidates = matched.len();
+    (
+        matched,
+        RegisterFilter::Matched {
+            register,
+            person: counted,
+            candidates,
+        },
+    )
+}
+
+/// 基準のうち、目盛りに使う分。
+///
+/// 絞るのは[同梱の池](pool_version)だけである。 まず[本人の文体](restrict_to_register)
+/// に揃え、その中から[題材の近い分](pick_by_topic)を選ぶ。 池は文体も題材も
+/// 揃えずに広く取ってあるので、選ばなければ文体や題材を測ることになる。
+///
+/// `--baseline` で渡されたフォルダは全部使う。 人がそのために集めたもので
+/// あり、黙って一部に絞れば、名乗った作り方と実際に使った素材が食い違う
+/// ——指紋の基準の作り方は変わらないのに、使った素材だけが変わる。
+fn baseline_in_use(
+    person: &[String],
+    files: Vec<String>,
+    from_pool: bool,
+) -> (Vec<String>, Option<RegisterFilter>) {
+    if !from_pool {
+        return (files, None);
+    }
+    let (files, filter) = restrict_to_register(person, files);
+    let picked = pick_by_topic(person, &files, POOL_TAKE)
+        .into_iter()
+        .map(|i| files[i].clone())
+        .collect();
+    (picked, Some(filter))
+}
+
+/// 拡張子から取り込み元を決める。知らない拡張子なら `None`。
+///
+/// 中身は見ない。 Markdown の方言は 1 つなので、見て決めるものが無い。
+///
+/// 知らない拡張子を Markdown に倒さない。 倒せば、プレーンテキストや別の記法が
+/// Markdown として読まれ、[取り違えて 0 が並ぶ](../../../docs/spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)
+/// ——エラーにならないまま値だけが狂う。
+fn source_of(path: &str) -> Option<Source> {
+    match std::path::Path::new(path).extension()?.to_str()? {
+        "md" | "markdown" => Some(Source::Markdown),
+        "html" | "htm" => Some(Source::Html),
+        _ => None,
+    }
+}
+
+/// 1 本を渡す口で、取り込み元を決める。決まらなければ断る。
+fn source_or_refuse(path: &str) -> Result<Source, Exit> {
+    source_of(path).ok_or_else(|| {
+        eprintln!("断る: 取り込み元が拡張子から決まらない: {path}");
+        eprintln!("{EXTENSIONS}");
+        Exit::Usage
+    })
+}
+
+/// 読める拡張子。help と断りの文で同じ文を使う。
+const EXTENSIONS: &str =
+    "取り込み元は拡張子から決める——.md と .markdown は Markdown、.html と .htm は HTML。ほかは断る。";
 
 /// 返すのは池の何番目をどう束ねるかである。中の並びは池の添字。
 ///
@@ -1412,6 +1623,9 @@ fn build(args: &[String]) -> Exit {
         return Exit::Usage;
     };
     let bundled = pool_version(&baseline_dir);
+    // 同梱の池として使うのは、池が版を名乗り、作り方を名乗り直していないときだけ
+    // である。 名乗り直したなら、それは人が名乗った基準として扱う。
+    let from_pool = matches!((&bundled, &model, &version), (Some(_), None, None));
     let baseline_made = if let (Some(v), None, None) = (&bundled, &model, &version) {
         kakiburi_cassette::Baseline {
             model: POOL_MODEL.to_owned(),
@@ -1454,7 +1668,7 @@ fn build(args: &[String]) -> Exit {
     // 在るものを消さない。[人が決めたこと](kakiburi_cassette::Decided)は
     // 作り直せないので、消せば落とす定型も動かない指標もそこで消える——
     // 目盛りは入れ替えるので、消す理由がそもそも無い。
-    let (mut c, generation) = match open_or_create(path, scene_name.as_deref()) {
+    let (mut c, generation) = match open_or_create(path, scene_name.as_deref(), json) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -1490,19 +1704,53 @@ fn build(args: &[String]) -> Exit {
     };
     if !others.is_empty() {
         say(format!(
-            "他人 {} 単位（人らしさの人の側にだけ効く）",
+            "他人 {} 単位（照合値の較正の違う人の側と、人らしさの人の側に足す。2 つ目の床は作らない）",
             others.len()
         ));
     }
 
-    // 題材で選んでから、長さで束ねる。 逆にすると、題材の合わない分を
+    // 文体と題材で選んでから、長さで束ねる。 逆にすると、合わない分を
     // 束ねてから捨てることになる。
-    let picked = pick_by_topic(&person_files, &pool_files, POOL_TAKE);
-    let pool_files: Vec<String> = picked.iter().map(|&i| pool_files[i].clone()).collect();
-    say(format!(
-        "基準を {} 本選んだ（題材の近い順）",
-        pool_files.len()
-    ));
+    let (pool_files, filter) = baseline_in_use(&person_files, pool_files, from_pool);
+    match filter {
+        Some(RegisterFilter::Matched {
+            register,
+            person: n,
+            candidates,
+        }) => say(format!(
+            "本人は{}で書いている（敬体 {} 本 / 常体 {} 本）。池から{}の {candidates} 本を候補にする",
+            register.name(),
+            n.polite,
+            n.plain,
+            register.name()
+        )),
+        Some(RegisterFilter::Undecided { person: n }) => say(format!(
+            "本人の文体が決まらない（敬体 {} 本 / 常体 {} 本）。池を全部候補にする",
+            n.polite, n.plain
+        )),
+        Some(RegisterFilter::Missing {
+            register,
+            person: n,
+        }) => say(format!(
+            "本人は{}で書いている（敬体 {} 本 / 常体 {} 本）が、池に{}の文書が無い。池を全部候補にする",
+            register.name(),
+            n.polite,
+            n.plain,
+            register.name()
+        )),
+        None => {}
+    }
+    if from_pool {
+        say(format!(
+            "基準を同梱の池から {} 本選んだ（題材の近い順）",
+            pool_files.len()
+        ));
+    } else {
+        say(format!(
+            "基準 {} 本を全部使う（渡されたフォルダは選ばない）",
+            pool_files.len()
+        ));
+    }
 
     // 束ね方は作ってみて決める。 通るかどうかは作るまで分からない——
     // [長さの範囲](kakiburi_scale::length_range_ok)は測れた単位だけで測られ、
@@ -1514,9 +1762,8 @@ fn build(args: &[String]) -> Exit {
     let person_lengths = measurable_chars_of(&person_files);
     let pool_lengths = japanese_chars_of(&pool_files);
     let plans = bundle_plans(&person_lengths, &pool_lengths);
-    let last = plans.len() - 1;
     let mut report = kakiburi_cassette::json::Value::Null;
-    for (attempt, plan) in plans.into_iter().enumerate() {
+    let tried = try_plans(plans, |attempt, plan| {
         if attempt > 0 {
             say(format!(
                 "長さの範囲で断られたので、束ね方を変えて作り直す（{} 回目）",
@@ -1529,35 +1776,27 @@ fn build(args: &[String]) -> Exit {
                 "基準のうち {bundled} 単位を束ねる。本人の長い記事に、1 本では届かない"
             ));
         }
-        let baseline = match load_units(&pool_files, &plan) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
+        let baseline = load_units(&pool_files, &plan)?;
         // 名前は役を跨いで一意である。 測るときは名前で引くので、
         // 重なれば片方の値がもう片方の値で黙って置き換わる——本人の単位が
         // 基準の数字で測られ、壊れた帯が正常な顔でカセットに入る。
         if let Err(why) = check_names(&person, &baseline, &others) {
             eprintln!("断る: {why}");
             eprintln!("名前はファイル名である。 分けたいならファイル名を分ける");
-            return Exit::Usage;
+            return Err(Exit::Usage);
         }
-        report = build_scene(&mut c, &person, &baseline, &others, &mecab, json, &say);
-        if attempt == last || c.derived.has_scale() {
-            break;
-        }
-        // 環境が壊れているなら束ね直しても直らない。 案を全部試せば、
-        // 直らないことを何度も確かめるだけで時間が溶ける。
-        if report.get("reason").and_then(kakiburi_cassette::json::Value::as_str)
-            == Some(BROKEN_ENVIRONMENT)
-        {
-            break;
-        }
+        let (r, how) = build_scene(&mut c, &person, &baseline, &others, &mecab, json, &say);
+        report = r;
+        Ok(how)
+    });
+    if let Err(e) = tried {
+        return e;
     }
 
     // 読んだ取り込み元を指紋に置く。 別の取り込み元で読み直したのに指紋が
     // 古いままだと、照らしても違いが出ない。
     //
-    // 他人の文書も入れる。 人らしさの較正に実際に効くので、そこだけ
+    // 他人の文書も入れる。 照合値と人らしさの較正に実際に効くので、そこだけ
     // 別の取り込み元で読んでも指紋が動かないと、較正が変わったことを言えない。
     let read: Vec<String> = person_files
         .iter()
@@ -1612,7 +1851,7 @@ fn check_names(
 ///
 /// 場面は作るときだけ決まる。 在るカセットの場面と食い違う名乗りは断る
 /// ——名乗りだけ据え置いて中身を作り直せば、中身と名前が合わないカセットになる。
-fn open_or_create(path: &str, scene: Option<&str>) -> Result<(Cassette, u64), Exit> {
+fn open_or_create(path: &str, scene: Option<&str>, json: bool) -> Result<(Cassette, u64), Exit> {
     if std::path::Path::new(path).exists() {
         let (c, generation) = open(path)?;
         if let Some(asked) = scene {
@@ -1655,7 +1894,13 @@ fn open_or_create(path: &str, scene: Option<&str>) -> Result<(Cassette, u64), Ex
         eprintln!("断る: {e}");
         return Err(Exit::Unreadable);
     }
-    println!("作った: {path}（場面: {scene}）");
+    // 道具向けの出口では標準出力を JSON だけにする。 混ぜれば読めなくなる。
+    let line = format!("作った: {path}（場面: {scene}）");
+    if json {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
     // 作った直後は世代 1 である。次に書くときはそれと照らす。
     Ok((c, 1))
 }
@@ -1679,7 +1924,8 @@ fn load_units(
         };
         // 取り込み元は拡張子から決める。 既定ではなく判別である——
         // 取り違えれば[0 が並ぶ](../../../docs/spec/030-normalize.md#取り込み元を間違えると0-が並ぶ)。
-        match normalize(&body, source_of(f)) {
+        let source = source_or_refuse(f)?;
+        match normalize(&body, source) {
             Ok(d) => docs.push(d),
             Err(e) => {
                 eprintln!("断る: {f}: {e}");
@@ -1728,13 +1974,47 @@ fn load_units(
 }
 
 
-/// 環境の側で測れないときの理由。束ね直しでは直らない印である。
+/// 環境の側で測れないときの理由。
 const BROKEN_ENVIRONMENT: &str = "環境の側で測れない指標がある";
+
+/// 目盛りを作ろうとして、どう終わったか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Attempt {
+    /// 作れた。
+    Built,
+    /// [長さの範囲](kakiburi_scale::length_range_ok)で断られた。 束ね方で
+    /// 基準の長さが変わるので、別の束ね方なら通りうる。
+    LengthRange,
+    /// ほかの理由で止まった。 束ね直しでは直らない。
+    Stopped,
+}
+
+/// 束ね方を順に試す。長さの範囲で断られたときだけ次の案へ進む。
+///
+/// ほかの止まり方で次へ進まない。 天井と床が重なった、単位が足りない、
+/// 環境が壊れている——どれも束ね方で直るものではない。 それでも試し続ければ、
+/// 通るまで基準の組み合わせを探したことになり、通った 1 案だけが残って、
+/// 最初に止まった理由が消える。
+///
+/// 全部の案が断られたら、最後の断りを返す。
+fn try_plans<P>(
+    plans: Vec<P>,
+    mut attempt: impl FnMut(usize, P) -> Result<Attempt, Exit>,
+) -> Result<Attempt, Exit> {
+    let mut last = Attempt::Stopped;
+    for (i, plan) in plans.into_iter().enumerate() {
+        last = attempt(i, plan)?;
+        if last != Attempt::LengthRange {
+            break;
+        }
+    }
+    Ok(last)
+}
 
 /// 目盛りを作る。作らずに終わる条件を持つ。
 ///
 /// 何が起きたかを返す——道具向けの出口が要るので、出力を組み立てながら
-/// 進み方を捨ててしまわない。
+/// 進み方を捨ててしまわない。 どう終わったかも返す。束ね直すかは呼ぶ側が決める。
 fn build_scene(
     c: &mut Cassette,
     person_units: &[(String, kakiburi_doc::Document)],
@@ -1743,7 +2023,7 @@ fn build_scene(
     mecab: &kakiburi_metrics::lindera::Lindera,
     json: bool,
     say: &dyn Fn(String),
-) -> kakiburi_cassette::json::Value {
+) -> (kakiburi_cassette::json::Value, Attempt) {
     use kakiburi_cassette::json::Value;
     #[allow(clippy::cast_precision_loss)]
     let n = |v: usize| Value::Number(v as f64);
@@ -1784,7 +2064,7 @@ fn build_scene(
         }
         say("素材ではなく環境を直す。 足しても直らない".to_owned());
         c.drop_derived();
-        return stopped(BROKEN_ENVIRONMENT.to_owned());
+        return (stopped(BROKEN_ENVIRONMENT.to_owned()), Attempt::Stopped);
     }
 
     let material = kakiburi_scale::assemble::Material {
@@ -1809,7 +2089,12 @@ fn build_scene(
                 say(line);
             }
             c.drop_derived();
-            return stopped(e.to_string());
+            let how = if matches!(e, kakiburi_scale::ScaleError::LengthRange { .. }) {
+                Attempt::LengthRange
+            } else {
+                Attempt::Stopped
+            };
+            return (stopped(e.to_string()), how);
         }
     };
 
@@ -1885,7 +2170,8 @@ fn build_scene(
         scale.humanness_band.floor.high
     ));
     if scale.humanness.evenly_spread() {
-        // 語彙の狭さを見る 5 つは同じ現象を別の角度から見ている。均等に開いたら較正を疑う。
+        // 繰り返しと語彙の豊富さと圧縮率は、語彙の狭さという同じ現象を別の角度から見ている。
+        // 句読点の密度だけが別の現象を見るので、均等に開いたら較正を疑う。
         eprintln!("但し書き: 人らしさの合算が指標に均等に開いている。較正を疑う");
     }
 
@@ -1953,7 +2239,7 @@ fn build_scene(
         effective: Some(effective_json::write_effective(&effective)),
         phrases: Some(phrase_table(&person_units, a)),
     };
-    report
+    (report, Attempt::Built)
 }
 
 /// 帯を道具向けにする。
@@ -2226,10 +2512,19 @@ fn analyzed_of(
 /// `--json` でも必ず JSON を出す。 途中で抜ける道だけ人向けの文にすると、
 /// 道具の側は「出力が無い」を自分で場合分けすることになる——そこは
 /// 判定できないと同じ側であって、壊れたわけではない。
-fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) -> Exit {
+fn unknown(
+    json: bool,
+    scene: &str,
+    source: Source,
+    c: &Cassette,
+    reason: &str,
+    own: kakiburi_review::OwnWriting,
+) -> Exit {
     let outcome = judge(&[], None, None, &[]);
+    warn_own_writing(own);
     if json {
         use kakiburi_cassette::json::Value;
+        let [own_writing, own_writing_caveat] = own_writing_fields(own);
         println!(
             "{}",
             Value::obj([
@@ -2244,7 +2539,9 @@ fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) 
                 ("humanness".to_owned(), Value::Null),
                 ("missing_humanness".to_owned(), Value::Array(vec![])),
                 ("matching".to_owned(), Value::Null),
+                ("matching_substituted".to_owned(), Value::Null),
                 ("missing_systems".to_owned(), Value::Array(vec![])),
+                ("too_short".to_owned(), Value::Null),
                 ("directives".to_owned(), Value::Number(0.0)),
                 ("points".to_owned(), Value::Array(vec![])),
                 // 早く抜けても欄は同じである。 欄が消えれば、読む側は
@@ -2254,6 +2551,8 @@ fn unknown(json: bool, scene: &str, source: Source, c: &Cassette, reason: &str) 
                 ("matching_points".to_owned(), Value::Array(vec![])),
                 ("matching_by_dim".to_owned(), Value::Array(vec![])),
                 ("provisional".to_owned(), machine::strings(&c.provisional)),
+                own_writing,
+                own_writing_caveat,
             ])
             .write()
         );
@@ -2276,6 +2575,9 @@ fn review(args: &[String]) -> Exit {
     };
     let mut cassette = None;
     let mut json = false;
+    // 省略は「知らない」である。 「見せていない」と読めば、いちばん膨らみ
+    // やすい草稿がいちばん綺麗な顔で通る。
+    let mut own = kakiburi_review::OwnWriting::default();
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -2285,6 +2587,18 @@ fn review(args: &[String]) -> Exit {
                     return Exit::Usage;
                 };
                 cassette = Some(v.clone());
+                i += 2;
+            }
+            "--own-writing" => {
+                let Some(o) = args
+                    .get(i + 1)
+                    .and_then(|v| kakiburi_review::OwnWriting::parse(v))
+                else {
+                    eprintln!("--own-writing は shown / not-shown / unknown のどれか");
+                    eprintln!("真偽では受けない。 見せていないと、申告していないが同じ形になる");
+                    return Exit::Usage;
+                };
+                own = o;
                 i += 2;
             }
             "--json" => {
@@ -2301,7 +2615,10 @@ fn review(args: &[String]) -> Exit {
         eprintln!("--cassette が要る");
         return Exit::Usage;
     };
-    let source = source_of(path);
+    let source = match source_or_refuse(path) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
 
     let Ok(body) = std::fs::read_to_string(path) else {
         eprintln!("読めない: {path}");
@@ -2364,6 +2681,7 @@ fn review(args: &[String]) -> Exit {
             source,
             &c,
             "目盛りが無い。素材が足りずに作れなかった",
+            own,
         );
     };
 
@@ -2431,7 +2749,13 @@ fn review(args: &[String]) -> Exit {
         })
     };
     let humanness = side(scale.humanness_band, got.humanness);
-    let matching = side(scale.band, got.matching);
+    // 代わりの値で出した照合値も帯に照らす。 どちら側に出たかで何を言えるかが
+    // 違うので、判定には欠けた系統も渡す。
+    let matching = side(
+        scale.band,
+        got.matching
+            .or(got.matching_substituted.as_ref().map(|s| s.value)),
+    );
 
     // 幅も効くかの判定も、目盛りが持っているものを読むだけである。
     // 検める時点で作り直さない——作り直せるなら、検める文書を見てから作り直す
@@ -2451,6 +2775,7 @@ fn review(args: &[String]) -> Exit {
             source,
             &c,
             "効くかの判定が入っていない。build し直しが要る",
+            own,
         );
     };
     let defs = remedies::FromDefinitions::load();
@@ -2536,6 +2861,7 @@ fn review(args: &[String]) -> Exit {
                     units: e.units,
                 },
                 lower: defs.lower_rule(&e.name, e.rate),
+                direct: defs.is_direct(&e.name),
             })
         })
         .collect();
@@ -2560,6 +2886,7 @@ fn review(args: &[String]) -> Exit {
                     units: e.units,
                 },
                 lower: defs.lower_rule(&e.name, e.rate),
+                direct: defs.is_direct(&e.name),
             })
         })
         .collect();
@@ -2764,11 +3091,14 @@ fn review(args: &[String]) -> Exit {
         kakiburi_metrics::word::first_person(analyzed_now.as_ref())
             .into_iter()
             .collect();
+    let short = too_short(&doc, analyzed_now.as_ref().map(|a| a.tokens()));
     let result = kakiburi_review::review(
         &kakiburi_review::Observations {
             inspections: &inspections,
             humanness,
             matching,
+            matching_substituted: got.matching_substituted.as_ref().map(|s| s.system.as_str()),
+            too_short: short.as_deref(),
             directives: &directives,
             habits: &habits,
             humanness_by_metric: &by_metric,
@@ -2785,9 +3115,11 @@ fn review(args: &[String]) -> Exit {
         &defs,
     );
 
+    warn_own_writing(own);
     if json {
         // 人向けの表示は変えない。 出すのは同じ値の生の形である。
         use kakiburi_cassette::json::Value;
+        let [own_writing, own_writing_caveat] = own_writing_fields(own);
         #[allow(clippy::cast_precision_loss)]
         let n = |v: usize| Value::Number(v as f64);
         println!(
@@ -2826,8 +3158,27 @@ fn review(args: &[String]) -> Exit {
                 ),
                 ("matching".to_owned(), machine::number(got.matching)),
                 (
+                    // `matching` と同じ欄に入れない。 同じ目盛りに載って
+                    // いない値を、読む側が区別できなくなる。
+                    "matching_substituted".to_owned(),
+                    got.matching_substituted.as_ref().map_or(Value::Null, |s| {
+                        Value::obj([
+                            ("system".to_owned(), Value::s(&s.system)),
+                            ("value".to_owned(), Value::Number(s.value)),
+                            (
+                                "sigma".to_owned(),
+                                Value::Number(kakiburi_scale::calibrate::SUBSTITUTE_SIGMA),
+                            ),
+                        ])
+                    }),
+                ),
+                (
                     "missing_systems".to_owned(),
                     machine::strings(&got.missing_systems),
+                ),
+                (
+                    "too_short".to_owned(),
+                    short.as_deref().map_or(Value::Null, Value::s),
                 ),
                 ("directives".to_owned(), n(directives.len())),
                 (
@@ -2898,6 +3249,8 @@ fn review(args: &[String]) -> Exit {
                     ),
                 ),
                 ("provisional".to_owned(), machine::strings(&c.provisional)),
+                own_writing,
+                own_writing_caveat,
             ])
             .write()
         );
@@ -2933,6 +3286,9 @@ fn review(args: &[String]) -> Exit {
     println!("照合値: {}", shown(got.matching));
     if !got.missing_systems.is_empty() {
         println!("  測れていない系統: {}", got.missing_systems.join("、"));
+    }
+    if let Some(s) = &got.matching_substituted {
+        println!("{}", substituted_note(s));
     }
     println!();
     println!("判定: {}", verdict_name(result.outcome.verdict));
@@ -3019,6 +3375,68 @@ fn review(args: &[String]) -> Exit {
         }
     }
     Exit::from_verdict(result.outcome.verdict)
+}
+
+/// 素材の下限に届かない短さを、判定の理由に載る形で返す。届いていれば `None`。
+///
+/// 字数を先に見る。 下限は字数だけが先行研究由来で、語数はそこから決めている。
+/// 解析器が無くて語数が出ないのは短さではないので、ここでは言わない。
+fn too_short(doc: &kakiburi_doc::Document, tokens: Option<usize>) -> Option<String> {
+    let chars = doc.japanese_chars();
+    let floor = kakiburi_metrics::floor::JAPANESE_CHARS;
+    if chars < floor {
+        return Some(format!(
+            "地の文の日本語 {} 字 / 下限 {} 字",
+            with_commas(chars),
+            with_commas(floor)
+        ));
+    }
+    let n = tokens?;
+    let floor = kakiburi_metrics::floor::TOKENS;
+    (n < floor).then(|| {
+        format!(
+            "延べ {} 語 / 下限 {} 語",
+            with_commas(n),
+            with_commas(floor)
+        )
+    })
+}
+
+/// 照合値を代わりの値で出したことを言う 1 行。
+fn substituted_note(s: &kakiburi_scale::Substituted) -> String {
+    format!(
+        "  {} が測れないので、機械の側へ標準偏差 {} 個ぶん寄せた代わりの値を置いて出した照合値: {}（人の側に出たときだけ使う）",
+        s.system,
+        kakiburi_scale::calibrate::SUBSTITUTE_SIGMA,
+        shown(Some(s.value))
+    )
+}
+
+/// 草稿の作られ方の但し書きを出す。渡していないと申告されたときだけ黙る。
+///
+/// 3 値のどれを返すときも出す（[草稿の作られ方を疑う](../../../docs/spec/300-revise.md#草稿の作られ方を疑う)）。
+/// 結果ではなく読み方への注意なので、ほかの但し書きと同じく stderr へ出す。
+fn warn_own_writing(own: kakiburi_review::OwnWriting) {
+    if let Some(caveat) = own.caveat() {
+        eprintln!("但し書き: {caveat}");
+    }
+}
+
+/// 草稿の作られ方の、道具向けの欄。申告と、添えた但し書き。
+///
+/// stderr にだけ出すと、JSON だけを読む道具に但し書きが届かない——
+/// 省いて返すことになる。 添えないときは空文字ではなく null にする。
+fn own_writing_fields(
+    own: kakiburi_review::OwnWriting,
+) -> [(String, kakiburi_cassette::json::Value); 2] {
+    use kakiburi_cassette::json::Value;
+    [
+        ("own_writing".to_owned(), Value::s(own.name())),
+        (
+            "own_writing_caveat".to_owned(),
+            own.caveat().map_or(Value::Null, Value::s),
+        ),
+    ]
 }
 
 /// 値か、出ていないことを書く。0 と混ぜない。
@@ -3204,9 +3622,28 @@ fn base_inputs() -> Inputs {
                 version: env!("CARGO_PKG_VERSION").into(),
                 mapping: normalization_mapping(),
             },
+            settings: calibration_settings(),
         },
         scene: kakiburi_cassette::SceneInputs::default(),
     }
+}
+
+/// 較正の設定と閾値。目盛りの側と検めの側の両方から集める。
+///
+/// 各クレートが自分の分を返す。 ここで定数を並べ直すと、定数を足したときに
+/// 並べ忘れてもエラーにならない。
+fn calibration_settings() -> BTreeMap<String, String> {
+    kakiburi_scale::settings()
+        .into_iter()
+        .chain(kakiburi_review::settings())
+        .chain(build_settings())
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect()
+}
+
+/// `build` が自分で持つ閾値。池から選ぶ分を変えるので、目盛りを変える。
+fn build_settings() -> Vec<(&'static str, String)> {
+    vec![("build::POLITE_SHARE_MIN", POLITE_SHARE_MIN.to_string())]
 }
 
 /// カセットの指紋を、いまの環境と照らす。
@@ -3259,7 +3696,10 @@ fn measure(args: &[String]) -> Exit {
         eprintln!("知らない引数: {}", args[i]);
         return Exit::Usage;
     }
-    let source = source_of(path);
+    let source = match source_or_refuse(path) {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
 
     let Ok(body) = std::fs::read_to_string(path) else {
         eprintln!("読めない: {path}");
@@ -3610,6 +4050,53 @@ fn measured_names() -> Vec<String> {
 mod tests {
     use super::*;
 
+    fn paragraph(text: &str) -> kakiburi_doc::Document {
+        kakiburi_doc::Document::new(vec![kakiburi_doc::node::Node::leaf(
+            kakiburi_doc::node::Kind::Paragraph,
+            text,
+        )])
+    }
+
+    #[test]
+    fn 字数が下限に届かなければ字数で短いと言う() {
+        let doc = paragraph(&"あ".repeat(812));
+        assert_eq!(
+            too_short(&doc, Some(10_000)).as_deref(),
+            Some("地の文の日本語 812 字 / 下限 1,000 字")
+        );
+    }
+
+    #[test]
+    fn 字数が届いても語数が届かなければ語数で短いと言う() {
+        let doc = paragraph(&"あ".repeat(1_200));
+        let floor = kakiburi_metrics::floor::TOKENS;
+        assert_eq!(
+            too_short(&doc, Some(floor - 1)),
+            Some(format!("延べ {} 語 / 下限 {floor} 語", floor - 1))
+        );
+    }
+
+    #[test]
+    fn 下限に届いていれば短いと言わない() {
+        let doc = paragraph(&"あ".repeat(1_200));
+        let floor = kakiburi_metrics::floor::TOKENS;
+        assert_eq!(too_short(&doc, Some(floor)), None);
+        // 解析器が無いのは短さではない。 別の理由で止まる。
+        assert_eq!(too_short(&doc, None), None);
+    }
+
+    #[test]
+    fn 代わりの値を置いたことを系統の名前と一緒に言う() {
+        let s = kakiburi_scale::Substituted {
+            system: "読点の打ち方".to_owned(),
+            value: 1.5,
+        };
+        let line = substituted_note(&s);
+        assert!(line.contains("読点の打ち方"), "{line}");
+        assert!(line.contains("代わりの値"), "{line}");
+        assert!(line.contains("機械の側"), "{line}");
+    }
+
     #[test]
     fn 人らしさは識別子を伏せてから測る() {
         // 目盛りを作る側が同じ前処理を掛けている。 掛けないと、`measure` が出す値と
@@ -3704,6 +4191,49 @@ mod tests {
             let used: Vec<usize> = plan.iter().flatten().copied().collect();
             assert_eq!(used.len(), pool.len(), "池を余さず使う: {person:?}");
         }
+    }
+
+    #[test]
+    fn 長さの範囲以外で止まったら束ね直さない() {
+        // 帯が重なった、単位が足りない——束ね方を変えて通るまで試せば、
+        // 通った 1 案だけが残り、止まった理由が消える。
+        let mut tried = Vec::new();
+        let got = try_plans(vec!["a", "b", "c"], |_, p| {
+            tried.push(p);
+            Ok(Attempt::Stopped)
+        });
+        assert_eq!(got, Ok(Attempt::Stopped));
+        assert_eq!(tried, vec!["a"], "1 案目で止める");
+    }
+
+    #[test]
+    fn 長さの範囲で断られたときだけ次の案へ進む() {
+        let mut tried = Vec::new();
+        let got = try_plans(vec!["a", "b", "c", "d"], |_, p| {
+            tried.push(p);
+            Ok(if p == "c" {
+                Attempt::Built
+            } else {
+                Attempt::LengthRange
+            })
+        });
+        assert_eq!(got, Ok(Attempt::Built));
+        assert_eq!(tried, vec!["a", "b", "c"], "通ったら残りは試さない");
+
+        // 全部断られたら、最後の断りをそのまま返す。
+        let got = try_plans(vec!["a", "b"], |_, _| Ok(Attempt::LengthRange));
+        assert_eq!(got, Ok(Attempt::LengthRange));
+    }
+
+    #[test]
+    fn 束ね直しの途中で使い方の誤りが出たらそこで返す() {
+        let mut tried = 0;
+        let got = try_plans(vec!["a", "b"], |_, _| {
+            tried += 1;
+            Err(Exit::Usage)
+        });
+        assert_eq!(got, Err(Exit::Usage));
+        assert_eq!(tried, 1);
     }
 
     #[test]
@@ -3810,10 +4340,61 @@ mod tests {
 
     #[test]
     fn 取り込み元は拡張子だけで決まる() {
-        assert_eq!(source_of("a/b.html"), Source::Html);
-        assert_eq!(source_of("a/b.htm"), Source::Html);
-        assert_eq!(source_of("a/b.md"), Source::Markdown);
-        assert_eq!(source_of("a/b.txt"), Source::Markdown);
+        assert_eq!(source_of("a/b.html"), Some(Source::Html));
+        assert_eq!(source_of("a/b.htm"), Some(Source::Html));
+        assert_eq!(source_of("a/b.md"), Some(Source::Markdown));
+        assert_eq!(source_of("a/b.markdown"), Some(Source::Markdown));
+        // 知らない拡張子を Markdown として読まない。 取り違えれば 0 が並ぶ。
+        for unknown in ["a/b.txt", "a/b.rst", "a/b", "a/md", "a/b.MD"] {
+            assert_eq!(source_of(unknown), None, "{unknown}");
+        }
+    }
+
+    #[test]
+    fn 知らない拡張子の_1_本は使い方の誤りである() {
+        let dir = temp_dir("unknown-extension");
+        let f = dir.join("x.txt");
+        std::fs::write(&f, "これは、そうだ。\n").expect("書ける");
+        let f = f.to_string_lossy().into_owned();
+        let c = cassette_with_scale(&dir);
+        assert_eq!(
+            run(&["measure".to_owned(), f.clone()]),
+            Exit::Usage,
+            "measure"
+        );
+        assert_eq!(
+            run(&["compare".to_owned(), f.clone(), f.clone()]),
+            Exit::Usage,
+            "compare"
+        );
+        assert_eq!(
+            run(&["review".to_owned(), f, "--cassette".to_owned(), c]),
+            Exit::Usage,
+            "review"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn フォルダでは知らない拡張子を拾わない() {
+        // 素材のフォルダには README や控えが混ざる。 拾えば 1 本の断りで
+        // フォルダごと使えなくなる。
+        let dir = temp_dir("folder-extension");
+        for name in ["a.md", "b.markdown", "c.html", "d.htm", "e.txt", "f.rst"] {
+            std::fs::write(dir.join(name), "これは、そうだ。\n").expect("書ける");
+        }
+        let got: Vec<String> = readable_files(&dir.to_string_lossy())
+            .iter()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .expect("名前がある")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(got, vec!["a.md", "b.markdown", "c.html", "d.htm"]);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -3908,6 +4489,66 @@ mod tests {
         // 1 段目で止まって判定できないになる。
         assert_eq!(run(&args), Exit::Unknown);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 草稿の作られ方は_3_値で訊く() {
+        // 申告は判定を変えない。 渡したかどうかは値の読み方の問題であって、
+        // 値が出せない理由ではない。
+        let dir = temp_dir("own-writing");
+        let cassette = cassette_with_scale(&dir);
+        let target = dir.join("検める.md");
+        std::fs::write(&target, "これは、そうだ、と思う。\n").expect("書ける");
+        let base = vec![
+            "review".to_owned(),
+            target.to_string_lossy().into_owned(),
+            "--cassette".to_owned(),
+            cassette,
+        ];
+        let without = run(&base);
+        for value in ["shown", "not-shown", "unknown"] {
+            let mut args = base.clone();
+            args.extend(["--own-writing".to_owned(), value.to_owned()]);
+            assert_eq!(run(&args), without, "{value} で判定が変わった");
+        }
+        // 真偽では受けない。 2 値では「渡していない」と「申告していない」が同じ形になる。
+        for bad in ["true", "yes", "見せた"] {
+            let mut args = base.clone();
+            args.extend(["--own-writing".to_owned(), bad.to_owned()]);
+            assert_eq!(run(&args), Exit::Usage, "{bad}");
+        }
+        let mut args = base.clone();
+        args.push("--own-writing".to_owned());
+        assert_eq!(run(&args), Exit::Usage, "値が無い");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 道具向けの出口も申告と但し書きを出す() {
+        // 但し書きを stderr にだけ出すと、JSON だけを読む道具には届かない。
+        use kakiburi_cassette::json::Value;
+        use kakiburi_review::{OwnWriting, OWN_WRITING_CAVEAT};
+        let fields = |o: OwnWriting| -> BTreeMap<String, Value> {
+            own_writing_fields(o).into_iter().collect()
+        };
+        let shown = fields(OwnWriting::Shown);
+        assert_eq!(shown["own_writing"], Value::s("shown"));
+        assert_eq!(shown["own_writing_caveat"], Value::s(OWN_WRITING_CAVEAT));
+        let unknown = fields(OwnWriting::Unknown);
+        assert_eq!(unknown["own_writing"], Value::s("unknown"));
+        assert_eq!(unknown["own_writing_caveat"], Value::s(OWN_WRITING_CAVEAT));
+        let not_shown = fields(OwnWriting::NotShown);
+        assert_eq!(not_shown["own_writing"], Value::s("not-shown"));
+        assert_eq!(not_shown["own_writing_caveat"], Value::Null);
+    }
+
+    #[test]
+    fn 検めの_help_が草稿の作られ方を訊く() {
+        assert!(
+            REVIEW.contains("--own-writing shown|not-shown|unknown"),
+            "{REVIEW}"
+        );
+        assert!(REVIEW.contains("既定は unknown"), "{REVIEW}");
     }
 
     #[test]
@@ -4358,6 +4999,19 @@ mod tests {
     }
 
     #[test]
+    fn 他人の文書が効く先を_help_が言う() {
+        // 他人は照合値の較正にも足される。 「人らしさにだけ効く」と書けば、
+        // 他人を入れて照合値が動いたことを説明できない。
+        let line = BUILD
+            .lines()
+            .find(|l| l.trim_start().starts_with("--other"))
+            .expect("--other の行がある");
+        assert!(line.contains("照合値の較正"), "{line}");
+        assert!(line.contains("人らしさ"), "{line}");
+        assert!(!line.contains("だけ"), "{line}");
+    }
+
+    #[test]
     fn 全体の_help_に環境変数と取り込み元が出る() {
         // 未設定だと言うだけでは、辞書をどこから引くかが分からない。
         // 用意させるものが減ったら、help もそう言う。
@@ -4390,6 +5044,36 @@ mod tests {
         let c = empty_cassette(&dir);
         let (got, _) = open(&c).expect("読める");
         assert_eq!(check_fingerprint(&got), Ok(()));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 閾値を変えて作ったカセットは閾値を名指して合わない() {
+        // 同じ素材・同じ道具でも、閾値が違えば別の目盛りができる。
+        // 目盛りの側と検めの側の両方の閾値が入っている。
+        let here = current_fingerprint();
+        let settings = &here.inputs.common.settings;
+        for (name, _) in kakiburi_scale::settings()
+            .into_iter()
+            .chain(kakiburi_review::settings())
+            .chain(build_settings())
+        {
+            assert!(settings.contains_key(name), "{name} が指紋に無い");
+        }
+
+        let dir = temp_dir("settings-fingerprint");
+        let c = empty_cassette(&dir);
+        let (mut got, _) = open(&c).expect("読める");
+        let mut inputs = got.fingerprint.inputs.clone();
+        inputs
+            .common
+            .settings
+            .insert("scale::band::GAP_MARGIN".to_owned(), "別の値".to_owned());
+        got.fingerprint = Fingerprint::build(inputs);
+        assert_eq!(
+            check_fingerprint(&got),
+            Err(vec!["較正の設定: scale::band::GAP_MARGIN".to_owned()])
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -4628,6 +5312,216 @@ mod tests {
     }
 
     #[test]
+    fn 題材で選ぶのは同梱の池だけである() {
+        // 渡された基準は人がそのために集めたものである。 黙って一部に絞れば、
+        // 名乗った作り方と実際に使った素材が食い違う。
+        let dir = temp_dir("pick-only-pool");
+        let person = vec![dir.join("p.md").to_string_lossy().into_owned()];
+        std::fs::write(&person[0], "東京の天気と電車の遅れについて書く。\n").expect("書ける");
+        let pool: Vec<String> = (0..POOL_TAKE + 6)
+            .map(|i| {
+                let p = dir.join(format!("b{i:02}.md"));
+                let body = if i % 2 == 0 {
+                    "東京の天気と電車の遅れについて書く。\n"
+                } else {
+                    "料理の手順と包丁の研ぎ方について書く。\n"
+                };
+                std::fs::write(&p, body).expect("書ける");
+                p.to_string_lossy().into_owned()
+            })
+            .collect();
+
+        let (given, _) = baseline_in_use(&person, pool.clone(), false);
+        assert_eq!(given, pool, "渡された基準は全部使う");
+
+        let (picked, _) = baseline_in_use(&person, pool.clone(), true);
+        assert_eq!(picked.len(), POOL_TAKE, "同梱の池からは題材で選ぶ");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 段落の文が 5 つとも敬体で終わる 1 本。
+    const POLITE: &str =
+        "今日は晴れです。電車に乗りました。駅は混んでいます。本を読みました。夜は雨でした。\n";
+    /// 段落の文が 5 つとも常体で終わる 1 本。
+    const PLAIN: &str = "今日は晴れだ。電車に乗った。駅は混んでいる。本を読んだ。夜は雨だった。\n";
+    /// 敬体か常体で終わった文が下限に届かない 1 本。
+    const SHORT: &str = "これは、そうだ。\n";
+
+    /// 本文を指定して 1 本ずつ書く。
+    fn documents(dir: &std::path::Path, bodies: &[(&str, &str)]) -> Vec<String> {
+        std::fs::create_dir_all(dir).expect("作れる");
+        bodies
+            .iter()
+            .map(|(name, body)| {
+                let p = dir.join(format!("{name}.md"));
+                std::fs::write(&p, body).expect("書ける");
+                p.to_string_lossy().into_owned()
+            })
+            .collect()
+    }
+
+    fn counted(polite: usize, plain: usize) -> RegisterCount {
+        RegisterCount { polite, plain }
+    }
+
+    #[test]
+    fn 文体は敬体率で分けファイル名では分けない() {
+        let dir = temp_dir("register-of");
+        let files = documents(
+            &dir,
+            &[
+                ("polite", POLITE),
+                ("plain", PLAIN),
+                ("short", SHORT),
+                ("x-desu", PLAIN),
+            ],
+        );
+        assert_eq!(register_of_file(&files[0]), Some(Register::Polite));
+        assert_eq!(register_of_file(&files[1]), Some(Register::Plain));
+        assert_eq!(register_of_file(&files[2]), None, "測れない分は分けない");
+        assert_eq!(
+            register_of_file(&files[3]),
+            Some(Register::Plain),
+            "名前が敬体を名乗っても中身で分ける"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 本人の文体は分けられた文書の多い方で決まる() {
+        let dir = temp_dir("register-majority");
+        let files = documents(
+            &dir,
+            &[
+                ("a", POLITE),
+                ("b", POLITE),
+                ("c", PLAIN),
+                ("d", SHORT),
+                ("e", SHORT),
+            ],
+        );
+        let count = RegisterCount::of(&files);
+        assert_eq!(count, counted(2, 1));
+        assert_eq!(count.majority(), Some(Register::Polite));
+
+        let plain = counted(1, 3);
+        assert_eq!(plain.majority(), Some(Register::Plain));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 本人の文体は同数でも分けられなくても決まらない() {
+        assert_eq!(counted(2, 2).majority(), None);
+        assert_eq!(counted(0, 0).majority(), None);
+    }
+
+    #[test]
+    fn 同梱の池は本人の文体の分だけを候補にする() {
+        // 常体の基準で作った床は敬体の機械文の下にある。 本人が敬体なら、
+        // 敬体の機械文が床と本人の隙間に落ちて通ってしまう。
+        let dir = temp_dir("register-restrict");
+        let person = documents(
+            &dir.join("person"),
+            &[("p1", POLITE), ("p2", POLITE), ("p3", PLAIN)],
+        );
+        let pool = documents(
+            &dir.join("pool"),
+            &[
+                ("b1", PLAIN),
+                ("b1-desu", POLITE),
+                ("b2", PLAIN),
+                ("b2-desu", POLITE),
+                ("b3", PLAIN),
+                ("b4", SHORT),
+            ],
+        );
+
+        let (picked, filter) = baseline_in_use(&person, pool.clone(), true);
+        assert_eq!(picked, vec![pool[1].clone(), pool[3].clone()]);
+        assert_eq!(
+            filter,
+            Some(RegisterFilter::Matched {
+                register: Register::Polite,
+                person: counted(2, 1),
+                candidates: 2,
+            })
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 本人の文体が決まらなければ池を全部候補にする() {
+        let dir = temp_dir("register-undecided");
+        let pool = documents(
+            &dir.join("pool"),
+            &[("b1", PLAIN), ("b2", POLITE), ("b3", SHORT)],
+        );
+
+        let tied = documents(&dir.join("tied"), &[("p1", POLITE), ("p2", PLAIN)]);
+        let (picked, filter) = baseline_in_use(&tied, pool.clone(), true);
+        assert_eq!(picked, pool, "同数なら絞らない");
+        assert_eq!(
+            filter,
+            Some(RegisterFilter::Undecided {
+                person: counted(1, 1)
+            })
+        );
+
+        let unmeasured = documents(&dir.join("unmeasured"), &[("p1", SHORT)]);
+        let (picked, filter) = baseline_in_use(&unmeasured, pool.clone(), true);
+        assert_eq!(picked, pool, "分けられなければ絞らない");
+        assert_eq!(
+            filter,
+            Some(RegisterFilter::Undecided {
+                person: counted(0, 0)
+            })
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 池に本人の文体が無ければ池を全部候補にする() {
+        // 絞って 0 本になれば目盛りが作れない。 文体を揃えられないことは言って、
+        // 作るのは止めない。
+        let dir = temp_dir("register-missing");
+        let person = documents(&dir.join("person"), &[("p1", POLITE)]);
+        let pool = documents(&dir.join("pool"), &[("b1", PLAIN), ("b2", SHORT)]);
+
+        let (picked, filter) = baseline_in_use(&person, pool.clone(), true);
+        assert_eq!(picked, pool);
+        assert_eq!(
+            filter,
+            Some(RegisterFilter::Missing {
+                register: Register::Polite,
+                person: counted(1, 0),
+            })
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn 文体を分ける閾値は指紋に入る() {
+        // 閾値が違えば池から選ぶ分が変わり、別の目盛りができる。
+        let here = current_fingerprint();
+        assert_eq!(
+            here.inputs.common.settings.get("build::POLITE_SHARE_MIN"),
+            Some(&POLITE_SHARE_MIN.to_string())
+        );
+    }
+
+    #[test]
+    fn 渡された基準は文体で絞らない() {
+        let dir = temp_dir("register-given");
+        let person = documents(&dir.join("person"), &[("p1", POLITE), ("p2", POLITE)]);
+        let pool = documents(&dir.join("pool"), &[("b1", PLAIN), ("b2", POLITE)]);
+
+        let (given, filter) = baseline_in_use(&person, pool.clone(), false);
+        assert_eq!(given, pool);
+        assert_eq!(filter, None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn 同梱でない基準には版が要る() {
         // 記録の無い基準で作った値は、次に測ったときに比べられない。
         let dir = temp_dir("baseline-version");
@@ -4845,6 +5739,21 @@ mod tests {
             .enumerate()
             .map(|(i, x)| (format!("u{i}"), *x))
             .collect()
+    }
+
+    #[test]
+    fn 自己検査は較正に使った単位を測らない() {
+        // 較正に使った単位を測れば、分けるように合わせたものの分け具合を
+        // 測ることになる。本人の相手集合だけでなく、基準の較正分も同じである。
+        let scale = fixture::scale();
+        let (person, baseline) = fixture::corpus();
+        let (person, baseline) = (fixture::samples(&person), fixture::samples(&baseline));
+        let names =
+            |s: Vec<Sample<'_>>| -> Vec<String> { s.iter().map(|x| x.name.to_owned()).collect() };
+        let mine = names(self_check_units(&scale, &person));
+        let theirs = names(self_check_units(&scale, &baseline));
+        assert_eq!(mine, scale.selection.person_points, "本人は測る分だけ");
+        assert_eq!(theirs, scale.selection.baseline_points, "基準は床の点だけ");
     }
 
     #[test]

@@ -14,7 +14,7 @@ pub mod vocabulary;
 
 pub use assemble::{
     assemble, diverging, inspect, measure_against, Divergence, HumannessByMetric, Measured, Report,
-    Sample,
+    Sample, Substituted,
 };
 pub use band::{Band, BandError, Ends, Verdict};
 pub use calibrate::{Calibration, MatchError, Weights};
@@ -161,6 +161,109 @@ pub fn length_range_ok(person: &[usize], baseline: &[usize]) -> Result<(), Scale
         });
     }
     Ok(())
+}
+
+/// 目盛りを決める較正の設定と閾値。指紋に入れる材料である。
+///
+/// 平文で返す。 ハッシュにすると、合わないときにどれが変わったかを言えない。
+///
+/// 同じ素材・同じ道具でも、ここが変われば別の目盛りができる。 入れなければ、
+/// 閾値を動かしたあとも古いカセットが同じ指紋を名乗り、黙って使われる。
+#[must_use]
+pub fn settings() -> Vec<(&'static str, String)> {
+    let list = |v: &[usize]| {
+        v.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    vec![
+        ("scale::calibrate::LAMBDA", calibrate::LAMBDA.to_string()),
+        (
+            "scale::calibrate::LEARNING_RATE",
+            calibrate::LEARNING_RATE.to_string(),
+        ),
+        (
+            "scale::calibrate::ITERATIONS",
+            calibrate::ITERATIONS.to_string(),
+        ),
+        (
+            "scale::calibrate::SUBSTITUTE_SIGMA",
+            calibrate::SUBSTITUTE_SIGMA.to_string(),
+        ),
+        ("scale::band::CEILING_TRIM", band::CEILING_TRIM.to_string()),
+        ("scale::band::FLOOR_TRIM", band::FLOOR_TRIM.to_string()),
+        (
+            "scale::band::OVERLAP_LIMIT",
+            band::OVERLAP_LIMIT.to_string(),
+        ),
+        ("scale::band::GAP_MARGIN", band::GAP_MARGIN.to_string()),
+        (
+            "scale::humanness::SEPARATES",
+            humanness::SEPARATES.to_string(),
+        ),
+        ("scale::humanness::FAINT", humanness::FAINT.to_string()),
+        (
+            "scale::effective::NARROW_RATIO",
+            effective::NARROW_RATIO.to_string(),
+        ),
+        (
+            "scale::effective::OVERLAP_RATIO",
+            effective::OVERLAP_RATIO.to_string(),
+        ),
+        (
+            "scale::effective::APPEARANCE_CONSISTENT",
+            effective::APPEARANCE_CONSISTENT.to_string(),
+        ),
+        (
+            "scale::effective::APPEARANCE_GAP",
+            effective::APPEARANCE_GAP.to_string(),
+        ),
+        (
+            "scale::vocabulary::MIN_SD_RATIO",
+            vocabulary::MIN_SD_RATIO.to_string(),
+        ),
+        ("scale::split::PER_SIDE", split::PER_SIDE.to_string()),
+        (
+            "scale::LENGTH_OVERLAP_FLOOR",
+            LENGTH_OVERLAP_FLOOR.to_string(),
+        ),
+        ("scale::assemble::PHRASES", assemble::PHRASES.to_string()),
+        ("scale::assemble::KATA_N", list(&assemble::KATA_N)),
+        (
+            "scale::assemble::KATA_PERSON_MIN",
+            assemble::KATA_PERSON_MIN.to_string(),
+        ),
+        (
+            "scale::assemble::KATA_BASE_MAX",
+            assemble::KATA_BASE_MAX.to_string(),
+        ),
+        ("scale::assemble::KATAS", assemble::KATAS.to_string()),
+        (
+            "scale::assemble::MACHINE_KATAS",
+            assemble::MACHINE_KATAS.to_string(),
+        ),
+        (
+            "scale::assemble::MACHINE_GOIS",
+            assemble::MACHINE_GOIS.to_string(),
+        ),
+        (
+            "scale::assemble::KATA_TIGHT",
+            assemble::KATA_TIGHT.to_string(),
+        ),
+        (
+            "scale::assemble::KATA_LONG",
+            assemble::KATA_LONG.to_string(),
+        ),
+        (
+            "scale::assemble::FRAME_KEEP",
+            assemble::FRAME_KEEP.to_string(),
+        ),
+        (
+            "scale::assemble::GOI_THEIRS",
+            assemble::GOI_THEIRS.to_string(),
+        ),
+    ]
 }
 
 /// 相手集合の 1 単位ぶんの、系統ごとの部分ベクトル。
@@ -376,6 +479,33 @@ mod tests {
     fn 空なら通さない() {
         assert!(length_range_ok(&[], &[1000]).is_err());
         assert!(length_range_ok(&[1000], &[]).is_err());
+    }
+
+    #[test]
+    fn 較正の設定と閾値を平文で返す() {
+        // どれが変わったかを指紋の差として名指せるようにする。
+        let s = settings();
+        for (name, want) in [
+            ("scale::calibrate::LAMBDA", calibrate::LAMBDA.to_string()),
+            ("scale::band::GAP_MARGIN", band::GAP_MARGIN.to_string()),
+            (
+                "scale::calibrate::SUBSTITUTE_SIGMA",
+                calibrate::SUBSTITUTE_SIGMA.to_string(),
+            ),
+            (
+                "scale::humanness::SEPARATES",
+                humanness::SEPARATES.to_string(),
+            ),
+        ] {
+            assert!(
+                s.contains(&(name, want.clone())),
+                "{name}={want} が無い: {s:?}"
+            );
+        }
+        let mut names: Vec<&str> = s.iter().map(|(n, _)| *n).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), s.len(), "名前が重なれば片方が消える");
     }
 
     #[test]

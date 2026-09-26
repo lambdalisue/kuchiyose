@@ -22,6 +22,12 @@ pub struct Definition {
     pub tag_line: String,
     /// 直し方の節。無ければ空である。
     pub remedy: String,
+    /// 切り口そのものを調べた研究があるか。
+    ///
+    /// `出どころ` の見出しの直後の `直接。` の 1 行で名乗る。 名乗らなければ
+    /// 拡張である（[直接だけを名乗らせる](../../../docs/spec/100-metrics.md#直接だけを名乗らせる)）。
+    /// 指摘の並びの鍵になるので、説明文から読み取らない。
+    pub direct: bool,
     /// 正規化した本文の digest。指紋に入る。
     ///
     /// 本数を指紋にしてはいけない。 同じ本数のまま数え方・除外・直し方を変えれば、
@@ -161,6 +167,10 @@ fn parse(file: &str, body: &str) -> Definition {
         name,
         tag_line,
         remedy: section(body, "## 直し方"),
+        direct: section(body, "## 出どころ")
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .is_some_and(|l| l.trim() == "直接。"),
         digest: digest_of(body),
     }
 }
@@ -206,6 +216,7 @@ mod tests {
             name: "ためし".into(),
             tag_line: "指示 / なし / 記号 / 両側 / 割合。".into(),
             remedy: remedy.to_owned(),
+            direct: false,
             digest: digest_of(remedy),
         }
     }
@@ -287,6 +298,24 @@ mod tests {
     fn 指摘は_1_文にする() {
         let d = definition("<strong>上</strong>: 減らす。\n\n続きの段落は入れない。");
         assert_eq!(d.remedy(Direction::Upper).as_deref(), Some("減らす。"));
+    }
+
+    #[test]
+    fn 出どころの直後の行で直接を名乗る() {
+        let body = "# x\n\n札。\n\n## 出どころ\n\n直接。\n\n誰それ 2020。\n";
+        assert!(parse("x", body).direct);
+    }
+
+    #[test]
+    fn 名乗らなければ拡張である() {
+        // 説明文から読み取らない。 読み取らせると、並び順が読み手ごとに変わる。
+        for body in [
+            "# x\n\n札。\n\n## 出どころ\n\n誰それ 2020 が直接。\n",
+            "# x\n\n札。\n\n## 出どころ\n\n誰それ 2020。\n\n直接。\n",
+            "# x\n\n札。\n\n## 意味\n\n直接。\n",
+        ] {
+            assert!(!parse("x", body).direct, "{body}");
+        }
     }
 
     #[test]

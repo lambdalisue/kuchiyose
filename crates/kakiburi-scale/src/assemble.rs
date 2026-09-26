@@ -190,8 +190,9 @@ pub fn inspect(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Vec<R
 /// 相手集合にも天井にも他人が混ざる道が開く——[場面ごとに閉じる](../../../docs/spec/010-strategy.md#場面ごとに閉じる)
 /// が、呼ぶ側の注意だけで守られることになる。
 ///
-/// 欄で分けたうえで、[`assemble`]は [`others`](Self::others) を人らしさの較正にしか
-/// 渡さない。 型が全部を守るわけではないが、跨ぐ道が 1 本に絞られる。
+/// 欄で分けたうえで、[`assemble`]は [`others`](Self::others) を較正にしか渡さない
+/// ——相手集合にも語彙にも帯にも入らない。 型が全部を守るわけではないが、
+/// 跨ぐ道が 1 本に絞られる。
 #[derive(Debug, Clone, Copy)]
 pub struct Material<'a> {
     /// 1 つの場面の本人の単位。
@@ -200,9 +201,10 @@ pub struct Material<'a> {
     pub baseline: &'a [Sample<'a>],
     /// 他人の文書。場面を跨いでよい唯一の素材である。
     ///
-    /// [人らしさの較正の人の側](../../../docs/spec/200-extract.md#人らしさの境目は同じ材料から出る)
-    /// にだけ足す。帯の側には足さない——足せば、帯の点の数が本人と基準で
-    /// 釣り合わなくなる。
+    /// 較正の 2 か所に足す。 照合値の較正では[違う人の側](crate::pairing)に
+    /// 他人 × 相手集合の対として、[人らしさの較正](../../../docs/spec/200-extract.md#人らしさの境目は同じ材料から出る)
+    /// では人の側に。 帯の側には足さない——2 つ目の床は作らない。足せば、
+    /// 帯の点の数が本人と基準で釣り合わなくなる。
     pub others: &'a [Sample<'a>],
 }
 
@@ -393,7 +395,8 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
             })
             .collect()
     };
-    // 他人の文書は較正の側にだけ足す。 人らしさの人の側は「誰の文章でも人が
+    // 他人の文書は較正の側にだけ足す（照合値の側は対を作るときに足してある）。
+    // 人らしさの人の側は「誰の文章でも人が
     // 書いたものは人の側に落ちる」ので、素材が足りなければ混ぜてよい——
     // 場面は人と機械の別を跨がない。
     //
@@ -1270,22 +1273,10 @@ pub fn measure_against(
         let set = &scale.frozen.iter().find(|(n, _)| n == name)?.1;
         set.project(m.parts.get(&system)?)
     };
-    let values: Vec<f64> = scale
-        .partner_vectors
-        .iter()
-        .filter_map(|(_, parts)| {
-            scale
-                .calibration
-                .matching_value(&|n| {
-                    let a = vector(&t, n)?;
-                    let b = parts.iter().find(|(m, _)| m == n)?.1.clone();
-                    Some(cosine_delta(&a, &b))
-                })
-                .ok()
-        })
-        .collect();
+    let (matching, matching_substituted) = matching_median(scale, &|n| vector(&t, n));
     Measured {
-        matching: median(&values),
+        matching,
+        matching_substituted,
         humanness: scale.humanness.value(&t.humanness.flat()).ok(),
         // 合算した 1 つの値では直し方を渡せない。「機械の側にある」としか
         // 言えず、どこをどうすればよいかが出てこない。
@@ -1341,6 +1332,65 @@ pub fn measure_against(
             .filter(|s| !t.parts.contains_key(s))
             .map(|s| s.name().to_owned())
             .collect(),
+    }
+}
+
+/// 欠けた系統に代わりの値を置いて出した照合値。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Substituted {
+    /// 欠けていた系統。
+    pub system: String,
+    /// 照合値。相手集合との中央値。
+    pub value: f64,
+}
+
+/// 相手集合との照合値。
+///
+/// 検める文書の側で系統が 1 つだけ欠けていれば、その系統に
+/// [代わりの値](crate::calibrate::SUBSTITUTE_SIGMA)を置いた値を別に返す。
+/// 2 つ以上欠けていれば、どちらも出さない。
+///
+/// 欠けているかは相手ではなく検める文書で見る。 相手集合は目盛りを作った
+/// 単位なので、系統がそろっている。
+fn matching_median(
+    scale: &Scale,
+    vector: &dyn Fn(&str) -> Option<Vec<f64>>,
+) -> (Option<f64>, Option<Substituted>) {
+    let over_partners = |substitute: Option<&str>| -> Option<f64> {
+        let values: Vec<f64> = scale
+            .partner_vectors
+            .iter()
+            .filter_map(|(_, parts)| {
+                let distance = |n: &str| -> Option<f64> {
+                    let a = vector(n)?;
+                    let b = &parts.iter().find(|(m, _)| m == n)?.1;
+                    Some(cosine_delta(&a, b))
+                };
+                match substitute {
+                    None => scale.calibration.matching_value(&distance),
+                    Some(s) => scale.calibration.matching_value_substituting(&distance, s),
+                }
+                .ok()
+            })
+            .collect();
+        median(&values)
+    };
+    let missing: Vec<&String> = scale
+        .calibration
+        .systems()
+        .iter()
+        .filter(|n| vector(n).is_none())
+        .collect();
+    match missing.as_slice() {
+        [] => (over_partners(None), None),
+        [one] => {
+            let substituted = over_partners(Some(one)).map(|value| Substituted {
+                system: (*one).clone(),
+                value,
+            });
+            (None, substituted)
+        }
+        _ => (None, None),
     }
 }
 
@@ -1498,21 +1548,10 @@ fn matching_of(
         }
         set.project(&shifted)
     };
-    let values: Vec<f64> = scale
-        .partner_vectors
-        .iter()
-        .filter_map(|(_, parts)| {
-            scale
-                .calibration
-                .matching_value(&|n| {
-                    let a = vector(t, n)?;
-                    let b = parts.iter().find(|(m, _)| m == n)?.1.clone();
-                    Some(cosine_delta(&a, &b))
-                })
-                .ok()
-        })
-        .collect();
-    median(&values)
+    // 代わりの値で出した照合値でも動く量は測る。 検めがその値で 2 段目に
+    // 止めたなら、直し方もその値から数えなければ食い違う。
+    let (matching, substituted) = matching_median(scale, &|n| vector(t, n));
+    matching.or(substituted.map(|s| s.value))
 }
 
 /// 相手集合との、系統ごとの距離。相手ごとの中央値である。
@@ -1907,6 +1946,12 @@ fn snippets(
 pub struct Measured {
     /// 照合値。相手集合との中央値。
     pub matching: Option<f64>,
+    /// 系統が 1 つだけ欠けたときの照合値。欠けた系統に機械の側の代わりの値を置いて出す。
+    ///
+    /// [照合値](Self::matching)と同じ欄に入れない。 同じ目盛りに載っていない
+    /// ——機械の側へ寄せて置いたので、人の側に出たときにしか使えない。
+    /// 欄を分けなければ、受け取った側はその区別を失う。
+    pub matching_substituted: Option<Substituted>,
     /// 人らしさ値。
     pub humanness: Option<f64>,
     /// 指標ごとの人らしさ値と、人へ寄せる向き。
@@ -1962,6 +2007,11 @@ mod tests {
     /// 長さは単位ごとに散らす。 揃えると広がりが 0 になり、長さの範囲の検査が
     /// 「重なり 0」で止まる——両側が同じ範囲に散っている素材でなければ先へ進めない。
     fn document(index: usize, machine: bool) -> Document {
+        document_with(index, machine, "、")
+    }
+
+    /// 読点を `comma` に替えた文書。 空にすれば読点の系統だけが欠ける。
+    fn document_with(index: usize, machine: bool, comma: &str) -> Document {
         let seed = index * if machine { 17 } else { 13 };
         // 畳まれても下限に届く量にする。 作り物の文は繰り返しが強いので、
         // [コーパスから見つけた語](kakiburi_metrics::lexicon)が実素材より多く畳む。
@@ -1982,7 +2032,10 @@ mod tests {
                 };
                 // 機能語を 5 つ含める。対象の形態素の下限を越えるためである——
                 // 越えなければ機能語が測れず、判定に使う系統が揃わない。
-                Node::leaf(Kind::Paragraph, format!("{a}は、{b}の{c}を{d}に{a}が。"))
+                Node::leaf(
+                    Kind::Paragraph,
+                    format!("{a}は{comma}{b}の{c}を{d}に{a}が。"),
+                )
             })
             .collect();
         Document::new(nodes)
@@ -2202,7 +2255,55 @@ mod tests {
             Some(&Chars),
         );
         assert_eq!(got.matching, None);
+        assert_eq!(got.matching_substituted, None, "2 つ以上欠ければ置かない");
         assert_eq!(got.missing_systems.len(), 5);
         assert_eq!(got.missing_humanness.len(), 14);
+    }
+
+    #[test]
+    fn 系統が_1_つだけ欠ければ代わりの値で照合値を出す() {
+        let m = Fixture::new(10);
+        let person = Fixture::samples(&m.person);
+        let scale = assemble(
+            Material {
+                person: &person,
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
+            Some(&Chars),
+        )
+        .unwrap();
+        let no_comma = document_with(9, false, "");
+        let got = measure_against(
+            &scale,
+            Sample {
+                name: "読点なし",
+                document: &no_comma,
+            },
+            Some(&Chars),
+        );
+        assert_eq!(got.missing_systems, vec![System::Comma.name().to_owned()]);
+        assert_eq!(got.matching, None, "そろった照合値とは別に持つ");
+        let s = got.matching_substituted.expect("代わりの値で出る");
+        assert_eq!(s.system, System::Comma.name());
+        assert!(s.value.is_finite());
+    }
+
+    #[test]
+    fn そろっていれば代わりの値を置かない() {
+        let m = Fixture::new(10);
+        let person = Fixture::samples(&m.person);
+        let scale = assemble(
+            Material {
+                person: &person,
+                baseline: &Fixture::samples(&m.baseline),
+                others: &[],
+            },
+            Some(&Chars),
+        )
+        .unwrap();
+        let got = measure_against(&scale, person[9], Some(&Chars));
+        assert!(got.matching.is_some());
+        assert_eq!(got.matching_substituted, None);
     }
 }

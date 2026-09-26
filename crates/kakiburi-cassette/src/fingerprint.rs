@@ -44,6 +44,13 @@ pub struct Common {
     pub external_tables: BTreeMap<String, String>,
     /// 取り込み元の種類・変換の実装と版・対応表。
     pub normalization: Normalization,
+    /// 較正の設定と閾値。名前から値へ。
+    ///
+    /// 同じ素材・同じ道具でも、正則化の強さや帯の端の分位を変えれば別の目盛りが
+    /// できる。 入れなければ、閾値を動かしたあとも古いカセットが同じ指紋を名乗る。
+    ///
+    /// 平文で持つ。 合わないときに、どの閾値が変わったかを名指すためである。
+    pub settings: BTreeMap<String, String>,
 }
 
 /// 指紋の材料のうち、場面で変わるもの。
@@ -117,6 +124,9 @@ pub struct Baseline {
     pub topics: Vec<String>,
 }
 
+/// [較正の設定](Common::settings)が違うときの名前。
+const SETTINGS: &str = "較正の設定";
+
 /// 指紋。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fingerprint {
@@ -170,7 +180,21 @@ impl Fingerprint {
         if a.normalization != b.normalization {
             out.push("正規化");
         }
+        if a.settings != b.settings {
+            out.push(SETTINGS);
+        }
         out
+    }
+
+    /// 較正の設定のうち、値が違うか片方にしか無い名前。名前の昇順。
+    fn settings_differences(&self, other: &Self) -> Vec<String> {
+        let (a, b) = (&self.inputs.common.settings, &other.inputs.common.settings);
+        let names: std::collections::BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+        names
+            .into_iter()
+            .filter(|k| a.get(*k) != b.get(*k))
+            .map(|k| format!("{SETTINGS}: {k}"))
+            .collect()
     }
 
     /// 場面の部分のどこが違うか。
@@ -197,13 +221,21 @@ impl Fingerprint {
     }
 
     /// どの材料が違うか。変わったことだけでなく、何が変わったかを言う。
+    ///
+    /// 較正の設定は閾値の名前まで言う。 「較正の設定」とだけ言われても、
+    /// どれを戻せばよいのか、作り直すしかないのかが分からない。
     #[must_use]
     pub fn differences(&self, other: &Self) -> Vec<String> {
-        self.common_differences(other)
-            .into_iter()
-            .chain(self.scene_differences(other))
-            .map(str::to_owned)
-            .collect()
+        let mut out = Vec::new();
+        for d in self.common_differences(other) {
+            if d == SETTINGS {
+                out.extend(self.settings_differences(other));
+            } else {
+                out.push(d.to_owned());
+            }
+        }
+        out.extend(self.scene_differences(other).into_iter().map(str::to_owned));
+        out
     }
 
     /// 比べるための文字列。
@@ -252,6 +284,10 @@ impl Inputs {
             s.push_str(&format!("\t{k}={v}"));
         }
         s.push('\n');
+        s.push_str("較正の設定\n");
+        for (k, v) in &c.settings {
+            s.push_str(&format!("{k}\t{v}\n"));
+        }
         let i = &self.scene;
         s.push_str("語彙\n");
         for (k, v) in &i.vocabulary {
@@ -324,6 +360,7 @@ mod tests {
                     version: "0.0.0".into(),
                     mapping: [("message".to_owned(), "補足".to_owned())].into(),
                 },
+                settings: [("scale::band::GAP_MARGIN".to_owned(), "0.05".to_owned())].into(),
             },
             scene: SceneInputs {
                 vocabulary: [("文字bigram".to_owned(), vec!["あい".to_owned()])].into(),
@@ -401,6 +438,12 @@ mod tests {
         assert!(!base.matches(&Fingerprint::build(i)), "正規化");
 
         let mut i = inputs();
+        i.common
+            .settings
+            .insert("scale::band::GAP_MARGIN".to_owned(), "0.1".to_owned());
+        assert!(!base.matches(&Fingerprint::build(i)), "較正の設定");
+
+        let mut i = inputs();
         i.scene
             .selection
             .insert("本人の相手集合".to_owned(), vec!["p01".to_owned()]);
@@ -453,6 +496,28 @@ mod tests {
         i.scene.baseline.version = "2026-02".into();
         let other = Fingerprint::build(i);
         assert_eq!(base.differences(&other), vec!["形態素解析器", "基準の作り方"]);
+    }
+
+    #[test]
+    fn どの閾値が変わったかを言う() {
+        // 「較正の設定」とだけ言われても、どれを戻せばよいかが分からない。
+        let base = Fingerprint::build(inputs());
+        let mut i = inputs();
+        i.common
+            .settings
+            .insert("scale::band::GAP_MARGIN".to_owned(), "0.1".to_owned());
+        i.common
+            .settings
+            .insert("review::OVERUSE".to_owned(), "1".to_owned());
+        let other = Fingerprint::build(i);
+        assert_eq!(
+            base.differences(&other),
+            vec![
+                "較正の設定: review::OVERUSE",
+                "較正の設定: scale::band::GAP_MARGIN",
+            ]
+        );
+        assert_eq!(base.common_differences(&other), vec!["較正の設定"]);
     }
 
     #[test]

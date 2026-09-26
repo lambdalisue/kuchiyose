@@ -384,6 +384,7 @@ mod tests {
                         version: "0.0.0".into(),
                         mapping: BTreeMap::new(),
                     },
+                    settings: BTreeMap::new(),
                 },
                 scene: crate::SceneInputs {
                     baseline: baseline.clone(),

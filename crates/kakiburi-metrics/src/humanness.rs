@@ -2,10 +2,10 @@
 //!
 //! 人が書いたものに見えるかを測る（[通るための 2 つ目の条件](../../../docs/spec/010-strategy.md#通るには-2-つ要る)）。
 //!
-//! 語彙の狭さを見る 5 つを、独立した 5 つの証拠として数えない。 圧縮率・短い繰り返し・
+//! 語彙の狭さを見る指標を、独立した証拠として数えない。 圧縮率・短い繰り返し・
 //! 長い繰り返し・語彙の豊富さ・エントロピーは同じ現象を別の角度から見ている。
 //!
-//! 句読点の密度だけは、その 5 つと現象が違う。 語を数えないので、題材の広い文章が
+//! 句読点の密度だけは、それらと現象が違う。 語を数えないので、題材の広い文章が
 //! 誰の手でも機械の側へ出る交絡を受けない（[Przystalski ほか 2025](../../../docs/references/przystalski-2025.md)
 //! は句点・句読点・読点を重要度の上位 10 に挙げている）。
 //!
@@ -56,7 +56,11 @@ const REPETITION_N: [usize; 4] = [2, 3, 4, 5];
 /// 実測で確かめた。窓を掛けていなかった次元は長さと強く相関していた——
 /// 語のエントロピー +0.585、文字のエントロピー +0.517、圧縮率 −0.481。
 /// 窓を掛けていた語彙の豊富さだけが +0.029 だった。
-pub const WINDOW: usize = 1000;
+///
+/// 大きさは[延べ語数の下限](floor::TOKENS)そのものである。 窓は 1 つ取れて
+/// 初めて値が出るので、窓の大きさが実際の下限になる——1,000 語で固定していた
+/// ときは、字数の下限を越えた文書にも黙って約 1,370 字を要求していた。
+pub const WINDOW: usize = floor::TOKENS;
 
 /// 圧縮率を測る窓の大きさ。**バイトで数える。**
 ///
@@ -90,7 +94,7 @@ pub enum Metric {
     Entropy,
     /// 句読点の密度。2 次元。
     ///
-    /// ほかの指標と現象が違う。 ほかの 5 つは語彙の狭さを見ているので、
+    /// ほかの指標と現象が違う。 ほかの指標は語彙の狭さを見ているので、
     /// 題材の広い文章は誰が書いても機械の側に出る。この指標は語を数えない。
     ///
     /// 形態素解析を要らない——[圧縮率](Metric::Compression)と 2 つだけである。
@@ -646,7 +650,7 @@ mod tests {
         (0..times).map(|_| seg(unit)).collect()
     }
 
-    /// 延べ 1,000 語を越える形態素列。Stub は空白で切る。
+    /// 同じ文を n 回並べた形態素列。Stub は空白で切る。
     fn tokens(unit: &str, times: usize) -> (Vec<Segment>, Analyzed) {
         let prose: Vec<Segment> = (0..times).map(|_| seg(unit)).collect();
         let a = Analyzed::of(&prose, &Stub::unidic()).unwrap();
@@ -807,7 +811,21 @@ mod tests {
     }
 
     #[test]
-    fn 延べ_1000_語に届かなければ測らない() {
+    fn 窓の大きさは素材の下限と同じ() {
+        // 窓が下限より大きければ、下限を越えた文書でも窓が 1 つも取れない。
+        assert_eq!(WINDOW, floor::TOKENS);
+        assert_eq!(WINDOW_BYTES, floor::PROSE_BYTES);
+    }
+
+    #[test]
+    fn 下限ちょうどの語数で窓が_1_つ取れる() {
+        let (_, a) = tokens("あ", floor::TOKENS);
+        assert!(a.enough_tokens());
+        assert!(richness(Some(&a)).is_measured());
+    }
+
+    #[test]
+    fn 延べ語数の下限に届かなければ測らない() {
         let (_, a) = tokens("これ は 文 で ある 。", 10);
         assert!(!a.enough_tokens());
         assert_eq!(richness(Some(&a)), Measured::BelowFloor);
@@ -832,9 +850,10 @@ mod tests {
         let a = Analyzed::of(&prose, &Stub::unidic()).unwrap();
         let r = repetition(Some(&a), &REPETITION_N);
         // node ごとに「あ い」の bigram が 1 つだけ取れる。「い あ」は出ない。
+        // 窓の端で割れた node は「あ」だけになり、bigram を作らない。
         let top = r[1].value().unwrap();
         #[allow(clippy::cast_precision_loss)]
-        let expected = 600.0 / a.tokens() as f64;
+        let expected = (WINDOW / 2) as f64 / WINDOW as f64;
         assert!((top - expected).abs() < 1e-9, "{top} vs {expected}");
     }
 

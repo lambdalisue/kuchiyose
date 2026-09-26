@@ -197,6 +197,7 @@ mod tests {
                 units: 10,
             },
             lower: Lower::Spread,
+            direct: false,
         }
     }
 
