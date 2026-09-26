@@ -51,16 +51,7 @@ fn run_in(args: &[String], env: &Env) -> Exit {
     // `--help` は引数解析の前に見る。 位置引数がファイルなので、そのまま渡すと
     // `--help` がファイル名として解釈され、「読めない（65）」で終わる。
     if args.iter().any(|a| a == "--help" || a == "-h") && args.len() > 1 {
-        return match section(args) {
-            Some(text) => {
-                println!("{text}");
-                Exit::Pass
-            }
-            None => {
-                eprintln!("知らないコマンド: {}", args[0]);
-                Exit::Usage
-            }
-        };
+        return print_section(args, env);
     }
     match args.first().map(String::as_str) {
         Some("build") => build_cmd::run(&args[1..], env),
@@ -68,31 +59,85 @@ fn run_in(args: &[String], env: &Env) -> Exit {
         Some("polish") => polish_cmd::run(&args[1..], env),
         Some("review") => review::run(&args[1..], env),
         Some("katashiro") => katashiro_cmd::run(&args[1..]),
+        Some("help") if args.len() > 1 => print_section(&args[1..], env),
         Some("help" | "--help" | "-h") | None => {
-            print_help(env);
+            println!("{OVERVIEW}");
             Exit::Pass
         }
         Some(other) => {
             eprintln!("知らないコマンド: {other}");
-            print_help(env);
+            eprintln!("{OVERVIEW}");
             Exit::Usage
         }
     }
 }
 
+fn print_section(args: &[String], env: &Env) -> Exit {
+    match section(args, env) {
+        Some(text) => {
+            println!("{text}");
+            Exit::Pass
+        }
+        None => {
+            eprintln!("知らないコマンド: {}", args[0]);
+            Exit::Usage
+        }
+    }
+}
+
+/// 全体の help。コマンドを 1 行ずつ並べるだけにし、詳しい説明は各コマンドの節に置く。
+const OVERVIEW: &str = "\
+kuchiyose — その人に寄せて書かせ、どこがその人と違うかを言えるようにする
+
+使い方: kuchiyose <コマンド> [<引数>...]
+
+ふだん使う
+  build                   記事のフォルダから形代を作り、ペルソナを下書きさせる
+  write                   要約から代筆させ、検めて寄せる
+  polish                  手元の文章の表現だけを寄せる
+
+形代を作る・見る・調整する
+  review                  草稿を検めて、判定と指摘だけを返す
+  katashiro build         フォルダを測って形代を作る。ペルソナは作らない
+  katashiro show          形代の中身を出し、壊れていないかを確かめる
+  katashiro diff          2 つの形代がどこで違うかを出す
+  katashiro persona       ペルソナを取り込む・確かめる・出す・外す
+  katashiro list          調整できるものと状態を並べる
+  katashiro mute          指標や言い回しを判定と指摘から外す
+  katashiro unmute        外した指標や言い回しを戻す
+  katashiro first-person  一人称を申告する
+  katashiro register      文体（敬体か常体か）を申告する
+  katashiro edit          調整を対話画面で行う
+
+よく使うオプション
+  --katashiro <形代>      本人の形代。省けば既定の形代
+  --baseline <形代>       基準の形代。省けば同梱の基準
+  --agent <道具>          LLM の道具。claude、codex、custom
+  --print                 道具を起動せず、プロンプトを出す
+  --json                  道具向けの出口。人向けの表示は変えず、但し書きは stderr に出る
+
+終了コード: 0 通る / 1 通らない / 2 判定できない / 64 以上 使う前の問題
+            69 LLM の道具が見つからないか失敗した
+
+`kuchiyose <コマンド> --help` で詳しい説明";
+
 /// 1 つのコマンドの help。知らない名前なら `None`。
 ///
-/// 全体の help と同じ文を使う——2 か所に書けば、片方だけが古くなる。
-fn section(args: &[String]) -> Option<String> {
+/// 複数のコマンドに関わる節は、同じ定数をそれぞれに並べる——2 か所に書けば、
+/// 片方だけが古くなる。
+fn section(args: &[String], env: &Env) -> Option<String> {
+    let launches = |help: &str| [help, AGENTS, &defaults(env), ENVIRONMENT].join("\n\n");
     match (
         args.first().map(String::as_str),
         args.get(1).map(String::as_str),
     ) {
-        (Some("build"), _) => Some(build_cmd::HELP.to_owned()),
-        (Some("write"), _) => Some(write_cmd::HELP.to_owned()),
-        (Some("polish"), _) => Some(polish_cmd::HELP.to_owned()),
-        (Some("review"), _) => Some(review_help()),
-        (Some("katashiro"), Some("build")) => Some(KATASHIRO_BUILD.to_owned()),
+        (Some("build"), _) => Some(format!("{}\n\n{}", launches(build_cmd::HELP), folders())),
+        (Some("write"), _) => Some(launches(write_cmd::HELP)),
+        (Some("polish"), _) => Some(launches(polish_cmd::HELP)),
+        (Some("review"), _) => Some([review_help().as_str(), ENVIRONMENT].join("\n\n")),
+        (Some("katashiro"), Some("build")) => {
+            Some([KATASHIRO_BUILD, &folders(), ENVIRONMENT].join("\n\n"))
+        }
         (Some("katashiro"), Some("show")) => Some(KATASHIRO_SHOW.to_owned()),
         (Some("katashiro"), Some("diff")) => Some(KATASHIRO_DIFF.to_owned()),
         (Some("katashiro"), Some("persona")) => Some(persona_cmd::HELP.to_owned()),
@@ -100,9 +145,23 @@ fn section(args: &[String]) -> Option<String> {
             Some("katashiro"),
             Some("list" | "mute" | "unmute" | "first-person" | "register" | "edit"),
         ) => Some(tuning_help()),
-        (Some("katashiro"), _) => Some(KATASHIRO.to_owned()),
+        (Some("katashiro"), _) => Some([KATASHIRO, KATASHIRO_INTRO].join("\n\n")),
         _ => None,
     }
+}
+
+/// 形代とは何か。`katashiro` の下のコマンドに共通する前提。
+const KATASHIRO_INTRO: &str = "\
+1 形代が 1 つのフォルダの 1 場面である。 形代は本文を持たない。
+素材のフォルダが正本で、形代は文書ごとの統計値と調整とペルソナを持つ。
+`kuchiyose katashiro <コマンド> --help` で詳しい説明";
+
+/// フォルダから何を読むか。拡張子の一覧は断りの文と同じ文を使う。
+fn folders() -> String {
+    format!(
+        "{}\nフォルダからは読める拡張子のファイルだけを拾い、ほかは見ない。",
+        folder::EXTENSIONS
+    )
 }
 
 /// `katashiro` の下のコマンドの一覧。
@@ -273,61 +332,12 @@ fn defaults(env: &Env) -> String {
     )
 }
 
-fn print_help(env: &Env) {
-    println!("kuchiyose — その人に寄せて書かせ、どこがその人と違うかを言えるようにする");
-    println!();
-    println!("ふだん使う");
-    println!();
-    println!("{}", build_cmd::HELP);
-    println!();
-    println!("{}", write_cmd::HELP);
-    println!();
-    println!("{}", polish_cmd::HELP);
-    println!();
-    println!("{AGENTS}");
-    println!();
-    println!("{}", defaults(env));
-    println!();
-    println!("作る・見る——素材が増えたとき");
-    println!();
-    println!("  1 形代が 1 つのフォルダの 1 場面である。 形代は本文を持たない。");
-    println!("  素材のフォルダが正本で、形代は文書ごとの統計値と調整とペルソナを持つ。");
-    println!();
-    println!("{KATASHIRO_BUILD}");
-    println!();
-    println!("{KATASHIRO_SHOW}");
-    println!();
-    println!("{KATASHIRO_DIFF}");
-    println!();
-    println!("{}", persona_cmd::HELP);
-    println!();
-    println!("調整する——指摘の出し方を変えたいとき");
-    println!();
-    println!("{}", tuning_help());
-    println!();
-    println!("判定と指摘だけを見る");
-    println!();
-    println!("{}", review_help());
-    println!();
-    println!("{}", folder::EXTENSIONS);
-    println!("フォルダからは読める拡張子のファイルだけを拾い、ほかは見ない。");
-    println!();
-    println!("{ENVIRONMENT}");
-    println!();
-    println!("--json は道具向けである。 人向けの表示は変えない。但し書きは stderr に出る。");
-    println!();
-    println!("終了コード: 0 通る / 1 通らない / 2 判定できない / 64 以上 使う前の問題");
-    println!("            69 LLM の道具が見つからないか失敗した");
-    println!();
-    println!("<コマンド> --help でその節だけを出せる。");
-}
-
 /// 桁を区切る。下限は文書でも区切って書いてある。
 fn with_commas(n: usize) -> String {
     let s = n.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i) % 3 == 0 {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -368,7 +378,104 @@ mod tests {
         // 黙って別の意味で受けない。 移った先は設計の表にある。
         for name in ["doctor", "decide", "measure", "compare", "metrics"] {
             assert_eq!(run(&args(&[name])), Exit::Usage, "{name}");
-            assert!(section(&args(&[name, "--help"])).is_none(), "{name}");
+            let env = Env::for_test("/w", &[]);
+            assert!(section(&args(&[name, "--help"]), &env).is_none(), "{name}");
+        }
+    }
+
+    #[test]
+    fn 全体の_help_は一覧だけを短く出す() {
+        let lines = OVERVIEW.lines().count();
+        assert!(lines <= 45, "{lines} 行ある");
+        for name in [
+            "build",
+            "write",
+            "polish",
+            "review",
+            "katashiro build",
+            "katashiro show",
+            "katashiro diff",
+            "katashiro persona",
+            "katashiro list",
+            "katashiro mute",
+            "katashiro unmute",
+            "katashiro first-person",
+            "katashiro register",
+            "katashiro edit",
+            "--katashiro",
+            "--baseline",
+            "--agent",
+            "--print",
+            "--json",
+        ] {
+            assert!(OVERVIEW.contains(name), "{name} が無い");
+        }
+        assert!(
+            !OVERVIEW.contains(KATASHIRO_BUILD),
+            "詳しい説明が混ざっている"
+        );
+        assert!(!OVERVIEW.contains(AGENTS), "詳しい説明が混ざっている");
+        assert!(
+            OVERVIEW.ends_with("`kuchiyose <コマンド> --help` で詳しい説明"),
+            "{OVERVIEW}"
+        );
+    }
+
+    #[test]
+    fn help_コマンドにコマンドを続ければその節を出す() {
+        assert_eq!(run(&args(&["help", "polish"])), Exit::Pass);
+        assert_eq!(run(&args(&["help", "katashiro", "diff"])), Exit::Pass);
+        assert_eq!(run(&args(&["help", "なにか"])), Exit::Usage);
+    }
+
+    #[test]
+    fn 道具を起動するコマンドの節は道具の決め方と既定の形代を言う() {
+        let env = Env::for_test("/w", &[("XDG_CONFIG_HOME", "/設定")]);
+        for name in ["build", "write", "polish"] {
+            let h = section(&args(&[name, "--help"]), &env).unwrap();
+            assert!(h.contains(AGENTS), "{name} に道具の決め方が無い");
+            assert!(h.contains("/設定/kuchiyose/config.json"), "{name}: {h}");
+            assert!(h.contains(ENVIRONMENT), "{name} に用意するものが無い");
+        }
+    }
+
+    #[test]
+    fn 全体の_help_から外した説明はどれかのコマンドの節にある() {
+        let env = Env::for_test("/w", &[]);
+        let all: String = [
+            &["build", "--help"][..],
+            &["write", "--help"],
+            &["polish", "--help"],
+            &["review", "--help"],
+            &["katashiro", "--help"],
+            &["katashiro", "build", "--help"],
+            &["katashiro", "show", "--help"],
+            &["katashiro", "diff", "--help"],
+            &["katashiro", "persona", "--help"],
+            &["katashiro", "list", "--help"],
+        ]
+        .iter()
+        .map(|v| section(&args(v), &env).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+        for part in [
+            build_cmd::HELP,
+            write_cmd::HELP,
+            polish_cmd::HELP,
+            persona_cmd::HELP,
+            KATASHIRO,
+            KATASHIRO_INTRO,
+            KATASHIRO_BUILD,
+            KATASHIRO_SHOW,
+            KATASHIRO_DIFF,
+            &folders(),
+            AGENTS,
+            ENVIRONMENT,
+            &tuning_help(),
+            &review_help(),
+            &defaults(&env),
+        ] {
+            assert!(all.contains(part), "どの節にも無い: {part}");
         }
     }
 
@@ -396,10 +503,10 @@ mod tests {
         ] {
             assert_eq!(run(&args(v)), Exit::Pass, "{v:?}");
         }
-        assert_eq!(
-            section(&args(&["katashiro", "build", "--help"])).as_deref(),
-            Some(KATASHIRO_BUILD)
-        );
+        let env = Env::for_test("/w", &[]);
+        let h = section(&args(&["katashiro", "build", "--help"]), &env).unwrap();
+        assert!(h.starts_with(KATASHIRO_BUILD), "{h}");
+        assert!(h.contains(&folders()), "{h}");
     }
 
     #[test]

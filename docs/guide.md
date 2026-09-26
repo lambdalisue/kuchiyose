@@ -171,7 +171,7 @@ kuchiyose katashiro register articles.katashiro polite          # polite（で�
 | `katashiro edit` | 調整を対話画面で行う |
 | `katashiro persona` | ペルソナを取り込む・確かめる・出す・外す |
 
-`kuchiyose --help` で全体を、`kuchiyose <コマンド> --help` でそのコマンドだけの説明を出せる。
+`kuchiyose --help` でコマンドの一覧を、`kuchiyose <コマンド> --help` でそのコマンドの詳しい説明を出せる。
 `--json` を付けると機械で読める形で出す。
 
 ## 文章の種類ごとに分ける
