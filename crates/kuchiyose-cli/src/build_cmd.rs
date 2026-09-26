@@ -178,7 +178,9 @@ pub fn run(args: &[String], env: &Env) -> Exit {
         return Exit::Pass;
     }
     if c.persona.is_some() {
-        println!("ペルソナを持っているので作らない。作り直すなら katashiro persona --remove で外してから");
+        println!(
+            "ペルソナを持っているので作らない。作り直すなら katashiro persona --remove で外してから"
+        );
         return Exit::Pass;
     }
     let persona = persona_path(&output);
@@ -271,7 +273,9 @@ pub fn run(args: &[String], env: &Env) -> Exit {
             Exit::Pass
         }
         Err(_) => {
-            eprintln!("形代は書いたが、道具の書いたペルソナを取り込めない。直して katashiro persona で取り込む");
+            eprintln!(
+                "形代は書いたが、道具の書いたペルソナを取り込めない。直して katashiro persona で取り込む"
+            );
             Exit::Environment
         }
     }

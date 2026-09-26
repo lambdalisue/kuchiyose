@@ -82,7 +82,7 @@ pub fn load(env: &Env) -> Result<Config, Exit> {
                     "rounds が 1 以上 {} 以下の整数でない",
                     crate::polish_cmd::MAX_ROUNDS
                 ),
-            ))
+            ));
         }
     };
     Ok(Config {

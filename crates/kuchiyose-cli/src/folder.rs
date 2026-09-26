@@ -12,8 +12,7 @@ use kuchiyose_scale::stats::check_name;
 use crate::exit::Exit;
 
 /// 読める拡張子。help と断りの文で同じ文を使う。
-pub const EXTENSIONS: &str =
-    "取り込み元は拡張子から決める——.md と .markdown は Markdown、.html と .htm は HTML。ほかは断る。";
+pub const EXTENSIONS: &str = "取り込み元は拡張子から決める——.md と .markdown は Markdown、.html と .htm は HTML。ほかは断る。";
 
 /// 拡張子から取り込み元を決める。知らない拡張子なら `None`。
 ///

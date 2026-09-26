@@ -138,10 +138,7 @@ impl Measurements {
             // どの一人称を選ぶかは、題材が変わっても動かない。
             first_person: kuchiyose_metrics::word::first_person(analyzed.as_ref()),
             // 書き出しに何を置くかも、題材ではなく書き手が決める。
-            opening: sample
-                .document
-                .opening()
-                .map(|k| k.name().to_owned()),
+            opening: sample.document.opening().map(|k| k.name().to_owned()),
             humanness: Humanness::measure(&prose, analyzed.as_ref()),
             chars: sample.document.japanese_chars(),
             phrase_hits: BTreeMap::new(),
@@ -721,7 +718,10 @@ pub const GOI_THEIRS: usize = 5;
 ///
 /// 回数ではなく単位の割合で見る。 1 本で何度も書く人と、毎回 1 度だけ書く人の
 /// どちらも「その一人称を使う人」である。
-fn first_person_of(person: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<(String, f64)> {
+fn first_person_of(
+    person: &[Unit],
+    measured: &BTreeMap<String, Measurements>,
+) -> Vec<(String, f64)> {
     let mut df: BTreeMap<&str, usize> = BTreeMap::new();
     for u in person {
         let Some(m) = measured.get(&u.name) else {
@@ -1486,11 +1486,7 @@ impl Divergence {
 ///
 /// `swap` に `(系統, 次元, 値)` を渡すと、その 1 次元だけを差し替えて測る。
 /// 効く量を数えるための道具である——見込みではなく、そのまま動く量が出る。
-fn matching_of(
-    scale: &Scale,
-    t: &Measurements,
-    swap: Option<(System, usize, f64)>,
-) -> Option<f64> {
+fn matching_of(scale: &Scale, t: &Measurements, swap: Option<(System, usize, f64)>) -> Option<f64> {
     let vector = |m: &Measurements, name: &str| -> Option<Vec<f64>> {
         let system = System::from_name(name)?;
         let set = &scale.frozen.iter().find(|(n, _)| n == name)?.1;
@@ -1600,7 +1596,12 @@ pub fn diverging(
         let theirs: Vec<Vec<f64>> = scale
             .partner_vectors
             .iter()
-            .filter_map(|(_, parts)| parts.iter().find(|(m, _)| m == name).map(|(_, v)| v.clone()))
+            .filter_map(|(_, parts)| {
+                parts
+                    .iter()
+                    .find(|(m, _)| m == name)
+                    .map(|(_, v)| v.clone())
+            })
             .collect();
         if theirs.is_empty() {
             continue;

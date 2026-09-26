@@ -131,7 +131,9 @@ fn previous(path: &str) -> Result<Option<store::Originals>, Exit> {
         Ok(o) => Ok(Some(o)),
         Err(e @ store::StoreError::UnknownVersion { .. }) => {
             eprintln!("断る: {path}: {e}");
-            eprintln!("版の違う形代からは調整を引き継げない。上書きすれば調整が消えるので、消さずに止める");
+            eprintln!(
+                "版の違う形代からは調整を引き継げない。上書きすれば調整が消えるので、消さずに止める"
+            );
             eprintln!("調整を捨ててよいなら、ファイルを消してから作る");
             Err(Exit::Unreadable)
         }

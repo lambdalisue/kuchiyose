@@ -13,7 +13,7 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
-use lindera::dictionary::{DictionaryKind, load_embedded_dictionary};
+use lindera::dictionary::{load_embedded_dictionary, DictionaryKind};
 use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 
@@ -64,8 +64,8 @@ impl Lindera {
     pub fn new() -> Self {
         static SEGMENTER: OnceLock<Segmenter> = OnceLock::new();
         let segmenter = SEGMENTER.get_or_init(|| {
-            let dictionary = load_embedded_dictionary(DictionaryKind::UniDic)
-                .expect("同梱の辞書が読める");
+            let dictionary =
+                load_embedded_dictionary(DictionaryKind::UniDic).expect("同梱の辞書が読める");
             Segmenter::new(Mode::Normal, dictionary, None)
         });
         Self { segmenter }

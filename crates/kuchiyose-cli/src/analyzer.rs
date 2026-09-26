@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use kuchiyose_katashiro::Tool;
-use kuchiyose_metrics::lindera::{DICT_NAME, DICT_VERSION, ENGINE, ENGINE_VERSION, Lindera};
+use kuchiyose_metrics::lindera::{Lindera, DICT_NAME, DICT_VERSION, ENGINE, ENGINE_VERSION};
 
 /// 解析器を用意する。
 ///
