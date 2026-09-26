@@ -1,13 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/kakiburi-doc",
-    "crates/kakiburi-normalize",
-    "crates/kakiburi-metrics",
-    "crates/kakiburi-scale",
-    "crates/kakiburi-review",
-    "crates/kakiburi-cassette",
-    "crates/kakiburi-cli",
+    "crates/kuchiyose-doc",
+    "crates/kuchiyose-normalize",
+    "crates/kuchiyose-metrics",
+    "crates/kuchiyose-scale",
+    "crates/kuchiyose-review",
+    "crates/kuchiyose-katashiro",
+    "crates/kuchiyose-prompt",
+    "crates/kuchiyose-cli",
 ]
 
 [workspace.package]

@@ -10,15 +10,15 @@
 set -u
 
 OUT=${1:-baselines}
-MODEL=${KAKIBURI_BASELINE_MODEL:-sonnet}
+MODEL=${KUCHIYOSE_BASELINE_MODEL:-sonnet}
 # 文体は必ず指定する。 指定しなければ LLM は常体に寄り、敬体で書く人の床が
 # 敬体の機械文より下に来る——題材の近い機械の草稿が通ってしまう。
 # 同じ題材を両方の文体で持ち、review が本人の文体に合う側を選ぶ。
-REGISTER=${KAKIBURI_BASELINE_REGISTER:-dearu}
+REGISTER=${KUCHIYOSE_BASELINE_REGISTER:-dearu}
 case "$REGISTER" in
   dearu) STYLE='だ・である調で書く'; SUFFIX='' ;;
   desu) STYLE='です・ます調で書く'; SUFFIX='-desu' ;;
-  *) echo "KAKIBURI_BASELINE_REGISTER は dearu か desu" >&2; exit 64 ;;
+  *) echo "KUCHIYOSE_BASELINE_REGISTER は dearu か desu" >&2; exit 64 ;;
 esac
 mkdir -p "$OUT"
 
@@ -28,7 +28,7 @@ while IFS='|' read -r id title things len; do
   [ -z "${id:-}" ] && continue
   # <strong>長さを散らす。</strong> 池が同じ長さに固まると、長さの範囲の防護柵に当たって
   # 目盛りが作れない——重なり ÷ それぞれの範囲が両方 0.5 以上要る
-  # （crates/kakiburi-scale/src/lib.rs の length_range_ok）。
+  # （crates/kuchiyose-scale/src/lib.rs の length_range_ok）。
   len=${len:-3,000}
   f="$OUT/$id$SUFFIX.md"
   if [ -s "$f" ]; then

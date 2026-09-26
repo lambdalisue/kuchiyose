@@ -1,0 +1,18 @@
+[package]
+name = "kuchiyose-review"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# <strong>kuchiyose-scale に依存しない。</strong>
+#
+# 依存すると、検める文書を見てから重みや語彙を作り直せる経路が開く。
+# 目盛りは作り終えた形で渡ってくるものであって、ここで作るものではない。
+# 仕様が「黙って壊れる」と名指しした 4 か所のうちの 1 つを、境界で止める。
+[dependencies]
+kuchiyose-metrics = { path = "../kuchiyose-metrics" }
+
+[lints]
+workspace = true

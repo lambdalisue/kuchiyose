@@ -1,0 +1,21 @@
+[package]
+name = "kuchiyose-metrics"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+kuchiyose-doc = { path = "../kuchiyose-doc" }
+# 圧縮率がこれで測る。<strong>器と版が値を決めるので、指紋に入れる。</strong>
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
+# 形態素解析。<strong>辞書を同梱する</strong>ので、利用者は何も用意しなくてよい。
+lindera = { version = "6.0", features = ["embed-unidic"] }
+lindera-unidic = { version = "6.0", features = ["embed-unidic"] }
+
+[dev-dependencies]
+kuchiyose-normalize = { path = "../kuchiyose-normalize" }
+
+[lints]
+workspace = true

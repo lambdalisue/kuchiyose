@@ -86,20 +86,28 @@ Rust のソースのコメントに書いた文書へのリンクも同じ規則
 nix develop --command cargo test
 nix develop --command cargo clippy --all-targets
 
-kakiburi cassette build <フォルダ> -o <カセット> [--scene <場面>]
-kakiburi cassette show  <カセット>
-kakiburi cassette diff  <本人のカセット> <基準のカセット>
-kakiburi cassette list  <カセット> [--kind <種類>] [--state on|off]
-kakiburi cassette mute|unmute <カセット> <名前または ID>... | --kind <種類>
-kakiburi cassette first-person <カセット> <一人称>|auto
-kakiburi cassette register <カセット> polite|plain|auto
-kakiburi cassette edit  <カセット>
-kakiburi review <草稿>... --cassette <カセット> [--baseline <カセット>] [--values] [--json]
+kuchiyose build  <フォルダ> [-o <形代>] [--scene <場面>] [--no-persona] [--agent <道具>] [--print]
+kuchiyose write  [<要約>] [-o <草稿>] [--katashiro <形代>] [--rounds <数>] [--no-polish] [--print]
+kuchiyose polish <ファイル> [-o <ファイル>] [--katashiro <形代>] [--rounds <数>] [--print]
+
+kuchiyose katashiro build <フォルダ> -o <形代> [--scene <場面>]
+kuchiyose katashiro show  <形代>
+kuchiyose katashiro diff  <本人の形代> <基準の形代>
+kuchiyose katashiro list  <形代> [--kind <種類>] [--state on|off]
+kuchiyose katashiro mute|unmute <形代> <名前または ID>... | --kind <種類>
+kuchiyose katashiro first-person <形代> <一人称>|auto
+kuchiyose katashiro register <形代> polite|plain|auto
+kuchiyose katashiro edit  <形代>
+kuchiyose katashiro persona <形代> [<ファイル> [--material <フォルダ>] | --remove]
+kuchiyose review <草稿>... [--katashiro <形代>] [--baseline <形代>] [--values] [--json]
 ```
 
-同梱の基準カセットは `baselines/` の文書から `cassette build` で作り、実行ファイルに
-埋め込む。`baselines/` を直したら作り直す。作り直したものと埋め込んだものが一致することは
-試験が確かめる。
+コマンドの体系は[設計 200-command](../docs/design/200-command.md)、LLM の道具の起動は
+[設計 400-agent](../docs/design/400-agent.md) にある。
+
+同梱の基準形代は `baselines/` の文書から `katashiro build` で作り、素材のフォルダの経路を
+外して実行ファイルに埋め込む（`tools/build-baseline-katashiro.sh`）。`baselines/` を直したら
+作り直す。作り直したものと埋め込んだものが一致することは試験が確かめる。
 
 取り込み元は拡張子から決まる。`.md` と `.markdown` は Markdown、`.html` と `.htm` は HTML で、
 ほかの拡張子は断る（フォルダの中なら読まずに飛ばす）。
@@ -116,9 +124,9 @@ kakiburi review <草稿>... --cassette <カセット> [--baseline <カセット>
 
 | 試験 | 何を止めるか |
 | --- | --- |
-| [`spec_matches.rs`](../crates/kakiburi-metrics/tests/spec_matches.rs) | 登録簿と `docs/spec/metrics/*.md` の食い違い |
-| [`no_scale_dependency.rs`](../crates/kakiburi-review/tests/no_scale_dependency.rs) | <strong>検めが目盛りを作る側に依存すること</strong> |
-| [`real_articles.rs`](../crates/kakiburi-normalize/tests/real_articles.rs) | 実際の記事が断られること |
+| [`spec_matches.rs`](../crates/kuchiyose-metrics/tests/spec_matches.rs) | 登録簿と `docs/spec/metrics/*.md` の食い違い |
+| [`no_scale_dependency.rs`](../crates/kuchiyose-review/tests/no_scale_dependency.rs) | <strong>検めが目盛りを作る側に依存すること</strong> |
+| [`real_articles.rs`](../crates/kuchiyose-normalize/tests/real_articles.rs) | 実際の記事が断られること |
 | `書き出して読み戻すと同じものになる` | <strong>保存した目盛りが、作ったときと違うものになること</strong> |
 
 <strong>どれも壊して落ちることを確かめてある。</strong> 通っているのが緩んでいるからでないか、

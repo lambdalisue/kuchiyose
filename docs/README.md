@@ -4,9 +4,9 @@
 
 | 層 | 何が書いてあるか |
 | --- | --- |
-| [用語集](glossary.md) | <strong>言葉の意味。</strong> カセット・照合値・帯など、自前の用語 |
+| [用語集](glossary.md) | <strong>言葉の意味。</strong> 形代・ペルソナ・照合値・帯など、自前の用語 |
 | [仕様](#仕様) | <strong>なぜそうなっているか。</strong> 判断とその理由 |
-| [設計](#設計) | <strong>どう作られているか。</strong> クレート・保存・コマンド・テスト |
+| [設計](#設計) | <strong>どう作られているか。</strong> クレート・保存・コマンド・テスト・LLM の道具の起動 |
 | [先行研究](#先行研究) | <strong>何を根拠にしているか。</strong> 借りたものと借りなかったもの |
 
 <strong>仕様と設計を混ぜない。</strong> 仕様は「なぜ」を書き、設計は「どう」を書く。
@@ -20,10 +20,12 @@
 | この道具は何に賭けているのか | [仕様 000-axis](spec/000-axis.md) |
 | 使い方 | [README](../README.md) |
 | なぜ判定が 3 値なのか | [仕様 010-strategy](spec/010-strategy.md) |
+| 代筆はどう進むのか。ペルソナ、プロンプト、表現を寄せる周回 | [仕様 400-write](spec/400-write.md) |
+| `claude` や `codex` をどう起動するのか | [設計 400-agent](design/400-agent.md) |
 | どの指標を、なぜ測るのか | [仕様 100-metrics](spec/100-metrics.md)、[指標の一覧](spec/metrics/README.md) |
 | 目盛りはどう組み立てられるか | [仕様 200-extract](spec/200-extract.md) |
 | コードのどこに何があるか | [設計 000-architecture](design/000-architecture.md) |
-| カセットの中身 | [設計 100-cassette](design/100-cassette.md) |
+| 形代の中身 | [設計 100-katashiro](design/100-katashiro.md) |
 
 <strong>いちばん短い道は [仕様 000-axis](spec/000-axis.md) である。</strong> 目的・仮説・
 反証のしかた・確かめられていないことが 1 枚に収まっている。
@@ -34,13 +36,14 @@
 
 | | |
 | --- | --- |
-| [000-axis](spec/000-axis.md) | 軸。目的と仮説と、その反証のしかた |
+| [000-axis](spec/000-axis.md) | 軸。書くのは LLM で道具はプロンプトと検めまで、という形と、検める部分の仮説と反証のしかた |
 | [010-strategy](spec/010-strategy.md) | 戦略。3 値・3 段・場面という形がどこから出るか |
 | [020-document](spec/020-document.md) | 文書の形。地の文とは何か、日本語の文字とは何か |
 | [030-normalize](spec/030-normalize.md) | 入力を正規形にする。何を潰し、何を残すか |
 | [100-metrics](spec/100-metrics.md) | 指標を決める。根拠の層と、粗い括りに丸めない規則 |
-| [200-extract](spec/200-extract.md) | 文書を測ってカセットにし、比べるたびに目盛りを組み立てる |
+| [200-extract](spec/200-extract.md) | 文書を測って形代にし、比べるたびに目盛りを組み立てる |
 | [300-revise](spec/300-revise.md) | 検めて、直す |
+| [400-write](spec/400-write.md) | 代筆する。ペルソナ、代筆のプロンプト、表現を寄せる周回 |
 
 [指標の定義](spec/metrics/README.md)は 1 指標 1 ファイル。意味・出どころ・数え方・次元・
 除外・直し方が同じ形で並ぶ。<strong>ここにあるのは定義だけで、どう使うかは仕様の本体にある。</strong>
@@ -52,14 +55,15 @@
 | | |
 | --- | --- |
 | [000-architecture](design/000-architecture.md) | 全体の構造とクレートの分割 |
-| [100-cassette](design/100-cassette.md) | カセットの構造。何を収め、何を捨ててよいか、何を人が決めたこととして残すか |
+| [100-katashiro](design/100-katashiro.md) | 形代の構造。何を収め、何を捨ててよいか、何を人が決めたこととして残すか（調整とペルソナ） |
 | [200-command](design/200-command.md) | コマンドの体系 |
 | [300-test](design/300-test.md) | テストの体系 |
+| [400-agent](design/400-agent.md) | LLM の道具の起動。道具ごとの違い、権限、端末のつなぎ直し |
 
 ## 先行研究
 
 [一覧と読み方](references/README.md)。<strong>借りたものと借りなかったものを、両方書く。</strong>
-「kakiburi で使える」とは書かない——食い違いは食い違いとして残す。
+「kuchiyose で使える」とは書かない——食い違いは食い違いとして残す。
 
 日本語の書き手識別で確かめられているものだけを層 1 とし、別の目的の研究から取るものは
 層 2 として、<strong>効くかの判定を通るまで同じ重さで扱わない</strong>

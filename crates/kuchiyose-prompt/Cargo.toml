@@ -1,0 +1,17 @@
+[package]
+name = "kuchiyose-prompt"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# <strong>どのクレートにも依存しない。</strong>
+#
+# 文体の事実も判定の散文も、組み立て層が値にして渡す。 依存すれば、プロンプトの
+# 側から目盛りや判定を作り直す経路が書ける。 入出力も持たないので、同じ入力から
+# 同じバイト列が出ることを試験で固定できる。
+[dependencies]
+
+[lints]
+workspace = true

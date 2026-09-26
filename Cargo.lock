@@ -476,62 +476,67 @@ dependencies = [
 ]
 
 [[package]]
-name = "kakiburi-cassette"
-version = "0.0.0"
-dependencies = [
- "flate2",
- "kakiburi-doc",
-]
-
-[[package]]
-name = "kakiburi-cli"
+name = "kuchiyose-cli"
 version = "0.0.0"
 dependencies = [
  "console",
  "dialoguer",
- "kakiburi-cassette",
- "kakiburi-doc",
- "kakiburi-metrics",
- "kakiburi-normalize",
- "kakiburi-review",
- "kakiburi-scale",
+ "kuchiyose-doc",
+ "kuchiyose-katashiro",
+ "kuchiyose-metrics",
+ "kuchiyose-normalize",
+ "kuchiyose-prompt",
+ "kuchiyose-review",
+ "kuchiyose-scale",
 ]
 
 [[package]]
-name = "kakiburi-doc"
+name = "kuchiyose-doc"
 version = "0.0.0"
 
 [[package]]
-name = "kakiburi-metrics"
+name = "kuchiyose-katashiro"
 version = "0.0.0"
 dependencies = [
  "flate2",
- "kakiburi-doc",
- "kakiburi-normalize",
+ "kuchiyose-doc",
+]
+
+[[package]]
+name = "kuchiyose-metrics"
+version = "0.0.0"
+dependencies = [
+ "flate2",
+ "kuchiyose-doc",
+ "kuchiyose-normalize",
  "lindera",
  "lindera-unidic",
 ]
 
 [[package]]
-name = "kakiburi-normalize"
+name = "kuchiyose-normalize"
 version = "0.0.0"
 dependencies = [
- "kakiburi-doc",
+ "kuchiyose-doc",
 ]
 
 [[package]]
-name = "kakiburi-review"
+name = "kuchiyose-prompt"
+version = "0.0.0"
+
+[[package]]
+name = "kuchiyose-review"
 version = "0.0.0"
 dependencies = [
- "kakiburi-metrics",
+ "kuchiyose-metrics",
 ]
 
 [[package]]
-name = "kakiburi-scale"
+name = "kuchiyose-scale"
 version = "0.0.0"
 dependencies = [
- "kakiburi-doc",
- "kakiburi-metrics",
+ "kuchiyose-doc",
+ "kuchiyose-metrics",
 ]
 
 [[package]]
