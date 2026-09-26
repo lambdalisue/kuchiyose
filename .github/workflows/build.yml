@@ -59,6 +59,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      # A release build carries the tag's version, so `kuchiyose --version` of a
+      # downloaded binary names the same version as the crate on crates.io. CI
+      # passes a placeholder that is not a tag and keeps the tree's version.
+      - name: Set version from tag
+        if: startsWith(inputs.tag, 'v')
+        run: tools/set-version.sh "$TAG"
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} -p kuchiyose
 

@@ -60,6 +60,10 @@ fn run_in(args: &[String], env: &Env) -> Exit {
         Some("review") => review::run(&args[1..], env),
         Some("katashiro") => katashiro_cmd::run(&args[1..]),
         Some("help") if args.len() > 1 => print_section(&args[1..], env),
+        Some("--version" | "-V") => {
+            println!("{}", version_line());
+            Exit::Pass
+        }
         Some("help" | "--help" | "-h") | None => {
             println!("{OVERVIEW}");
             Exit::Pass
@@ -70,6 +74,11 @@ fn run_in(args: &[String], env: &Env) -> Exit {
             Exit::Usage
         }
     }
+}
+
+/// `--version` の 1 行。配る実行ファイルは、リリースのタグから版を入れて組む。
+fn version_line() -> String {
+    format!("kuchiyose {}", env!("CARGO_PKG_VERSION"))
 }
 
 fn print_section(args: &[String], env: &Env) -> Exit {
@@ -115,6 +124,7 @@ kuchiyose — その人に寄せて書かせ、どこがその人と違うかを
   --agent <道具>          LLM の道具。claude、codex、custom
   --print                 道具を起動せず、プロンプトを出す
   --json                  道具向けの出口。人向けの表示は変えず、但し書きは stderr に出る
+  --version, -V           版を出す
 
 終了コード: 0 通る / 1 通らない / 2 判定できない / 64 以上 使う前の問題
             69 LLM の道具が見つからないか失敗した
@@ -365,6 +375,17 @@ mod tests {
     #[test]
     fn 引数が無ければ助けを出す() {
         assert_eq!(run(&[]), Exit::Pass);
+    }
+
+    #[test]
+    fn 版を聞かれたら版を名乗る() {
+        for flag in ["--version", "-V"] {
+            assert_eq!(run(&args(&[flag])), Exit::Pass, "{flag}");
+        }
+        assert_eq!(
+            version_line(),
+            format!("kuchiyose {}", env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
