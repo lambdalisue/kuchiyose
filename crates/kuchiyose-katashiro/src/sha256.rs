@@ -108,7 +108,7 @@ impl Sha256 {
         self.length = self.length.wrapping_add(bytes.len() as u64);
         self.buffer.extend_from_slice(bytes);
         let whole = self.buffer.len() / 64 * 64;
-        for block in self.buffer[..whole].chunks_exact(64) {
+        for block in self.buffer[..whole].as_chunks::<64>().0 {
             compress(&mut self.state, block);
         }
         self.buffer.drain(..whole);
@@ -124,7 +124,7 @@ impl Sha256 {
         }
         self.buffer.extend_from_slice(&bits.to_be_bytes());
         let tail = std::mem::take(&mut self.buffer);
-        for block in tail.chunks_exact(64) {
+        for block in tail.as_chunks::<64>().0 {
             compress(&mut self.state, block);
         }
         self.state.iter().map(|w| format!("{w:08x}")).collect()
@@ -139,10 +139,10 @@ pub fn hex(bytes: impl AsRef<[u8]>) -> String {
     h.hex()
 }
 
-fn compress(state: &mut [u32; 8], block: &[u8]) {
+fn compress(state: &mut [u32; 8], block: &[u8; 64]) {
     let mut w = [0u32; 64];
-    for (i, word) in block.chunks_exact(4).enumerate() {
-        w[i] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+    for (i, word) in block.as_chunks::<4>().0.iter().enumerate() {
+        w[i] = u32::from_be_bytes(*word);
     }
     for i in 16..64 {
         let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
