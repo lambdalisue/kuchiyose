@@ -266,6 +266,15 @@ impl Builder {
                         text.push('\n');
                         continue;
                     }
+                    // 折りたたみの題は本文に入れない。 Markdown の `:::details 題` の
+                    // 題も入らない——記法ごとに変えると、同じ折りたたみが書き方だけで
+                    // 違う値になる。
+                    if name == "summary" && until == Some("details") {
+                        if !void {
+                            self.skip_to_close(&name);
+                        }
+                        continue;
+                    }
                     // node を作らず、中身を親へ透かす。 行と区分は node ではない。
                     // `<pre>` の直下の ``` も同じ——そこはコードブロックの一部で
                     // あって、インラインコードではない。
@@ -674,6 +683,22 @@ mod tests {
     fn 折りたたみを読む() {
         let d = parse("<details><p>中身である。</p></details>").unwrap();
         assert_eq!(kinds(&d), vec![Kind::Details]);
+    }
+
+    #[test]
+    fn 折りたたみの_summary_は地の文に入らない() {
+        // Markdown の `:::details 題` の題と同じ扱いにする。 記法ごとに変えると、
+        // 同じ折りたたみが書き方だけで違う値になる。
+        let d = parse("<details><summary>題である</summary><p>中身である。</p></details>").unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Details]);
+        let joined: String = d.prose().iter().map(|s| s.text.clone()).collect();
+        assert_eq!(joined, "中身である。");
+    }
+
+    #[test]
+    fn 折りたたみの外の_summary_は断る() {
+        let e = parse("<summary>題</summary><p>中身である。</p>").unwrap_err();
+        assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
     }
 
     #[test]

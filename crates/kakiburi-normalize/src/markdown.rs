@@ -2,45 +2,69 @@
 //!
 //! 記法は潰す。表記は潰さない——字種、字幅、空白の入れ方はそのまま残す。
 
+use std::collections::HashSet;
+use std::iter::Peekable;
+use std::str::Chars;
+
 use kakiburi_doc::node::{Kind, Node};
 use kakiburi_doc::Document;
 
 use crate::markup;
 use crate::refuse::Refusal;
+use crate::space::WRAP;
+
+/// 解決できる参照の名前。[`ref_key`]で揃えてある。
+type Refs = HashSet<String>;
 
 /// Markdown を読む。
 ///
 /// 対応表に無い記法を見つけたら断る。推測して補足に落とさない。
 pub fn parse(input: impl AsRef<str>) -> Result<Document, Refusal> {
-    let mut p = Parser {
-        lines: input.as_ref().lines().collect(),
-        at: 0,
-    };
-    p.skip_front_matter();
-    let mut nodes = Vec::new();
-    while p.at < p.lines.len() {
-        let before = p.at;
-        let node = p.block()?;
-        // block は必ず入力を進める。 進まなければ無限に回り、node を積み続けて
-        // メモリを食い潰す。エラーにならないので、走らせるまで気付けない。
-        if p.at == before {
-            return Err(Refusal::Broken {
-                detail: format!("{} 行目を読み進められない: {}", before + 1, p.lines[before]),
-            });
-        }
-        if let Some(n) = node {
-            nodes.push(n);
-        }
-    }
+    let input = input.as_ref();
+    // 参照は定義より前で使える。 読みながらでは解決できないので、一度読んで
+    // 定義を集めてから読み直す。 定義の見分けを block の振り分けと別に書くと、
+    // 行としては定義なのに名前は解決できない、というずれが生まれる。
+    let none = Refs::new();
+    let refs: Refs = Parser::new(input, &none).read()?.1.into_iter().collect();
+    let (nodes, _) = Parser::new(input, &refs).read()?;
     Ok(Document::new(nodes))
 }
 
 struct Parser<'a> {
     lines: Vec<&'a str>,
     at: usize,
+    /// 本文の 1 行目。front matter の直後である。
+    first: usize,
+    refs: &'a Refs,
+    /// 読んだ参照定義の名前。
+    defined: Vec<String>,
+    /// 直前の block がリストか脚注か。 字下げした行はその続きであって、
+    /// コードブロックではない。
+    after_item: bool,
+    /// 入れ子の中身を読んでいるか。読み進められないときの断り文句に出す。
+    nested: bool,
 }
 
 impl<'a> Parser<'a> {
+    fn new(input: &'a str, refs: &'a Refs) -> Self {
+        let mut p = Self::of(input.lines().collect(), refs, false);
+        p.skip_front_matter();
+        p.first = p.at;
+        p
+    }
+
+    fn of(lines: Vec<&'a str>, refs: &'a Refs, nested: bool) -> Self {
+        Self {
+            lines,
+            at: 0,
+            first: 0,
+            refs,
+            defined: Vec::new(),
+            after_item: false,
+            nested,
+        }
+    }
+
     fn peek(&self) -> Option<&'a str> {
         self.lines.get(self.at).copied()
     }
@@ -61,27 +85,21 @@ impl<'a> Parser<'a> {
         // 閉じが無ければ front matter ではなかったことにする。
     }
 
-    /// 中身を block として解釈し直す。
-    ///
-    /// 子を持つ node の中身を 1 本の文字列に畳まない。 畳めば内側の段落・リスト・
-    /// 表・コードブロックがまるごと消え、コードブロックの中身が地の文に混ざる。
-    /// [文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
-    /// 引用・補足・警告・折りたたみ・脚注が子を持つと定めている。
-    fn blocks_of(&self, body: &[&'a str]) -> Result<Vec<Node>, Refusal> {
-        let mut p = Parser {
-            lines: body.to_vec(),
-            at: 0,
-        };
+    /// 終わりまで block を読む。読んだ参照定義の名前も返す。
+    fn read(mut self) -> Result<(Vec<Node>, Vec<String>), Refusal> {
         let mut nodes = Vec::new();
-        while p.at < p.lines.len() {
-            let before = p.at;
-            let node = p.block()?;
-            if p.at == before {
+        while self.at < self.lines.len() {
+            let before = self.at;
+            let node = self.block()?;
+            // block は必ず入力を進める。 進まなければ無限に回り、node を積み続けて
+            // メモリを食い潰す。エラーにならないので、走らせるまで気付けない。
+            if self.at == before {
+                let whose = if self.nested { "中身の " } else { "" };
                 return Err(Refusal::Broken {
                     detail: format!(
-                        "中身の {} 行目を読み進められない: {}",
+                        "{whose}{} 行目を読み進められない: {}",
                         before + 1,
-                        p.lines[before]
+                        self.lines[before]
                     ),
                 });
             }
@@ -89,12 +107,29 @@ impl<'a> Parser<'a> {
                 nodes.push(n);
             }
         }
+        Ok((nodes, self.defined))
+    }
+
+    /// 中身を block として解釈し直す。
+    ///
+    /// 子を持つ node の中身を 1 本の文字列に畳まない。 畳めば内側の段落・リスト・
+    /// 表・コードブロックがまるごと消え、コードブロックの中身が地の文に混ざる。
+    /// [文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
+    /// 引用・補足・警告・折りたたみ・脚注が子を持つと定めている。
+    fn blocks_of(&mut self, body: &[&'a str]) -> Result<Vec<Node>, Refusal> {
+        let (nodes, mut defined) = Parser::of(body.to_vec(), self.refs, true).read()?;
+        self.defined.append(&mut defined);
         Ok(nodes)
     }
 
     /// 中身を持つ node を組む。文字は子が持つ。
-    fn container(&self, kind: Kind, body: &[&'a str]) -> Result<Node, Refusal> {
+    fn container(&mut self, kind: Kind, body: &[&'a str]) -> Result<Node, Refusal> {
         Ok(Node::branch(kind, self.blocks_of(body)?))
+    }
+
+    /// 前の行が空か、本文の頭か。
+    fn follows_blank(&self) -> bool {
+        self.at == self.first || self.lines[self.at - 1].trim().is_empty()
     }
 
     fn block(&mut self) -> Result<Option<Node>, Refusal> {
@@ -105,6 +140,12 @@ impl<'a> Parser<'a> {
             self.at += 1;
             return Ok(None);
         }
+        let continues_item = std::mem::replace(&mut self.after_item, false);
+        // 段落の続きは paragraph が先に取るので、ここに来る字下げは段落の続きではない。
+        // 項目の続きは除く——コードにすれば、書き手の文が地の文から消える。
+        if strip_code_indent(line).is_some() && self.follows_blank() && !continues_item {
+            return Ok(Some(self.indented_code()));
+        }
         if line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~") {
             return self.fence().map(Some);
         }
@@ -114,10 +155,26 @@ impl<'a> Parser<'a> {
         }
         if let Some((depth, text)) = heading(line) {
             self.at += 1;
-            return Ok(Some(Node::heading(depth, inline_checked(text)?)));
+            return Ok(Some(Node::heading(depth, inline_checked(text, self.refs)?)));
         }
         if let Some(name) = footnote_definition(line) {
-            return self.footnote(name).map(Some);
+            let n = self.footnote(name)?;
+            self.after_item = true;
+            return Ok(Some(n));
+        }
+        // 参照定義の行は node にしない。 書き手が本文として書いたものではない。
+        if let Some(label) = reference_definition(line) {
+            self.at += 1;
+            self.defined.push(ref_key(label));
+            return Ok(None);
+        }
+        if let Some(rest) = details_open(line) {
+            return self.details(rest).map(Some);
+        }
+        if is_details_close(line) {
+            return Err(Refusal::Broken {
+                detail: "</details> に対応する <details> が無い".into(),
+            });
         }
         if line.trim_start().starts_with('>') {
             return self.quote_or_alert().map(Some);
@@ -129,30 +186,100 @@ impl<'a> Parser<'a> {
             return self.table().map(Some);
         }
         if list_marker(line).is_some() {
-            return self.list().map(Some);
+            let n = self.list()?;
+            self.after_item = true;
+            return Ok(Some(n));
         }
         self.paragraph().map(Some)
     }
 
+    /// 4 字下げのコードブロック。 字下げを外した中身を持つ。
+    fn indented_code(&mut self) -> Node {
+        let mut body = Vec::new();
+        while let Some(l) = self.peek() {
+            if l.trim().is_empty() {
+                body.push("");
+            } else if let Some(rest) = strip_code_indent(l) {
+                body.push(rest);
+            } else {
+                break;
+            }
+            self.at += 1;
+        }
+        // 末尾の空行はコードではない。 ブロックの切れ目である。
+        while body.last() == Some(&"") {
+            body.pop();
+        }
+        Node::leaf(Kind::CodeBlock, body.join("\n"))
+    }
+
+    /// `<details>` の折りたたみ。 中身は Markdown として読み直す。
+    ///
+    /// `rest` は開き札の後ろの残り。 `<summary>` はそこか中身の頭に来る。
+    fn details(&mut self, rest: &'a str) -> Result<Node, Refusal> {
+        self.at += 1;
+        let mut body: Vec<&'a str> = Vec::new();
+        // 1 行で閉じる折りたたみ。
+        let one_line = rest.trim_end();
+        let close = "</details>";
+        if one_line.len() >= close.len()
+            && one_line[one_line.len() - close.len()..].eq_ignore_ascii_case(close)
+        {
+            body.push(&one_line[..one_line.len() - close.len()]);
+            let body = strip_summary(&body)?;
+            return self.container(Kind::Details, &body);
+        }
+        if !rest.trim().is_empty() {
+            body.push(rest);
+        }
+        let mut depth = 1usize;
+        let mut fence = None;
+        loop {
+            let Some(l) = self.peek() else {
+                return Err(Refusal::Broken {
+                    detail: "<details> が閉じていない".into(),
+                });
+            };
+            self.at += 1;
+            // コードの中の札で開け閉めしない。 札の書き方を説明する記事は普通にある。
+            if let Some(open) = fence {
+                if closes_fence(l, open) {
+                    fence = None;
+                }
+            } else if let Some(open) = fence_open(l) {
+                fence = Some(open);
+            } else if details_open(l).is_some() {
+                depth += 1;
+            } else if is_details_close(l) {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            body.push(l);
+        }
+        let body = strip_summary(&body)?;
+        self.container(Kind::Details, &body)
+    }
+
     fn fence(&mut self) -> Result<Node, Refusal> {
-        let open = self.lines[self.at].trim_start();
-        let tick = if open.starts_with("```") {
-            "```"
-        } else {
-            "~~~"
-        };
+        let open = fence_open(self.lines[self.at]).expect("呼ぶ前に確かめている");
         self.at += 1;
         let mut body = Vec::new();
         while let Some(l) = self.peek() {
             self.at += 1;
-            if l.trim_start().starts_with(tick) {
+            if closes_fence(l, open) {
                 return Ok(Node::leaf(Kind::CodeBlock, body.join("\n")));
             }
             body.push(l);
         }
         // 閉じが無い。壊れた記法である。
+        let (mark, n) = open;
         Err(Refusal::Broken {
-            detail: format!("コードブロックの {tick} が閉じていない"),
+            detail: format!(
+                "コードブロックの {} が閉じていない",
+                mark.to_string().repeat(n)
+            ),
         })
     }
 
@@ -223,7 +350,7 @@ impl<'a> Parser<'a> {
             .strip_prefix(&marker)
             .unwrap_or("")
             .trim_start();
-        Ok(Node::leaf(Kind::Footnote, inline_checked(body)?))
+        Ok(Node::leaf(Kind::Footnote, inline_checked(body, self.refs)?))
     }
 
     /// 表。セル 1 つが 1 つの node である。
@@ -243,7 +370,7 @@ impl<'a> Parser<'a> {
             for c in split_row(l) {
                 let t = c.trim();
                 if !t.is_empty() {
-                    cells.push(Node::leaf(Kind::Cell, inline_checked(t)?));
+                    cells.push(Node::leaf(Kind::Cell, inline_checked(t, self.refs)?));
                 }
             }
         }
@@ -275,9 +402,15 @@ impl<'a> Parser<'a> {
                 }
                 continue;
             }
+            // 落ちる先の node が無い。 通せばリンクとして数えられる。
+            if let Some(mark) = task_marker(m.text) {
+                return Err(Refusal::UnknownMarkup {
+                    markup: format!("{mark}（task list）"),
+                });
+            }
             self.at += 1;
             {
-                let (text, mut kids) = inline_with_children(m.text)?;
+                let (text, mut kids) = inline_with_children(m.text, self.refs)?;
                 // 強調で始まる項目は、強調を先頭の子に置く。
                 // 畳んだ子は順序を持たないので、[太字始まりの項目](../../../docs/spec/metrics/太字始まりの項目.md)が
                 // 先頭かどうかを読めなくなる。
@@ -306,13 +439,22 @@ impl<'a> Parser<'a> {
                 body.push(l);
                 continue;
             }
+            // 下線の見出し。 区切り線より先に見る——`---` は段落の直後なら見出しの
+            // 下線で、空行の後なら区切り線である。
+            if let Some(depth) = setext_underline(l) {
+                self.at += 1;
+                return Ok(Node::heading(
+                    depth,
+                    inline_checked(body.join("\n"), self.refs)?,
+                ));
+            }
             if self.starts_block(l) {
                 break;
             }
             self.at += 1;
             body.push(l);
         }
-        let (text, kids) = inline_with_children(body.join("\n"))?;
+        let (text, kids) = inline_with_children(body.join("\n"), self.refs)?;
         let mut n = Node::leaf(Kind::Paragraph, text);
         n.children = kids;
         Ok(n)
@@ -331,6 +473,8 @@ impl<'a> Parser<'a> {
             || list_marker(line).is_some()
             || footnote_definition(line).is_some()
             || directive_open(line).is_some()
+            || details_open(line).is_some()
+            || is_details_close(line)
     }
 }
 
@@ -346,12 +490,12 @@ impl<'a> Parser<'a> {
 ///
 /// 対応表に無い記法があれば断る。落として通せば、落ちた分だけ値が狂った文書が
 /// 正常な顔でコーパスに入る。
-fn inline_checked(s: impl AsRef<str>) -> Result<String, Refusal> {
-    Ok(inline_with_children(s)?.0)
+fn inline_checked(s: impl AsRef<str>, refs: &Refs) -> Result<String, Refusal> {
+    Ok(inline_with_children(s, refs)?.0)
 }
 
 /// 地の文と、行の中に溶けこむ子。
-fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refusal> {
+fn inline_with_children(s: impl AsRef<str>, refs: &Refs) -> Result<(String, Vec<Node>), Refusal> {
     let s = s.as_ref();
     let mut out = String::with_capacity(s.len());
     let mut kids: Vec<Node> = Vec::new();
@@ -359,8 +503,17 @@ fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refus
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         match c {
-            // Markdown の中のインライン HTML。対応表にある要素なら記法として
-            // 潰し、中身を残す。無い要素は断る。
+            // 直後が名前を始められない `<` は札ではない。`a < b` や `<-` のような
+            // 地の文である。
+            '<' if !chars
+                .peek()
+                .is_some_and(|c| c.is_ascii_alphabetic() || *c == '/') =>
+            {
+                out.push('<');
+            }
+            // Markdown の中のインライン HTML。 強調・リンク・コードの札だけを記法として
+            // 潰す。 それ以外は、ブロックの札でも断る——認めれば補足や表に 2 通りの
+            // 書き方ができる。HTML で書くなら `.html` として入れる。
             '<' => {
                 let mut raw = String::new();
                 let mut closed = false;
@@ -377,15 +530,34 @@ fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refus
                     out.push_str(&raw);
                     continue;
                 }
+                // 自動リンク。 見えている URL は参照先そのものなので、地の文に入らない。
+                if is_autolink(&raw) {
+                    out.push(WRAP);
+                    kids.push(Node::leaf(Kind::Link, ""));
+                    continue;
+                }
                 let name = html_tag_name(&raw);
-                let Some(kind) = markup::html_kind(&name) else {
+                let Some(kind) = inline_html_kind(&name) else {
                     return Err(Refusal::UnknownMarkup {
                         markup: format!("<{name}>"),
                     });
                 };
                 // 開き札だけを数える。閉じ札で二重に数えない。
-                if !raw.trim_start().starts_with('/') && kind == Kind::Emphasis {
-                    kids.push(Node::leaf(Kind::Emphasis, ""));
+                if raw.trim_start().starts_with('/') {
+                    continue;
+                }
+                match kind {
+                    Kind::Emphasis => kids.push(Node::leaf(Kind::Emphasis, "")),
+                    // バッククォートで書いたときと同じく、中身ごと落とす。
+                    Kind::InlineCode => {
+                        let body =
+                            take_until(&mut chars, "</code>").ok_or_else(|| Refusal::Broken {
+                                detail: "<code> が閉じていない".into(),
+                            })?;
+                        out.push(WRAP);
+                        kids.push(Node::leaf(Kind::InlineCode, body));
+                    }
+                    _ => {}
                 }
             }
             // インラインコードは中身ごと落とす。
@@ -399,58 +571,65 @@ fn inline_with_children(s: impl AsRef<str>) -> Result<(String, Vec<Node>), Refus
                 }
                 // 中身は地の文に入らない。**跡に空白を残さない**——
                 // 残すと行内コードの多い記事ほど空白が増える。
-                out.push(crate::space::WRAP);
+                out.push(WRAP);
                 kids.push(Node::leaf(Kind::InlineCode, body));
             }
-            // 画像は代替文字ごと落とす。リンクは中身だけ残す。
+            // 画像は代替文字ごと落とす。
             '!' if chars.peek() == Some(&'[') => {
                 chars.next();
-                let mut alt = String::new();
-                let mut depth = 1;
-                for c in chars.by_ref() {
-                    match c {
-                        '[' => {
-                            depth += 1;
-                            alt.push(c);
-                        }
-                        ']' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            alt.push(c);
-                        }
-                        _ => alt.push(c),
-                    }
+                let alt = take_bracket(&mut chars);
+                if resolve_target(&mut chars, &alt, refs) {
+                    out.push(WRAP);
+                    kids.push(Node::leaf(Kind::Image, alt));
+                } else {
+                    // 画像にならない。表示のとおり文字として残す。
+                    let (text, inner) = inline_with_children(&alt, refs)?;
+                    out.push_str(&format!("![{text}]"));
+                    kids.extend(inner);
                 }
-                skip_link_target(&mut chars);
-                out.push(crate::space::WRAP);
-                kids.push(Node::leaf(Kind::Image, alt));
             }
-            '[' => {
-                let mut label = String::new();
-                let mut depth = 1;
-                for c in chars.by_ref() {
-                    match c {
-                        '[' => {
-                            depth += 1;
-                            label.push(c);
-                        }
-                        ']' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                            label.push(c);
-                        }
-                        _ => label.push(c),
-                    }
-                }
+            // 脚注の参照。参照を解決しない。
+            '[' if chars.peek() == Some(&'^') => {
+                let label = take_bracket(&mut chars);
                 skip_link_target(&mut chars);
-                let (text, inner) = inline_with_children(&label)?;
+                let (text, inner) = inline_with_children(&label, refs)?;
                 out.push_str(&text);
                 kids.push(Node::leaf(Kind::Link, text.clone()));
                 kids.extend(inner);
+            }
+            // リンクは中身だけ残す。
+            '[' => {
+                let label = take_bracket(&mut chars);
+                let (text, inner) = inline_with_children(&label, refs)?;
+                if resolve_target(&mut chars, &label, refs) {
+                    out.push_str(&text);
+                    kids.push(Node::leaf(Kind::Link, text.clone()));
+                } else {
+                    // 定義の無い参照はリンクではない。 表示でも角括弧のまま残る。
+                    out.push_str(&format!("[{text}]"));
+                }
+                kids.extend(inner);
+            }
+            // 取り消し線。 落ちる先の node が無い。 対にならない `~~` は記法ではない。
+            '~' if chars.peek() == Some(&'~') && closes_strikethrough(&chars) => {
+                return Err(Refusal::UnknownMarkup {
+                    markup: "~~".into(),
+                });
+            }
+            // エスケープ。 通せば `\` が記号として数えられ、落とせば表示と違う
+            // 文字列を測る。どちらにしても黙って値が動く。
+            '\\' if chars.peek().is_some_and(char::is_ascii_punctuation) => {
+                let p = chars.peek().copied().unwrap_or_default();
+                return Err(Refusal::UnknownMarkup {
+                    markup: format!("\\{p}"),
+                });
+            }
+            // 文字参照。 エスケープと同じ理由で断る。
+            '&' if char_reference(&chars).is_some() => {
+                let name = char_reference(&chars).unwrap_or_default();
+                return Err(Refusal::UnknownMarkup {
+                    markup: format!("&{name};"),
+                });
             }
             // 強調の記法だけを落とす。開くときだけ数える。
             //
@@ -495,36 +674,153 @@ fn html_tag_name(raw: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// リンクの参照先を読み飛ばす。地の文には入らない。
-fn skip_link_target(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
-    match chars.peek() {
-        Some('(') => {
-            chars.next();
-            let mut depth = 1;
-            for c in chars.by_ref() {
-                match c {
-                    '(' => depth += 1,
-                    ')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
+/// Markdown の中で記法として潰す HTML の札。 強調・リンク・コードだけである。
+fn inline_html_kind(name: &str) -> Option<Kind> {
+    markup::html_kind(name).filter(|k| matches!(k, Kind::Emphasis | Kind::Link | Kind::InlineCode))
+}
+
+/// `<` と `>` の間が自動リンクか。URI とメールアドレスの 2 通り。
+fn is_autolink(raw: &str) -> bool {
+    if raw.is_empty() || raw.contains(|c: char| c.is_whitespace() || c == '<') {
+        return false;
+    }
+    if let Some((scheme, _)) = raw.split_once(':') {
+        if (2..=32).contains(&scheme.len())
+            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+        {
+            return true;
         }
-        // 参照形式のリンク。`[語][鍵]` の `[鍵]` を落とす。
-        Some('[') => {
-            chars.next();
-            for c in chars.by_ref() {
-                if c == ']' {
+    }
+    let Some((local, domain)) = raw.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && local
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(c))
+        && domain
+            .split('.')
+            .all(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+}
+
+/// `end` まで読み、手前までを返す。 `end` が来なければ `None`。
+fn take_until(chars: &mut Peekable<Chars<'_>>, end: &str) -> Option<String> {
+    let mut body = String::new();
+    for c in chars.by_ref() {
+        body.push(c);
+        if body.to_ascii_lowercase().ends_with(end) {
+            body.truncate(body.len() - end.len());
+            return Some(body);
+        }
+    }
+    None
+}
+
+/// `[` の後ろから、対になる `]` までを取る。 `]` は落とす。
+fn take_bracket(chars: &mut Peekable<Chars<'_>>) -> String {
+    let mut label = String::new();
+    let mut depth = 1;
+    for c in chars.by_ref() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
                     break;
                 }
             }
+            _ => {}
         }
-        _ => {}
+        label.push(c);
     }
+    label
+}
+
+/// 角括弧の後ろを見て、リンク（画像）になるかを決める。
+///
+/// なるなら参照先を読み飛ばす。 参照形式は定義があるときだけリンクになる——
+/// 定義の無い `[語]` は、表示でも角括弧のまま残る文字である。
+fn resolve_target(chars: &mut Peekable<Chars<'_>>, label: &str, refs: &Refs) -> bool {
+    match chars.peek() {
+        Some('(') => {
+            skip_link_target(chars);
+            true
+        }
+        // `[語][鍵]` と `[語][]`。 鍵に定義が無ければ `[語]` 単独の省略形にもならない。
+        Some('[') => {
+            let mut look = chars.clone();
+            look.next();
+            let mut key = String::new();
+            let mut closed = false;
+            for c in look.by_ref() {
+                if c == ']' {
+                    closed = true;
+                    break;
+                }
+                key.push(c);
+            }
+            if !closed {
+                return refs.contains(&ref_key(label));
+            }
+            let key = if key.trim().is_empty() { label } else { &key };
+            if refs.contains(&ref_key(key)) {
+                *chars = look;
+                return true;
+            }
+            false
+        }
+        _ => refs.contains(&ref_key(label)),
+    }
+}
+
+/// インラインリンクの参照先を読み飛ばす。地の文には入らない。
+fn skip_link_target(chars: &mut Peekable<Chars<'_>>) {
+    if chars.peek() != Some(&'(') {
+        return;
+    }
+    chars.next();
+    let mut depth = 1;
+    for c in chars.by_ref() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 最初の `~` を読んだ後ろが、閉じる `~~` を持つ取り消し線か。
+fn closes_strikethrough(chars: &Peekable<Chars<'_>>) -> bool {
+    let rest: String = chars.clone().skip(1).collect();
+    rest.starts_with(|c: char| !c.is_whitespace() && c != '~') && rest.contains("~~")
+}
+
+/// `&` の後ろが文字参照なら、`;` の手前までを返す。
+fn char_reference(chars: &Peekable<Chars<'_>>) -> Option<String> {
+    let name: String = chars.clone().take(33).take_while(|&c| c != ';').collect();
+    if name.chars().count() == 33 || chars.clone().nth(name.chars().count()) != Some(';') {
+        return None;
+    }
+    let ok = if let Some(num) = name.strip_prefix('#') {
+        if let Some(hex) = num.strip_prefix(['x', 'X']) {
+            (1..=6).contains(&hex.len()) && hex.chars().all(|c| c.is_ascii_hexdigit())
+        } else {
+            (1..=7).contains(&num.len()) && num.chars().all(|c| c.is_ascii_digit())
+        }
+    } else {
+        name.len() >= 2
+            && name.starts_with(|c: char| c.is_ascii_alphabetic())
+            && name.chars().all(|c| c.is_ascii_alphanumeric())
+    };
+    ok.then_some(name)
 }
 
 fn heading(line: &str) -> Option<(u8, &str)> {
@@ -540,6 +836,150 @@ fn heading(line: &str) -> Option<(u8, &str)> {
         u8::try_from(hashes).ok()?,
         body.trim_end_matches([' ', '#']),
     ))
+}
+
+/// コードブロックの囲みの開きなら、記号と数を返す。
+fn fence_open(line: &str) -> Option<(char, usize)> {
+    let t = line.trim_start();
+    let mark = t.chars().next().filter(|c| matches!(c, '`' | '~'))?;
+    let n = t.chars().take_while(|&c| c == mark).count();
+    (n >= 3).then_some((mark, n))
+}
+
+/// 開きと同じ記号が、開き以上の数だけ並ぶ行か。
+///
+/// 数を見ないと、囲みの書き方を説明する記事で外側の ```` が内側の ``` で閉じ、
+/// 内側のコードが地の文に流れる。 後ろに文字が続く行を閉じと見るのは、これまでの
+/// 読み方を変えないためである。
+fn closes_fence(line: &str, (mark, n): (char, usize)) -> bool {
+    line.trim_start().chars().take_while(|&c| c == mark).count() >= n
+}
+
+/// 見出しの下線なら深さを返す。`=` は 1、`-` は 2。
+fn setext_underline(line: &str) -> Option<u8> {
+    if line.len() - line.trim_start_matches(' ').len() > 3 {
+        return None;
+    }
+    let t = line.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if t.chars().all(|c| c == '=') {
+        Some(1)
+    } else if t.chars().all(|c| c == '-') {
+        Some(2)
+    } else {
+        None
+    }
+}
+
+/// コードブロックの字下げを外す。空白 4 つかタブ 1 つ。
+fn strip_code_indent(line: &str) -> Option<&str> {
+    line.strip_prefix("    ")
+        .or_else(|| line.strip_prefix('\t'))
+}
+
+/// `[名前]: 参照先 "題"` の行なら名前を返す。
+///
+/// 参照先の後ろに題でない文字が続くなら定義ではない。 `[追記]: 直した。` のような
+/// 地の文を定義として飲み込まない。
+fn reference_definition(line: &str) -> Option<&str> {
+    if line.len() - line.trim_start_matches(' ').len() > 3 {
+        return None;
+    }
+    let rest = line.trim_start().strip_prefix('[')?;
+    // `[^1]:` は脚注の定義である。
+    if rest.starts_with('^') {
+        return None;
+    }
+    let end = rest.find("]:")?;
+    let label = &rest[..end];
+    if label.trim().is_empty() || label.contains(['[', ']']) {
+        return None;
+    }
+    let target = rest[end + 2..].trim_start();
+    let after = if let Some(r) = target.strip_prefix('<') {
+        &r[r.find('>')? + 1..]
+    } else {
+        let e = target.find(char::is_whitespace).unwrap_or(target.len());
+        if e == 0 {
+            return None;
+        }
+        &target[e..]
+    };
+    let title = after.trim();
+    let quoted = title.len() >= 2
+        && [('"', '"'), ('\'', '\''), ('(', ')')]
+            .iter()
+            .any(|&(o, c)| title.starts_with(o) && title.ends_with(c));
+    (title.is_empty() || quoted).then_some(label)
+}
+
+/// 参照の名前を揃える。大小と空白の入れ方は区別しない。
+fn ref_key(label: &str) -> String {
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// `<details>` の開き札で始まる行なら、札の後ろの残りを返す。
+fn details_open(line: &str) -> Option<&str> {
+    let t = line.trim_start();
+    let head = t.get(..8)?;
+    if !head.eq_ignore_ascii_case("<details") {
+        return None;
+    }
+    let rest = &t[8..];
+    if !rest.starts_with(|c: char| c == '>' || c.is_whitespace()) {
+        return None;
+    }
+    Some(&rest[rest.find('>')? + 1..])
+}
+
+fn is_details_close(line: &str) -> bool {
+    line.trim().eq_ignore_ascii_case("</details>")
+}
+
+/// 折りたたみの中身の頭にある `<summary>` を外す。
+///
+/// 題は本文に入れない。 `:::details 題` の題も入らない——記法ごとに変えると、
+/// 同じ折りたたみが書き方だけで違う値になる。
+fn strip_summary<'a>(body: &[&'a str]) -> Result<Vec<&'a str>, Refusal> {
+    let Some(start) = body.iter().position(|l| !l.trim().is_empty()) else {
+        return Ok(body.to_vec());
+    };
+    let head = body[start].trim_start();
+    if !head
+        .get(..8)
+        .is_some_and(|h| h.eq_ignore_ascii_case("<summary"))
+    {
+        return Ok(body.to_vec());
+    }
+    for (i, l) in body.iter().enumerate().skip(start) {
+        let lower = l.to_ascii_lowercase();
+        if let Some(e) = lower.find("</summary>") {
+            let tail = &l[e + "</summary>".len()..];
+            let mut out = Vec::with_capacity(body.len());
+            if !tail.trim().is_empty() {
+                out.push(tail);
+            }
+            out.extend_from_slice(&body[i + 1..]);
+            return Ok(out);
+        }
+    }
+    Err(Refusal::Broken {
+        detail: "<summary> が閉じていない".into(),
+    })
+}
+
+/// task list の印なら返す。`[ ]` `[x]` `[X]`。
+fn task_marker(text: &str) -> Option<&str> {
+    let mark = text.get(..3)?;
+    let is_mark = matches!(mark, "[ ]" | "[x]" | "[X]");
+    let ends = text[3..].is_empty() || text[3..].starts_with(char::is_whitespace);
+    (is_mark && ends).then_some(mark)
 }
 
 fn is_divider(line: &str) -> bool {
@@ -786,6 +1226,20 @@ mod tests {
     }
 
     #[test]
+    fn 長い囲みは短い記号では閉じない() {
+        // 囲みの書き方を説明する記事は、外側を 4 つ以上で囲む。 3 つで閉じれば
+        // 内側のコードが地の文に流れる。
+        let md = "````\n```mermaid\ngraph TD\n    A[Markdown] --> B[Arto]\n```\n````\n\n続き。\n";
+        let d = parse(md).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::CodeBlock, Kind::Paragraph]);
+        assert!(
+            d.nodes[0].text.contains("graph TD"),
+            "{:?}",
+            d.nodes[0].text
+        );
+    }
+
+    #[test]
     fn コードブロックの中身は地の文に入らない() {
         let md = "説明。\n\n```rust\nlet x = 1;\n```\n\n続き。\n";
         let d = parse(md).unwrap();
@@ -852,8 +1306,265 @@ mod tests {
 
     #[test]
     fn 参照形式のリンクも参照先が落ちる() {
-        let d = parse("[Netrw][] と [Fern][fern] を比べる。\n").unwrap();
+        let md = "[Netrw][] と [Fern][fern] を比べる。\n\n[netrw]: https://example.com/netrw\n[fern]: https://example.com/fern\n";
+        let d = parse(md).unwrap();
         assert_eq!(d.nodes[0].text, "Netrw と Fern を比べる。");
+    }
+
+    #[test]
+    fn 参照定義の行は何も残さない() {
+        // 残せば URL が地の文に入り、記号と英字の率が参照の数で動く。
+        let md = "詳細は [こちら][ref] を見る。\n\n[ref]: https://example.com \"題\"\n";
+        let d = parse(md).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Paragraph]);
+        let joined: String = d.prose().iter().map(|s| s.text.clone()).collect();
+        assert!(!joined.contains("example"), "{joined:?}");
+    }
+
+    #[test]
+    fn 参照先の後ろに地の文が続く行は定義ではない() {
+        // 定義として飲み込めば、書き手の文が消える。
+        let d = parse("[追記]: 直した。 後で見る。\n").unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Paragraph]);
+        assert_eq!(d.nodes[0].text, "[追記]: 直した。 後で見る。");
+    }
+
+    #[test]
+    fn 定義のある省略形の参照はリンクになる() {
+        let md = "[VimConf] に出た。\n\n[VimConf]: https://vimconf.org\n";
+        let d = parse(md).unwrap();
+        assert_eq!(d.nodes[0].text, "VimConf に出た。");
+        assert!(d.nodes[0].children.iter().any(|c| c.kind == Kind::Link));
+    }
+
+    #[test]
+    fn 定義の無い角括弧はリンクではない() {
+        // 表示でも角括弧のまま残る。リンクとして数えれば、リンクの密度が
+        // 角括弧を使う書き手ほど上がる。
+        let d = parse("[追記] 直した。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "[追記] 直した。");
+        assert!(!d.nodes[0].children.iter().any(|c| c.kind == Kind::Link));
+    }
+
+    #[test]
+    fn 参照は定義より前でも後でも解決する() {
+        let md =
+            "[前]: https://example.com/a\n\n[前] と [後] を見る。\n\n[後]: https://example.com/b\n";
+        let d = parse(md).unwrap();
+        let links = d.nodes[0]
+            .children
+            .iter()
+            .filter(|c| c.kind == Kind::Link)
+            .count();
+        assert_eq!(links, 2);
+    }
+
+    #[test]
+    fn 自動リンクはリンクになり_url_は地の文に入らない() {
+        let d = parse("詳細は <https://example.com/a> を見る。\n").unwrap();
+        assert!(d.nodes[0].children.iter().any(|c| c.kind == Kind::Link));
+        assert!(
+            !d.nodes[0].text.contains("example"),
+            "{:?}",
+            d.nodes[0].text
+        );
+        let d = parse("連絡は <foo@example.com> へ。\n").unwrap();
+        assert!(d.nodes[0].children.iter().any(|c| c.kind == Kind::Link));
+    }
+
+    #[test]
+    fn 札になれない不等号は地の文である() {
+        // 直後が名前を始められない `<` は札ではない。 断れば矢印を書いた記事が落ちる。
+        let d = parse("a <- b -> c の順に流れる。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "a <- b -> c の順に流れる。");
+    }
+
+    #[test]
+    fn 下線の見出しを読む() {
+        // 知らずに読むと見出しが 0 になり、見出しの文字列が段落として数えられる。
+        let d = parse("章\n===\n\n本文である。\n\n節\n---\n").unwrap();
+        assert_eq!(
+            kinds(&d),
+            vec![Kind::Heading, Kind::Paragraph, Kind::Heading]
+        );
+        assert_eq!(d.nodes[0].text, "章");
+        assert_eq!(d.nodes[0].raw_depth, Some(1));
+        assert_eq!(d.nodes[2].raw_depth, Some(2));
+    }
+
+    #[test]
+    fn 空行のあとの横線は区切り線である() {
+        let d = parse("本文である。\n\n---\n").unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Paragraph, Kind::Divider]);
+    }
+
+    #[test]
+    fn 字下げ_4_つはコードブロックである() {
+        let md = "説明である。\n\n    let x = 1;\n\n    let y = 2;\n\n続きである。\n";
+        let d = parse(md).unwrap();
+        assert_eq!(
+            kinds(&d),
+            vec![Kind::Paragraph, Kind::CodeBlock, Kind::Paragraph]
+        );
+        assert_eq!(d.nodes[1].text, "let x = 1;\n\nlet y = 2;");
+        let joined: String = d.prose().iter().map(|s| s.text.clone()).collect();
+        assert!(!joined.contains("let"), "{joined:?}");
+    }
+
+    #[test]
+    fn 段落の続きの字下げはコードではない() {
+        let d = parse("説明である。\n    続きである。\n").unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Paragraph]);
+    }
+
+    #[test]
+    fn 項目の続きの字下げはコードではない() {
+        // 項目の中身の続きである。コードにすれば、書き手の文が地の文から消える。
+        let d = parse("- 項目である。\n\n    続きである。\n").unwrap();
+        assert!(!kinds(&d).contains(&Kind::CodeBlock), "{:?}", kinds(&d));
+    }
+
+    #[test]
+    fn task_list_は断る() {
+        // 落ちる先の node が無い。リンクとして数えれば、リンクの密度が狂う。
+        for md in ["- [ ] やる\n", "- [x] やった\n", "1. [X] やった\n"] {
+            let e = parse(md).unwrap_err();
+            assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{md:?} {e:?}");
+        }
+    }
+
+    #[test]
+    fn 取り消し線は断る() {
+        let e = parse("これは ~~消した~~ 文である。\n").unwrap_err();
+        assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn 対にならないチルダは地の文である() {
+        let d = parse("1~2 回か、~~ だけの行である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "1~2 回か、~~ だけの行である。");
+    }
+
+    #[test]
+    fn エスケープは断る() {
+        // 通せば `\` が記号として数えられる。落とせば、表示と違う文字列を測る。
+        let e = parse("これは \\*強調ではない\\* 文である。\n").unwrap_err();
+        assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn 記号の前に無い逆斜線は地の文である() {
+        let d = parse("置き場は C:\\Users である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "置き場は C:\\Users である。");
+    }
+
+    #[test]
+    fn 文字参照は断る() {
+        for md in [
+            "A &amp; B である。\n",
+            "&#12354; である。\n",
+            "&#x3042; である。\n",
+        ] {
+            let e = parse(md).unwrap_err();
+            assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{md:?} {e:?}");
+        }
+    }
+
+    #[test]
+    fn 参照にならないアンパサンドは地の文である() {
+        let d = parse("R&D と A & B である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "R&D と A & B である。");
+    }
+
+    #[test]
+    fn details_は折りたたみになる() {
+        let md = "<details>\n<summary>題</summary>\n\n中身である。\n\n- 項目\n\n</details>\n";
+        let d = parse(md).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Details]);
+        let inner: Vec<Kind> = d.nodes[0].children.iter().map(|n| n.kind).collect();
+        assert_eq!(inner, vec![Kind::Paragraph, Kind::Bullet], "{inner:?}");
+    }
+
+    #[test]
+    fn details_の_summary_は地の文に入らない() {
+        // `:::details 題` の題と同じ扱いにする。 記法ごとに変えると、
+        // 同じ折りたたみが書き方だけで違う値になる。
+        let md = "<details><summary>題である</summary>\n\n中身である。\n\n</details>\n";
+        let d = parse(md).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Details]);
+        let joined: String = d.prose().iter().map(|s| s.text.clone()).collect();
+        assert_eq!(joined, "中身である。");
+    }
+
+    #[test]
+    fn summary_の無い_details_も折りたたみになる() {
+        let d = parse("<details>\n中身である。\n</details>\n").unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Details]);
+        assert_eq!(d.nodes[0].children[0].text, "中身である。");
+    }
+
+    #[test]
+    fn 一行で閉じる_details_も折りたたみになる() {
+        let d = parse("<details><summary>題</summary>中身である。</details>\n\n後。\n").unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Details, Kind::Paragraph]);
+        assert_eq!(d.nodes[0].children[0].text, "中身である。");
+    }
+
+    #[test]
+    fn 入れ子の_details_は内側で閉じない() {
+        let md = "<details>\n\n外。\n\n<details>\n\n内。\n\n</details>\n\n</details>\n\n後。\n";
+        let d = parse(md).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Details, Kind::Paragraph]);
+        let inner: Vec<Kind> = d.nodes[0].children.iter().map(|n| n.kind).collect();
+        assert_eq!(inner, vec![Kind::Paragraph, Kind::Details], "{inner:?}");
+    }
+
+    #[test]
+    fn コードの中の閉じ札では閉じない() {
+        let md = "<details>\n\n```html\n</details>\n```\n\n</details>\n";
+        let d = parse(md).unwrap();
+        assert_eq!(kinds(&d), vec![Kind::Details]);
+        assert_eq!(d.nodes[0].children[0].kind, Kind::CodeBlock);
+    }
+
+    #[test]
+    fn 閉じていない_details_は断る() {
+        let e = parse("<details>\n中身である。\n").unwrap_err();
+        assert!(matches!(e, Refusal::Broken { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn details_以外のブロックの_html_は断る() {
+        // 認めれば、同じ補足や表に 2 通りの書き方ができる。 HTML で書くなら
+        // `.html` として入れる。
+        for md in [
+            "<aside>\n補足である。\n</aside>\n",
+            "<div>中身である。</div>\n",
+            "<p>段落である。</p>\n",
+            "<table><tr><td>升目</td></tr></table>\n",
+            "<blockquote>引用である。</blockquote>\n",
+            "本文の途中に <details> がある。\n",
+        ] {
+            let e = parse(md).unwrap_err();
+            assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{md:?} {e:?}");
+        }
+    }
+
+    #[test]
+    fn html_の画像は断る() {
+        let e = parse("図である。<img src=\"a.png\">\n").unwrap_err();
+        assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn html_の_code_は中身ごと落ちる() {
+        // 中身を残せば、バッククォートで書いたときと違う地の文になる。
+        let d = parse("設定は <code>--force</code> である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "設定はである。");
+        assert!(d.nodes[0]
+            .children
+            .iter()
+            .any(|c| c.kind == Kind::InlineCode));
     }
 
     #[test]

@@ -1,12 +1,15 @@
 //! 実際の記事で通るかを見る。
 //!
-//! 素材は `.spike/` に置いてある（追跡していない）。無ければ飛ばす——
-//! 飛ばしたことを黙らない。
+//! 基準は同梱の `baselines/` を読むので、いつでも走る。 本人の記事は `.spike/` に
+//! 置いてある（追跡していない）。無ければ飛ばす——飛ばしたことを黙らない。
 
 use kakiburi_normalize::{normalize, Source};
 
 fn read_all(dir: &str) -> Vec<(String, String)> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    // 経路はリポジトリの根から取る。 cargo test は作業ディレクトリをクレートに
+    // 置くので、相対のままだと素材があっても見つからず、毎回黙って飛ばしていた。
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
         return Vec::new();
     };
     let mut out: Vec<(String, String)> = entries
@@ -25,9 +28,9 @@ fn read_all(dir: &str) -> Vec<(String, String)> {
 
 #[test]
 fn 基準の記事はすべて通る() {
-    let files = read_all(".spike/baseline");
+    let files = read_all("baselines");
     if files.is_empty() {
-        eprintln!("素材が無いので飛ばした: .spike/baseline");
+        eprintln!("素材が無いので飛ばした: baselines");
         return;
     }
     for (name, body) in &files {
@@ -46,9 +49,9 @@ fn 基準の記事はすべて通る() {
 
 #[test]
 fn 検める文も通る() {
-    let files = read_all(".spike/check");
+    let files = read_all(".spike/alisue/baseline");
     if files.is_empty() {
-        eprintln!("素材が無いので飛ばした: .spike/check");
+        eprintln!("素材が無いので飛ばした: .spike/alisue/baseline");
         return;
     }
     for (name, body) in &files {
@@ -58,7 +61,7 @@ fn 検める文も通る() {
 
 #[test]
 fn 同じ入力からは同じ正規形が出る() {
-    let files = read_all(".spike/baseline");
+    let files = read_all("baselines");
     if files.is_empty() {
         eprintln!("素材が無いので飛ばした");
         return;
