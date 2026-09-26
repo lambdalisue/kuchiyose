@@ -21,7 +21,7 @@
 | 使い方 | [README](../README.md) |
 | なぜ判定が 3 値なのか | [仕様 010-strategy](spec/010-strategy.md) |
 | どの指標を、なぜ測るのか | [仕様 100-metrics](spec/100-metrics.md)、[指標の一覧](spec/metrics/README.md) |
-| 目盛りはどう作られるか | [仕様 200-extract](spec/200-extract.md) |
+| 目盛りはどう組み立てられるか | [仕様 200-extract](spec/200-extract.md) |
 | コードのどこに何があるか | [設計 000-architecture](design/000-architecture.md) |
 | カセットの中身 | [設計 100-cassette](design/100-cassette.md) |
 
@@ -39,7 +39,7 @@
 | [020-document](spec/020-document.md) | 文書の形。地の文とは何か、日本語の文字とは何か |
 | [030-normalize](spec/030-normalize.md) | 入力を正規形にする。何を潰し、何を残すか |
 | [100-metrics](spec/100-metrics.md) | 指標を決める。根拠の層と、粗い括りに丸めない規則 |
-| [200-extract](spec/200-extract.md) | 評価して、その人の値と目盛りにする |
+| [200-extract](spec/200-extract.md) | 文書を測ってカセットにし、比べるたびに目盛りを組み立てる |
 | [300-revise](spec/300-revise.md) | 検めて、直す |
 
 [指標の定義](spec/metrics/README.md)は 1 指標 1 ファイル。意味・出どころ・数え方・次元・
@@ -52,7 +52,7 @@
 | | |
 | --- | --- |
 | [000-architecture](design/000-architecture.md) | 全体の構造とクレートの分割 |
-| [100-cassette](design/100-cassette.md) | カセットの構造。何を収め、何を捨ててよいか |
+| [100-cassette](design/100-cassette.md) | カセットの構造。何を収め、何を捨ててよいか、何を人が決めたこととして残すか |
 | [200-command](design/200-command.md) | コマンドの体系 |
 | [300-test](design/300-test.md) | テストの体系 |
 

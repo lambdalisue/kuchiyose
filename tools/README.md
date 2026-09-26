@@ -83,14 +83,21 @@ perl tools/checklinks.pl .
 nix develop --command cargo test
 nix develop --command cargo clippy --all-targets
 
-kakiburi build   <本人の記事のフォルダ> [--baseline <フォルダ>] [--other <フォルダ>]
-kakiburi decide  <カセット> boilerplate <文字列...>
-kakiburi review  <ファイル> --cassette <カセット> [--own-writing shown|not-shown|unknown]
-kakiburi measure <ファイル> [--cassette <カセット>]
-kakiburi compare <ファイル>... [--cassette <カセット>]
-kakiburi doctor  <カセット>
-kakiburi metrics
+kakiburi cassette build <フォルダ> -o <カセット> [--scene <場面>]
+kakiburi cassette show  <カセット>
+kakiburi cassette diff  <本人のカセット> <基準のカセット>
+kakiburi cassette list  <カセット> [--kind <種類>] [--state on|off]
+kakiburi cassette mute|unmute <カセット> <名前または ID>... | --kind <種類>
+kakiburi cassette first-person <カセット> <一人称>|auto
+kakiburi cassette register <カセット> polite|plain|auto
+kakiburi cassette edit  <カセット>
+kakiburi review <草稿>... --cassette <カセット> [--baseline <カセット>] [--values]
+                          [--own-writing shown|not-shown|unknown] [--json]
 ```
+
+同梱の基準カセットは `baselines/` の文書から `cassette build` で作り、実行ファイルに
+埋め込む。`baselines/` を直したら作り直す。作り直したものと埋め込んだものが一致することは
+試験が確かめる。
 
 取り込み元は拡張子から決まる。`.md` と `.markdown` は Markdown、`.html` と `.htm` は HTML で、
 ほかの拡張子は断る（フォルダの中なら読まずに飛ばす）。
