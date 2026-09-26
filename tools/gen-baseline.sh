@@ -11,6 +11,15 @@ set -u
 
 OUT=${1:-baselines}
 MODEL=${KAKIBURI_BASELINE_MODEL:-sonnet}
+# 文体は必ず指定する。 指定しなければ LLM は常体に寄り、敬体で書く人の床が
+# 敬体の機械文より下に来る——題材の近い機械の草稿が通ってしまう。
+# 同じ題材を両方の文体で持ち、build が本人の文体に合う側を選ぶ。
+REGISTER=${KAKIBURI_BASELINE_REGISTER:-dearu}
+case "$REGISTER" in
+  dearu) STYLE='だ・である調で書く'; SUFFIX='' ;;
+  desu) STYLE='です・ます調で書く'; SUFFIX='-desu' ;;
+  *) echo "KAKIBURI_BASELINE_REGISTER は dearu か desu" >&2; exit 64 ;;
+esac
 mkdir -p "$OUT"
 
 # 題材は「登場する物」まで書く。題名だけを渡した LLM は固有名詞をほとんど
@@ -21,7 +30,7 @@ while IFS='|' read -r id title things len; do
   # 目盛りが作れない——重なり ÷ それぞれの範囲が両方 0.5 以上要る
   # （crates/kakiburi-scale/src/lib.rs の length_range_ok）。
   len=${len:-3,000}
-  f="$OUT/$id.md"
+  f="$OUT/$id$SUFFIX.md"
   if [ -s "$f" ]; then
     echo "skip ${id} : 既にある" >&2
     continue
@@ -39,12 +48,16 @@ while IFS='|' read -r id title things len; do
 条件:
 - コードブロックは書かない。設定やコマンドは文章で説明する
 - 前置きや後書きは不要。記事本文だけを出力する
-- 日本語の技術ブログ記事として書く"
+- 日本語の技術ブログ記事として書く
+- $STYLE"
 
   # <strong>標準入力を塞ぐ。</strong> 塞がないと claude が題材表の残りを読み、
   # ループが 1 周で終わる。
   if out=$(claude -p --model "$MODEL" "$prompt" </dev/null 2>/dev/null) && [ -n "$out" ]; then
     printf '%s\n' "$out" >"$f"
+    # **全体をコードブロックで包んで返すことがある。** 包まれたままだと地の文が
+    # 0 字になって断られるので、外側の囲みだけを外す。
+    perl -0pi -e 's/\A```(?:markdown|md)?\n(.*)\n```\s*\z/$1\n/s' "$f"
     n=$(perl -CSD -Mutf8 -e 'local $/; my $t = <>; $t =~ s/\s//g; print length $t' "$f")
     echo "ok   ${id} : ${n} 字" >&2
   else
