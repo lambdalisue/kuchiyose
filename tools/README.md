@@ -83,21 +83,19 @@ perl tools/checklinks.pl .
 nix develop --command cargo test
 nix develop --command cargo clippy --all-targets
 
-kakiburi new    <カセット> --scene <場面>
-kakiburi add    <カセット> <ファイル...> --source <取り込み元> --as person
-kakiburi build  <カセット>
-kakiburi review <ファイル> --cassette <カセット>
-kakiburi measure <ファイル>
+kakiburi build   <本人の記事のフォルダ> [--baseline <フォルダ>] [--other <フォルダ>]
+kakiburi decide  <カセット> boilerplate <文字列...>
+kakiburi review  <ファイル> --cassette <カセット> [--own-writing shown|not-shown|unknown]
+kakiburi measure <ファイル> [--cassette <カセット>]
+kakiburi compare <ファイル>... [--cassette <カセット>]
+kakiburi doctor  <カセット>
 kakiburi metrics
 ```
 
-<strong>形態素解析は辞書を指したときだけ動く。</strong> 環境変数 `KAKIBURI_UNIDIC` に
-[UniDic](https://clrd.ninjal.ac.jp/unidic/) の経路を渡す。指さなければ、それを要る系統と
-指標は<strong>測らない</strong>——0 を返さない。
+取り込み元は拡張子から決まる。`.md` と `.markdown` は Markdown、`.html` と `.htm` は HTML で、
+ほかの拡張子は断る（フォルダの中なら読まずに飛ばす）。
 
-```
-KAKIBURI_UNIDIC=/path/to/unidic-mecab-2.1.2_bin kakiburi build <カセット>
-```
+形態素解析器と辞書は実行ファイルに同梱してある（Lindera と UniDic 2.1.2）。用意するものは無い。
 
 <strong>実装が仕様の穴を 11 個見つけた</strong>。
 最初の試験で `・` が Katakana ブロックの中にあることが出て、実際の記事に当てたら
