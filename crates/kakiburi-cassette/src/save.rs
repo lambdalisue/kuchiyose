@@ -1,6 +1,6 @@
 //! カセットをファイルへ置き換える。**壊さないことを優先する。**
 //!
-//! カセットは[原本](crate::Corpus)を含む。失えば戻らないものを、毎回の書き込みで
+//! カセットは[原本](crate::Tuning)を含む。失えば戻らないものを、毎回の書き込みで
 //! 上書きしている。**途中で落ちれば、そこで終わる。**
 //!
 //! # 前提
@@ -304,8 +304,8 @@ pub fn save(path: impl AsRef<Path>, c: &Cassette, expected: Option<u64>) -> Resu
 pub fn generation_of(path: impl AsRef<Path>) -> u64 {
     fs::read(path)
         .ok()
-        .and_then(|b| store::read(&b).ok())
-        .map_or(0, |c| c.generation)
+        .and_then(|b| store::read_originals(&b).ok())
+        .map_or(0, |o| o.generation)
 }
 
 /// 残った一時ファイルを片づける。**錠を取ってからにする。**
@@ -334,8 +334,11 @@ fn verify(tmp: &Path, expected: &Cassette) -> Result<(), SaveError> {
     if got.scene != expected.scene {
         return Err(SaveError::Verify("場面が戻らない".into()));
     }
-    if got.decided != expected.decided {
-        return Err(SaveError::Verify("人が決めたことが戻らない".into()));
+    if got.tuning != expected.tuning {
+        return Err(SaveError::Verify("調整が戻らない".into()));
+    }
+    if got.stats != expected.stats {
+        return Err(SaveError::Verify("統計値が戻らない".into()));
     }
     if got.generation != expected.generation {
         return Err(SaveError::Verify("世代が戻らない".into()));
@@ -359,47 +362,9 @@ mod tests {
 
     /// 置き換えを試すための、いちばん小さいカセット。
     fn cassette() -> Cassette {
-        use crate::{Baseline, Decided, Derived, Fingerprint, Inputs, Normalization, Tool};
-        use std::collections::BTreeMap;
-        let baseline = Baseline {
-            model: "m".into(),
-            version: "v".into(),
-            params: BTreeMap::new(),
-            topics: vec!["t".into()],
-        };
-        Cassette {
-            version: store::VERSION,
-            generation: 0,
-            fingerprint: Fingerprint::build(Inputs {
-                common: crate::Common {
-                    metric_definitions: "試験".into(),
-                    unit_definitions: "試験".into(),
-                    morphology: Tool::unused(),
-                    dependency: Tool::unused(),
-                    compressor: Tool::unused(),
-                    external_tables: BTreeMap::new(),
-                    normalization: Normalization {
-                        sources: vec!["markdown".into()],
-                        implementation: "kakiburi-normalize".into(),
-                        version: "0.0.0".into(),
-                        mapping: BTreeMap::new(),
-                    },
-                    settings: BTreeMap::new(),
-                },
-                scene: crate::SceneInputs {
-                    baseline: baseline.clone(),
-                    ..crate::SceneInputs::default()
-                },
-            }),
-            provisional: vec![],
-            scene: "試験".into(),
-            decided: Decided {
-                boilerplate: vec![],
-                baseline,
-                movement: BTreeMap::new(),
-            },
-            derived: Derived::dropped(),
-        }
+        let mut c = store::tests::cassette();
+        c.generation = 0;
+        c
     }
 
     #[test]

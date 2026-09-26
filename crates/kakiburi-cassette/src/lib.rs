@@ -1,129 +1,71 @@
-//! カセット。1 人の 1 場面ぶんの目盛りである。
+//! カセット。1 つのフォルダの文書を測った統計値と、人が決めた調整を収める。
 //!
 //! | | |
 //! | --- | --- |
-//! | `decided/` | 人が決めたこと。作り直せない |
-//! | `derived/` | 派生物。素材から作り直せる |
+//! | `tuning.json` | 調整。作り直せない原本である |
+//! | `stats/` | 統計値。素材のフォルダから作り直せる |
 //!
-//! 本文は持たない（[素材を正本にする](../../../docs/spec/200-extract.md#素材を正本にする)）。
-//! 素材のフォルダが原本で、カセットはそこから作った目盛りだけを持つ。
+//! 本文も目盛りも持たない（[何を収めるか](../../../docs/design/100-cassette.md#何を収めるか)）。
+//! 統計値はテキストとして抱えるだけで、形を知らない
+//! （[理由](../../../docs/design/000-architecture.md#カセットは中身の形を知らない)）。
 //!
 //! 1 カセットが 1 場面である（[場面ごとに閉じる](../../../docs/spec/010-strategy.md#場面ごとに閉じる)）。
-//! 入れ物が境界そのものなので、場面を跨いだ目盛りは書けない。
 
 pub mod fingerprint;
 pub mod json;
 pub mod save;
+pub mod sha256;
 pub mod store;
+pub mod tuning;
 pub mod zip;
 
-use std::collections::BTreeMap;
-
-pub use fingerprint::{Baseline, Common, Fingerprint, Inputs, Normalization, SceneInputs, Tool};
-
-/// 単位の役。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Role {
-    /// 本人の文書。
-    Person,
-    /// 基準。LLM の既定出力。
-    BaselineOutput,
-    /// 他人の文書。無くてよい。
-    Other,
-}
-
-impl Role {
-    /// ディレクトリの名前。
-    #[must_use]
-    pub fn dir(self) -> &'static str {
-        match self {
-            Role::Person => "person",
-            Role::BaselineOutput => "baseline",
-            Role::Other => "other",
-        }
-    }
-}
+pub use fingerprint::{Fingerprint, Inputs, Normalization, Tool};
+pub use tuning::{MuteKind, Register, Tuning};
 
 /// 場面の名前として使えるか。
 ///
 /// 空を断る——空の場面は「場面を決めていない」と見分けが付かない。
-/// 1 カセットが 1 場面になって保存の中の階層名ではなくなったので、
-/// `/` は断らない。
 #[must_use]
 pub fn scene_name_ok(scene: &str) -> bool {
     !scene.trim().is_empty()
 }
 
-/// 人が決めたこと。作り直せない原本である。
-///
-/// 場面は持たない。 どの場面のものかは[カセット](Cassette::scene)が言う——
-/// 2 か所に置けば、食い違ったときに正本が決まらない。
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Decided {
-    /// 落とす定型。
-    pub boilerplate: Vec<String>,
-    /// 基準の作り方。
-    pub baseline: Baseline,
-    /// 指示して動くか。直させてみて初めて分かる。
-    ///
-    /// 書いていない指標は「未知」で、前に出す指標に入る。
-    pub movement: BTreeMap<String, Movement>,
+/// 統計値。形を知らないテキストのまま持つ。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Stats {
+    /// 文書ごとの統計値。1 行が 1 文書の JSON である。
+    pub documents: String,
+    /// 語のまとめ方。JSON である。
+    pub lexicon: String,
 }
 
-/// 指示して動くか。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Movement {
-    /// 動く。
-    Moves,
-    /// 動かないと分かった。前に出す指標から外れる。
-    Stuck,
-}
-
-/// 派生物。いつでも捨ててよい。
-///
-/// 型が `Option` なのは「まだ作っていない」を表すためである。捨てられることが
-/// 型に出ている。
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Derived {
-    /// 固定した語彙。
-    pub vocabulary: Option<String>,
-    /// 単位 × 指標の値。
-    pub values: Option<String>,
-    /// 幅・出現割合。
-    pub spread: Option<String>,
-    /// 相手集合の割り、重み。
-    pub calibration: Option<String>,
-    /// 天井・床・帯。
-    pub scale: Option<String>,
-    /// 効く指標、前に出す指標。
-    pub effective: Option<String>,
-    /// 言い回し → 本人の上限。本文の代わりである。
-    ///
-    /// [繰り返せと言うなら上限も言う](../../../docs/spec/300-revise.md#繰り返せと言うなら上限も言う)
-    /// は、どの言い回しを訊かれるかが検めるまで決まらないので、本文を走査していた。
-    /// 2 つ以上の単位に現れる言い回しと上限だけに畳む。
-    pub phrases: Option<String>,
-}
-
-impl Derived {
-    /// 全部捨てる。
+impl Stats {
+    /// `stats/` の中の名前と中身。名前の昇順。
     #[must_use]
-    pub fn dropped() -> Self {
-        Self::default()
+    pub fn entries(&self) -> [(&'static str, &str); 2] {
+        [
+            (store::DOCUMENTS, self.documents.as_str()),
+            (store::LEXICON, self.lexicon.as_str()),
+        ]
     }
 
-    /// 目盛りができているか。
+    /// 中身のハッシュ。基準として渡したときに、どの基準かを名指す。
     ///
-    /// できていないカセットは正常な状態である。 素材が足りずに作れなかったのは
-    /// 異常ではなく、検めが判定できないを返す。
+    /// テキストのまま取る。 形を知らなくても取れる。名前と長さも混ぜる——
+    /// 片方の末尾をもう片方の先頭へ移しただけで同じハッシュにならないようにする。
     #[must_use]
-    pub fn has_scale(&self) -> bool {
-        self.scale.is_some()
+    pub fn content_hash(&self) -> String {
+        let mut h = sha256::Sha256::default();
+        for (name, body) in self.entries() {
+            h.update(format!("{name}\t{}\n", body.len()));
+            h.update(body);
+        }
+        format!("sha256:{}", h.hex())
     }
 }
 
 /// カセット。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cassette {
     /// 版。
     pub version: u32,
@@ -134,119 +76,58 @@ pub struct Cassette {
     /// 確かめて防ぐ。
     ///
     /// [指紋](Fingerprint)では検出できない。 指紋は測った条件を表すもので、
-    /// 本文を差し替えても条件が同じなら変わらない。
+    /// 調整を書き換えても変わらない。
     pub generation: u64,
-    /// 指紋。道具・実装・定義の版・取り込み元・語彙・z 得点。
-    pub fingerprint: Fingerprint,
-    /// 暫定値が立っている箇所。
-    ///
-    /// 空でないカセットは、判定に但し書きが付く。 いまは常に立つ。
-    pub provisional: Vec<String>,
-    /// この目盛りが何の場面のものか。
-    ///
-    /// 1 カセットが 1 場面である（[決定](../../../docs/spec/010-strategy.md#場面ごとに閉じる)）。
-    /// 入れ物が境界そのものなので、場面を跨いだ目盛りは書けない。
+    /// この統計値が何の場面のものか。名札である。
     ///
     /// 名前は人が付ける。中身と合っている保証は無い——だから
     /// [検めるたびに名乗る](../../../docs/spec/300-revise.md#場面を指定させる)。
-    /// 道具が当てにいくためのものではない。
     pub scene: String,
-    /// 人が決めたこと。作り直せない原本である。
-    pub decided: Decided,
-    /// 派生物。素材から作り直せる。
-    pub derived: Derived,
+    /// 指紋の材料のうち、道具の部分。
+    pub inputs: Inputs,
+    /// 調整。作り直せない原本である。
+    pub tuning: Tuning,
+    /// 統計値。素材から作り直せる。
+    pub stats: Stats,
 }
 
 impl Cassette {
-    /// 前に出す指標から外すか。
-    ///
-    /// 書いていなければ「未知」で、前に出す指標に入る。 動かないと分かるまでは使う。
+    /// 新しく作る。世代は 0 で、書けば 1 になる。
     #[must_use]
-    pub fn is_stuck(&self, metric: &str) -> bool {
-        self.decided.movement.get(metric) == Some(&Movement::Stuck)
+    pub fn new(scene: impl Into<String>, inputs: Inputs, stats: Stats, tuning: Tuning) -> Self {
+        Self {
+            version: store::VERSION,
+            generation: 0,
+            scene: scene.into(),
+            inputs,
+            tuning,
+            stats,
+        }
     }
 
-    /// 派生物を捨てる。決めたことは残る。
-    pub fn drop_derived(&mut self) {
-        self.derived = Derived::dropped();
+    /// 指紋。道具の部分と、統計値の中身のハッシュから作る。
+    ///
+    /// 持たずに毎回作る。 持てば、統計値を差し替えたのに指紋を作り直し忘れる道が開く。
+    #[must_use]
+    pub fn fingerprint(&self) -> Fingerprint {
+        Fingerprint::build(self.inputs.clone(), self.stats.content_hash())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    fn cassette() -> Cassette {
-        Cassette {
-            version: store::VERSION,
-            generation: 0,
-            fingerprint: Fingerprint::build(Inputs {
-                common: Common {
-                    metric_definitions: "51 本".into(),
-                    unit_definitions: "版 1".into(),
-                    morphology: Tool::unused(),
-                    dependency: Tool::unused(),
-                    compressor: Tool::unused(),
-                    external_tables: BTreeMap::new(),
-                    normalization: Normalization {
-                        sources: vec!["markdown".into()],
-                        implementation: "kakiburi-normalize".into(),
-                        version: "0.0.0".into(),
-                        mapping: BTreeMap::new(),
-                    },
-                    settings: BTreeMap::new(),
-                },
-                scene: SceneInputs::default(),
-            }),
-            provisional: vec!["除外の既定".into()],
-            scene: "技術記事".into(),
-            decided: Decided {
-                boilerplate: vec![],
-                baseline: Baseline {
-                    model: "m".into(),
-                    version: "v".into(),
-                    params: BTreeMap::new(),
-                    topics: vec!["t".into()],
-                },
-                movement: [("笑い".to_owned(), Movement::Stuck)].into(),
-            },
-            derived: Derived {
-                scale: Some("天井と床".into()),
-                ..Derived::default()
-            },
+
+    fn stats() -> Stats {
+        Stats {
+            documents: "{\"unit\":\"a\"}\n".into(),
+            lexicon: "{\"pairs\":[]}".into(),
         }
-    }
-
-    #[test]
-    fn 派生物を捨てても決めたことは残る() {
-        let mut c = cassette();
-        assert!(c.derived.has_scale());
-        c.drop_derived();
-        assert!(!c.derived.has_scale());
-        assert!(c.decided.movement.contains_key("笑い"), "決めたことは残る");
-    }
-
-    #[test]
-    fn 目盛りが無いカセットは正常な状態である() {
-        // 素材が足りずに作れなかったのは異常ではない。
-        let mut c = cassette();
-        c.drop_derived();
-        assert!(!c.derived.has_scale());
-    }
-
-    #[test]
-    fn 書いていない指標は未知で前に出す() {
-        // 動かないと分かるまでは使う。
-        let c = cassette();
-        assert!(c.is_stuck("笑い"), "stuck と書いてある");
-        assert!(!c.is_stuck("全角括弧"), "書いていなければ未知");
     }
 
     #[test]
     fn 場面の名前は空を断る() {
         // 空の場面は「場面を決めていない」と見分けが付かない。
-        // **入れ物の中の階層名ではなくなったので、`/` は断らない。**
         assert!(scene_name_ok("技術記事"));
         assert!(scene_name_ok("技術/記事"));
         assert!(!scene_name_ok(""));
@@ -254,15 +135,42 @@ mod tests {
     }
 
     #[test]
-    fn 暫定値が立っていることを持つ() {
-        let c = cassette();
-        assert!(!c.provisional.is_empty());
+    fn 中身のハッシュは統計値だけから決まる() {
+        let a = stats();
+        assert_eq!(a.content_hash(), stats().content_hash());
+        assert!(a.content_hash().starts_with("sha256:"));
+        let mut b = stats();
+        b.documents.push(' ');
+        assert_ne!(a.content_hash(), b.content_hash());
     }
 
     #[test]
-    fn 役のディレクトリ名は仕様どおり() {
-        assert_eq!(Role::Person.dir(), "person");
-        assert_eq!(Role::BaselineOutput.dir(), "baseline");
-        assert_eq!(Role::Other.dir(), "other");
+    fn 中身のハッシュは既知の値に固定されている() {
+        // 取り方を変えれば、同じ基準を名指していた過去の出力と比べられなくなる。
+        // 変えるなら、ここを書き換えることで気付く。
+        assert_eq!(
+            Stats::default().content_hash(),
+            format!(
+                "sha256:{}",
+                sha256::hex("stats/documents.jsonl\t0\nstats/lexicon.json\t0\n")
+            )
+        );
+        assert_eq!(
+            Stats::default().content_hash(),
+            "sha256:f19b76cf07a8f69b60ae75842d6585415cf8afb873e28b06e56c214b3c248e9a"
+        );
+    }
+
+    #[test]
+    fn 境目を動かしただけでは同じハッシュにならない() {
+        let a = Stats {
+            documents: "ab".into(),
+            lexicon: "c".into(),
+        };
+        let b = Stats {
+            documents: "a".into(),
+            lexicon: "bc".into(),
+        };
+        assert_ne!(a.content_hash(), b.content_hash());
     }
 }

@@ -97,10 +97,16 @@ impl Value {
             Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
             Value::Number(n) => {
                 // 整数は整数として書く。 `1` と `1.0` でバイトが変わる。
+                //
+                // ほかは読み戻して同じ値になる最短の桁で書く。 桁を固定すると
+                // `0.42` が `4.20000000000000018e-1` になり、統計値が倍の大きさになる。
+                // 桁の多い端だけ指数で書く——`1e-20` を 0 を並べて書かない。
                 if n.fract() == 0.0 && n.abs() < 1e15 {
                     out.push_str(&format!("{}", *n as i64));
+                } else if (1e-6..1e15).contains(&n.abs()) {
+                    out.push_str(&format!("{n}"));
                 } else {
-                    out.push_str(&format!("{n:.17e}"));
+                    out.push_str(&format!("{n:e}"));
                 }
             }
             Value::String(s) => escape(s, out),
@@ -311,12 +317,20 @@ impl Parser {
         }
         loop {
             self.skip_ws();
+            let at = self.at;
             let k = self.string()?;
             self.skip_ws();
             self.eat(':')?;
             self.skip_ws();
             let v = self.value()?;
-            out.insert(k, v);
+            // 同じ鍵を 2 度許さない。 どちらを拾うかは読み手によって違い、
+            // `version` が 2 つある manifest は読み手ごとに別のカセットになる。
+            if out.insert(k.clone(), v).is_some() {
+                return Err(ParseError {
+                    detail: format!("同じ鍵が 2 度現れる: {k}"),
+                    at,
+                });
+            }
             self.skip_ws();
             match self.chars.get(self.at) {
                 Some(',') => self.at += 1,
@@ -371,9 +385,23 @@ mod tests {
 
     #[test]
     fn 小数は桁を落とさない() {
-        let v = Value::Number(0.1);
-        let back = parse(&v.write()).unwrap();
-        assert_eq!(back.as_f64(), Some(0.1));
+        for x in [
+            0.1,
+            0.42,
+            1.0 / 3.0,
+            -2.5e-9,
+            1.234_567_890_123_456_7e-300,
+            6.02e23,
+        ] {
+            let back = parse(&Value::Number(x).write()).unwrap();
+            assert_eq!(back.as_f64(), Some(x), "{x}");
+        }
+    }
+
+    #[test]
+    fn 小数は最短の桁で書く() {
+        assert_eq!(Value::Number(0.42).write(), "0.42");
+        assert_eq!(Value::Number(1e-20).write(), "1e-20");
     }
 
     #[test]
@@ -417,6 +445,17 @@ mod tests {
         for bad in ["{", "[1,", r#"{"a"}"#, r#""閉じない"#, "{}extra", "nul"] {
             assert!(parse(bad).is_err(), "{bad} が読めてしまった");
         }
+    }
+
+    #[test]
+    fn 同じ鍵が_2_度現れたら読まない() {
+        // どちらを拾うかは読み手によって違う。
+        let e = parse(r#"{"version":5,"a":{"b":1},"version":4}"#).unwrap_err();
+        assert!(e.to_string().contains("version"), "{e}");
+        assert!(
+            parse(r#"{"a":{"b":1,"b":2}}"#).is_err(),
+            "入れ子の中でも断る"
+        );
     }
 
     #[test]

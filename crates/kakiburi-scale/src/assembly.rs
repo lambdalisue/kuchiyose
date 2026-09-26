@@ -13,12 +13,18 @@
 //! 本人の欄の統計値だけが相手集合・天井・幅・型の本人の側になり、基準の欄の
 //! 統計値だけが較正の違う人の側・床・基準の型の側になる。
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
+
 use crate::assemble::{build, matching_of_unit, Measurements, Report, Units};
 use crate::bundle::{bundle_plans, measurable_length, try_plans, Attempt};
 use crate::effective::{self, Effective, Row};
 use crate::select::{select_baseline, Register, RegisterFilter};
 use crate::self_check::{measured_in_self_check, SelfCheck, Side};
-use crate::stats::{bundle_name, compose, compose_directives, CassetteStats, DocumentStats};
+use crate::stats::{
+    bundle_key, bundle_name, compose, compose_directives, display_name, CassetteStats,
+    DocumentStats,
+};
 use crate::{Scale, ScaleError};
 
 /// 本人のカセットの調整のうち、組み立てに効くもの。
@@ -39,6 +45,10 @@ pub struct Built {
     pub effective: Vec<Effective>,
     /// 本人がいちばん高く出るか。照合値を出せる単位が片側に 1 本も無ければ `None`。
     pub self_check: Option<SelfCheck>,
+    /// 本人の[言い回しの上限](CassetteStats::phrase_ceilings)。
+    ///
+    /// 草稿が繰り返している言い回しに、本人の上限を添えるのに使う。
+    pub phrase_ceilings: BTreeMap<String, f64>,
 }
 
 /// 目盛りを作らずに止まった。止まっても失敗ではない。
@@ -59,9 +69,13 @@ pub struct Assembly {
     pub register: RegisterFilter,
     /// 題材で選んだ基準の文書の名前。単位名の昇順。
     pub picked: Vec<String>,
+    /// 長さの範囲で断られて、基準の文書を選び直したときの長さの窓。地の文の字数。
+    ///
+    /// 窓は本人の測れそうな記事の最短から最長までである。選び直さなければ `None`。
+    pub length_window: Option<RangeInclusive<usize>>,
     /// 最後に試した束ね方。束ねた単位ごとに、中の文書の名前を束の中の並びで持つ。
     pub bundles: Vec<Vec<String>>,
-    /// 試した束ね方の数。長さで断られたときだけ次の案を試す。
+    /// 試した束ね方の数。長さで断られたときだけ次の案を試す。選び直す前の分も数える。
     pub tried: usize,
     /// 目盛りか、止まった理由。
     pub outcome: Result<Built, Stopped>,
@@ -72,6 +86,11 @@ pub struct Assembly {
 /// 2 つのカセットをまたいで同じ名前があってもよい。単位は役と名前の組で
 /// 決まる。組み立ては名前で値を引くので、基準の側だけ役を名前に入れて重ならない
 /// ようにし、組み立てが終わったら外す。
+///
+/// 本人の側の名前がこの前置で始まれば、前置した基準の名前と重なりうる。
+/// 重なりは[組み立て](crate::assemble)が `ScaleError::DuplicateName` で断るので、
+/// 値が黙って置き換わることはない。 型で役を持たせる手もあるが、組み立ての中は
+/// 名前を 1 つの文字列として引き回しているので、変える範囲が大きい。
 const BASELINE_ROLE: char = '\u{0}';
 
 /// 試した束ね方と、その結果。
@@ -81,14 +100,22 @@ fn baseline_key(name: &str) -> String {
     format!("{BASELINE_ROLE}{name}")
 }
 
+/// 組み立ての中の基準の名前を、見せる名前にする。役の前置を外し、束の繋ぎを `+` にする。
 fn baseline_name(key: &str) -> String {
-    key.strip_prefix(BASELINE_ROLE).unwrap_or(key).to_owned()
+    display_name(key.strip_prefix(BASELINE_ROLE).unwrap_or(key))
 }
 
 /// 2 つのカセットの統計値から目盛りを組み立てる。
 ///
 /// `by_appearance` は、指示できる指標のうち、効くかを使った割合で見るものを
 /// 言う。定義ファイルが決めるので、呼ぶ側が渡す。
+///
+/// どの束ね方も長さの範囲で断られたら、基準の文書を本人の長さの窓の中から
+/// 選び直して、もう一度試す。 題材の重なりは語彙の多い長い文書ほど大きく出るので、
+/// 題材で選んだ基準は長いほうへ寄る。 束ねれば長くなる一方なので、本人の記事が
+/// 選んだ基準より短いと、束ね方をいくら替えても届かない。 窓に入る文書が単位の
+/// 下限に届かなければ選び直さない——作れないことに変わりはなく、最初に断られた
+/// 理由のほうが素材の足りなさを正しく言う。
 #[must_use]
 pub fn assemble_stats(
     target: &CassetteStats,
@@ -96,17 +123,104 @@ pub fn assemble_stats(
     tuning: Tuning,
     by_appearance: &dyn Fn(&str) -> bool,
 ) -> Assembly {
-    let selection = select_baseline(target, baseline, tuning.register);
-    let picked = selection.picked;
-
     // 本人の最も長い記事は、測れそうな記事だけで取る。
     let person_lengths: Vec<usize> = target
         .documents
         .iter()
         .filter_map(|d| measurable_length(d.chars, d.commas))
         .collect();
+
+    let first = select_baseline(target, baseline, tuning.register, None);
+    // 読み戻す口でも断るが、組み立ては渡された統計値を信じない。 束ねてからでは、
+    // 同じ名前の 2 本が 1 つの束の中に入ったとき重なりが見えない。
+    for side in [target, baseline] {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        if let Some(d) = side.documents.iter().find(|d| !seen.insert(&d.name)) {
+            return Assembly {
+                register: first.register,
+                picked: Vec::new(),
+                length_window: None,
+                bundles: Vec::new(),
+                tried: 0,
+                outcome: Err(Stopped {
+                    error: ScaleError::DuplicateName(d.name.clone()),
+                    person: Vec::new(),
+                    baseline: Vec::new(),
+                }),
+            };
+        }
+    }
+    let mut round = try_selection(target, &person_lengths, first.picked);
+    let mut register = first.register;
+    let mut length_window = None;
+    if matches!(round.built, Err(ScaleError::LengthRange { .. })) {
+        if let Some(window) = window_of(&person_lengths) {
+            let again = select_baseline(target, baseline, tuning.register, Some(window.clone()));
+            if again.picked.len() >= crate::split::UNITS_FLOOR {
+                let tried = round.tried;
+                round = try_selection(target, &person_lengths, again.picked);
+                round.tried += tried;
+                register = again.register;
+                length_window = Some(window);
+            }
+        }
+    }
+
+    let Round {
+        picked,
+        groups,
+        built,
+        tried,
+    } = round;
+    let outcome = match built {
+        Ok(scale) => Ok(finish(scale, target, &groups, by_appearance)),
+        Err(error) => Err(Stopped {
+            error,
+            person: target
+                .documents
+                .iter()
+                .map(|d| compose(&[d]).report(&d.name))
+                .collect(),
+            baseline: groups
+                .iter()
+                .map(|g| compose(g).report(&bundle_name(g)))
+                .collect(),
+        }),
+    };
+    Assembly {
+        register,
+        picked: picked.iter().map(|d| d.name.clone()).collect(),
+        length_window,
+        bundles: groups
+            .iter()
+            .map(|g| g.iter().map(|d| d.name.clone()).collect())
+            .collect(),
+        tried,
+        outcome,
+    }
+}
+
+/// 本人の測れそうな記事の長さの範囲。1 本も無ければ `None`。
+fn window_of(person_lengths: &[usize]) -> Option<RangeInclusive<usize>> {
+    Some(*person_lengths.iter().min()?..=*person_lengths.iter().max()?)
+}
+
+/// 選んだ基準の文書で、束ね方を順に試した結果。
+struct Round<'a> {
+    picked: Vec<&'a DocumentStats>,
+    /// 最後に試した束ね方。
+    groups: Vec<Vec<&'a DocumentStats>>,
+    built: Result<Scale, ScaleError>,
+    tried: usize,
+}
+
+fn try_selection<'a>(
+    target: &CassetteStats,
+    person_lengths: &[usize],
+    picked: Vec<&'a DocumentStats>,
+) -> Round<'a> {
     let pool_lengths: Vec<usize> = picked.iter().map(|d| d.chars).collect();
-    let plans = bundle_plans(&person_lengths, &pool_lengths);
+    let plans = bundle_plans(person_lengths, &pool_lengths);
 
     let mut tried = 0usize;
     let mut last: Option<Tried<'_>> = None;
@@ -120,9 +234,8 @@ pub fn assemble_stats(
             person: person_units(target),
             baseline: groups
                 .iter()
-                .map(|g| (baseline_key(&bundle_name(g)), compose(g)))
+                .map(|g| (baseline_key(&bundle_key(g)), compose(g)))
                 .collect(),
-            others: Vec::new(),
             lexicon: target.lexicon.clone(),
         });
         let how = match &built {
@@ -146,30 +259,11 @@ pub fn assemble_stats(
             })),
         )
     });
-    let outcome = match built {
-        Ok(scale) => Ok(finish(scale, target, &groups, by_appearance)),
-        Err(error) => Err(Stopped {
-            error,
-            person: target
-                .documents
-                .iter()
-                .map(|d| compose(&[d]).report(&d.name))
-                .collect(),
-            baseline: groups
-                .iter()
-                .map(|g| compose(g).report(&bundle_name(g)))
-                .collect(),
-        }),
-    };
-    Assembly {
-        register: selection.register,
-        picked: picked.iter().map(|d| d.name.clone()).collect(),
-        bundles: groups
-            .iter()
-            .map(|g| g.iter().map(|d| d.name.clone()).collect())
-            .collect(),
+    Round {
+        picked,
+        groups,
+        built,
         tried,
-        outcome,
     }
 }
 
@@ -189,6 +283,27 @@ fn finish(
     groups: &[Vec<&DocumentStats>],
     by_appearance: &dyn Fn(&str) -> bool,
 ) -> Built {
+    // 自己検査は組み立ての中の名前で引く。 見せる名前では、束と同じ名前の文書が重なる。
+    let side = |role: Side, units: Vec<(String, Measurements)>| -> Vec<(String, f64)> {
+        units
+            .into_iter()
+            .filter(|(n, _)| measured_in_self_check(&scale, role, n))
+            .filter_map(|(n, m)| matching_of_unit(&scale, &m).map(|v| (n, v)))
+            .collect()
+    };
+    let mine = side(Side::Person, person_units(target));
+    let theirs: Vec<(String, f64)> = side(
+        Side::Baseline,
+        groups
+            .iter()
+            .map(|g| (baseline_key(&bundle_key(g)), compose(g)))
+            .collect(),
+    )
+    .into_iter()
+    .map(|(n, v)| (baseline_name(&n), v))
+    .collect();
+    let self_check = SelfCheck::of(&mine, &theirs);
+
     for names in [
         &mut scale.selection.baseline_partners,
         &mut scale.selection.baseline_points,
@@ -209,26 +324,11 @@ fn finish(
     let baseline_rows: Vec<Row> = groups.iter().map(|g| row(g)).collect();
     let effective = effective::judge(&person_rows, &baseline_rows, by_appearance);
 
-    let side = |role: Side, units: Vec<(String, Measurements)>| -> Vec<(String, f64)> {
-        units
-            .into_iter()
-            .filter(|(n, _)| measured_in_self_check(&scale, role, n))
-            .filter_map(|(n, m)| matching_of_unit(&scale, &m).map(|v| (n, v)))
-            .collect()
-    };
-    let mine = side(Side::Person, person_units(target));
-    let theirs = side(
-        Side::Baseline,
-        groups
-            .iter()
-            .map(|g| (bundle_name(g), compose(g)))
-            .collect(),
-    );
-    let self_check = SelfCheck::of(&mine, &theirs);
     Built {
         scale,
         effective,
         self_check,
+        phrase_ceilings: target.phrase_ceilings(),
     }
 }
 
@@ -240,7 +340,7 @@ mod tests {
     use kakiburi_metrics::lexicon::Lexicon;
     use kakiburi_metrics::morph::Analyzed;
 
-    use crate::assemble::{assemble, lexicon_of, measure_against, Material, Sample};
+    use crate::assemble::{lexicon_of, measure_against, Sample};
     use crate::select::{RegisterSource, POOL_TAKE};
     use crate::testing::{document, Chars, Fixture};
 
@@ -269,21 +369,14 @@ mod tests {
     }
 
     #[test]
-    fn 本人のまとめ方で測った統計値からは本文から組み立てた目盛りと同じ目盛りができる() {
+    fn 本人のまとめ方で測った統計値からは束ねずに組み立てた目盛りと同じ目盛りができる() {
         // 統計値の経路が正しいことの確かめである。 語のまとめ方を本人のもので揃え、
-        // 束ねない素材なら、本文から組み立てた目盛りとビットまで一致する。
+        // 束ねない素材なら、選ぶ段と束ねる段を通しても中身はビットまで一致する。
+        // 効くかの判定と自己検査は、本文から直接測った値と照らす。
         for n in [10, 14] {
             let m = Fixture::new(n);
             let (person, baseline) = (samples(&m.person), samples(&m.baseline));
-            let old = assemble(
-                Material {
-                    person: &person,
-                    baseline: &baseline,
-                    others: &[],
-                },
-                Some(&Chars),
-            )
-            .expect("目盛りができる");
+            let old = m.built(Some(&Chars)).expect("目盛りができる");
 
             let lexicon = lexicon_of(&person, Some(&Chars));
             let got = assemble_stats(
@@ -404,6 +497,48 @@ mod tests {
     }
 
     #[test]
+    fn 役を分ける前置と同じ名前が本人の側にあれば止まる() {
+        // 名前で値を引くので、重なれば片方の値がもう片方で黙って置き換わる。
+        // 読み戻す口でも断るが、組み立ては渡された統計値を信じない。
+        let m = Fixture::new(10);
+        let mut target = stats(&m.person);
+        for (d, (b, _)) in target.documents.iter_mut().zip(&m.baseline) {
+            d.name = baseline_key(b);
+        }
+        let a = assemble_stats(
+            &target,
+            &stats(&m.baseline),
+            Tuning::default(),
+            &by_appearance,
+        );
+        let stopped = a.outcome.expect_err("止まる");
+        assert!(
+            matches!(stopped.error, ScaleError::DuplicateName(_)),
+            "{}",
+            stopped.error
+        );
+    }
+
+    #[test]
+    fn 本人の側に同じ名前が_2_つあれば止まる() {
+        let m = Fixture::new(10);
+        let mut target = stats(&m.person);
+        target.documents[1].name = target.documents[0].name.clone();
+        let a = assemble_stats(
+            &target,
+            &stats(&m.baseline),
+            Tuning::default(),
+            &by_appearance,
+        );
+        let stopped = a.outcome.expect_err("止まる");
+        assert!(
+            matches!(stopped.error, ScaleError::DuplicateName(_)),
+            "{}",
+            stopped.error
+        );
+    }
+
+    #[test]
     fn 基準のカセットを替えても本人の側の割りは動かない() {
         // 本人の欄の統計値だけが相手集合と測る分になる。 基準を替えれば床と較正は動く。
         let m = Fixture::new(12);
@@ -458,6 +593,7 @@ mod tests {
         assert!(!bundled.is_empty(), "{:?}", a.bundles);
         let used: usize = a.bundles.iter().map(Vec::len).sum();
         assert_eq!(used, baseline.len(), "基準を余さず使う");
+        assert_eq!(a.length_window, None, "長い側は束ねて届かせる");
         if let Ok(b) = &a.outcome {
             let names: Vec<&String> = b
                 .scale
@@ -473,6 +609,75 @@ mod tests {
                 "束ねた単位の名前は中の名前を + で繋いだもの: {names:?}"
             );
         }
+    }
+
+    #[test]
+    fn 束の名前と同じ名前の文書が基準にあっても重ならない() {
+        // `a` と `b` の束を `a+b` で引けば、`a+b` という 1 本と重なって止まる。
+        let person: Vec<(String, Document)> = (0..10)
+            .map(|i| (format!("p{i:02}"), document(i * 3, false)))
+            .collect();
+        let baseline: Vec<(String, Document)> = (0..18)
+            .map(|i| (format!("b{i:02}"), document(i % 9, true)))
+            .collect();
+        let target = stats(&person);
+        let mut pool = stats(&baseline);
+        let before = assemble_stats(&target, &pool, Tuning::default(), &by_appearance);
+        let bundle = before
+            .bundles
+            .iter()
+            .find(|g| g.len() > 1)
+            .expect("束がある")
+            .clone();
+        let single = before
+            .bundles
+            .iter()
+            .find(|g| g.len() == 1)
+            .expect("束ねない 1 本がある")[0]
+            .clone();
+        let joined = bundle.join("+");
+        // 並びを変えないよう、統計値の上で名前だけ替える。
+        pool.documents
+            .iter_mut()
+            .find(|d| d.name == single)
+            .expect("ある")
+            .name
+            .clone_from(&joined);
+        let after = assemble_stats(&target, &pool, Tuning::default(), &by_appearance);
+        assert!(after.bundles.contains(&bundle), "{:?}", after.bundles);
+        assert!(
+            after.bundles.contains(&vec![joined.clone()]),
+            "{:?}",
+            after.bundles
+        );
+        if let Err(stopped) = &after.outcome {
+            assert!(
+                !matches!(stopped.error, ScaleError::DuplicateName(_)),
+                "{}",
+                stopped.error
+            );
+        }
+        assert_eq!(
+            before.outcome.is_ok(),
+            after.outcome.is_ok(),
+            "名前を替えただけで結果は変わらない"
+        );
+    }
+
+    #[test]
+    fn 基準の側に同じ名前が_2_つあれば束ねる前に止まる() {
+        // 同じ名前の 2 本が 1 つの束に入れば、束ねた後では重なりが見えない。
+        let m = Fixture::new(10);
+        let mut pool = stats(&m.baseline);
+        pool.documents[1].name = pool.documents[0].name.clone();
+        let a = assemble_stats(&stats(&m.person), &pool, Tuning::default(), &by_appearance);
+        let stopped = a.outcome.expect_err("止まる");
+        assert!(
+            matches!(stopped.error, ScaleError::DuplicateName(_)),
+            "{}",
+            stopped.error
+        );
+        assert_eq!(a.tried, 0, "束ね方を試さない");
     }
 
     #[test]
@@ -503,6 +708,105 @@ mod tests {
         let a = assemble_stats(&target, &pool, Tuning::default(), &by_appearance);
         let want: Vec<String> = many[..POOL_TAKE].iter().map(|(n, _)| n.clone()).collect();
         assert_eq!(a.picked, want, "重なりの多い順に {POOL_TAKE} 本");
+    }
+
+    #[test]
+    fn 長さで断られなければ選び直さない() {
+        // 窓で選び直すのは長さで断られたときだけである。 断られない本人には、
+        // これまでと同じ基準の文書を使う。
+        let m = Fixture::new(10);
+        let (target, baseline) = (stats(&m.person), stats(&m.baseline));
+        let a = assemble_stats(&target, &baseline, Tuning::default(), &by_appearance);
+        assert!(a.outcome.is_ok());
+        assert_eq!(a.length_window, None);
+        let before: Vec<String> = select_baseline(&target, &baseline, None, None)
+            .picked
+            .iter()
+            .map(|d| d.name.clone())
+            .collect();
+        assert_eq!(a.picked, before);
+    }
+
+    #[test]
+    fn 本人より短い基準を題材で選べないときは本人の長さの窓の中から選び直す() {
+        // 題材の重なりは語彙の多い長い文書ほど大きく出る。 本人の記事が短いと、
+        // 題材で選んだ基準が本人の最も長い記事より長くなり、束ねても長くなる
+        // 一方なので、どの束ね方も長さの範囲で断られる。
+        let person: Vec<(String, Document)> = (0..10)
+            .map(|i| (format!("p{i:02}"), document(i, false)))
+            .collect();
+        let long: Vec<(String, Document)> = (0..POOL_TAKE)
+            .map(|i| (format!("l{i:02}"), document(30 + i, true)))
+            .collect();
+        let short: Vec<(String, Document)> = (0..12)
+            .map(|i| (format!("s{i:02}"), document(i % 10, true)))
+            .collect();
+        let pool_docs: Vec<(String, Document)> = long.iter().chain(&short).cloned().collect();
+        let words = |v: &[&str]| {
+            v.iter()
+                .map(|w| (*w).to_owned())
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let mut target = stats(&person);
+        for d in &mut target.documents {
+            d.content_words = words(&["東京", "天気"]);
+        }
+        let mut pool = stats(&pool_docs);
+        for d in &mut pool.documents {
+            d.content_words = if d.name.starts_with('l') {
+                words(&["東京", "天気"])
+            } else {
+                words(&["東京"])
+            };
+        }
+        let first = select_baseline(&target, &pool, None, None);
+        assert!(
+            first.picked.iter().all(|d| d.name.starts_with('l')),
+            "題材では長い文書が選ばれる"
+        );
+
+        let a = assemble_stats(&target, &pool, Tuning::default(), &by_appearance);
+        let lengths: Vec<usize> = target
+            .documents
+            .iter()
+            .filter_map(|d| measurable_length(d.chars, d.commas))
+            .collect();
+        let (lo, hi) = (
+            *lengths.iter().min().expect("測れる"),
+            *lengths.iter().max().expect("測れる"),
+        );
+        assert_eq!(a.length_window, Some(lo..=hi));
+        let want: Vec<String> = short.iter().map(|(n, _)| n.clone()).collect();
+        assert_eq!(a.picked, want, "窓に入る文書だけから選ぶ");
+        assert!(a.tried > 1, "最初の選び方の束ね方も数える");
+        if let Err(s) = &a.outcome {
+            panic!("目盛りができない: {}", s.error);
+        }
+    }
+
+    #[test]
+    fn 窓に入る基準が下限に届かなければ最初の選び方の結果を返す() {
+        // 窓の中が単位の下限より少なければ、選び直しても目盛りは作れない。
+        // 長さで断られたことをそのまま言う。
+        let person: Vec<(String, Document)> = (0..10)
+            .map(|i| (format!("p{i:02}"), document(i, false)))
+            .collect();
+        let pool_docs: Vec<(String, Document)> = (0..12)
+            .map(|i| (format!("l{i:02}"), document(30 + i, true)))
+            .collect();
+        let a = assemble_stats(
+            &stats(&person),
+            &stats(&pool_docs),
+            Tuning::default(),
+            &by_appearance,
+        );
+        assert_eq!(a.length_window, None);
+        let stopped = a.outcome.expect_err("止まる");
+        assert!(
+            matches!(stopped.error, ScaleError::LengthRange { .. }),
+            "{}",
+            stopped.error
+        );
     }
 
     #[test]

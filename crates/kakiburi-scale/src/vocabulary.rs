@@ -96,18 +96,6 @@ impl Frozen {
         &self.sd
     }
 
-    /// 保存した派生物から組み立てる。
-    ///
-    /// 作り直しではない。[`Frozen::fit`]が全体から作ったものを読み戻す道である——
-    /// 長さが揃わなければ組み立てない。
-    #[must_use]
-    pub fn restore(dims: Vec<String>, mean: Vec<f64>, sd: Vec<f64>) -> Option<Self> {
-        if dims.len() != mean.len() || dims.len() != sd.len() {
-            return None;
-        }
-        Some(Self { dims, mean, sd })
-    }
-
     /// 数え上げを、固定した軸に投影する。
     ///
     /// 語彙も平均も標準偏差も作り直さない。 検めが呼ぶのはこれだけである。
@@ -246,12 +234,6 @@ impl FrozenSet {
     #[must_use]
     pub fn parts(&self) -> &[Frozen] {
         &self.parts
-    }
-
-    /// 部分から組み立てる。保存した派生物を読み戻す道である。
-    #[must_use]
-    pub fn from_parts(parts: Vec<Frozen>) -> Self {
-        Self { parts }
     }
 }
 
@@ -418,12 +400,6 @@ mod tests {
         ];
         let f = FrozenSet::fit(&all, &[None, None]);
         assert_eq!(f.parts()[0].dims(), ["あ"], "落とした単位の語は入らない");
-    }
-
-    #[test]
-    fn 読み戻しは長さが揃わなければ組み立てない() {
-        assert!(Frozen::restore(vec!["a".into()], vec![0.0], vec![1.0]).is_some());
-        assert!(Frozen::restore(vec!["a".into()], vec![], vec![1.0]).is_none());
     }
 
     #[test]

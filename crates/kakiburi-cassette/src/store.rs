@@ -1,54 +1,73 @@
-//! カセットを zip に落とし、読み戻す。
+//! カセットを zip に落とし、読み戻す（[中身](../../../docs/design/100-cassette.md#中身)）。
 //!
-//! 2 つのディレクトリが、そのまま 2 つの層である。`derived/` を丸ごと消しても、
-//! `decided/` と素材のフォルダがあれば同じものが作り直せる。
+//! ```text
+//! manifest.json              版・世代・場面の名前・指紋・中身のハッシュ
+//! tuning.json                調整（作り直せない）
+//! stats/documents.jsonl      文書ごとの統計値
+//! stats/lexicon.json         語のまとめ方
+//! ```
+//!
+//! 読むときは全部を検める。 容器・版・欄・JSON の重複鍵・中身のハッシュ・指紋・場面。
+//! 読める道はここの 1 本だけなので、どの口から読んでも同じ検査を通る
+//! （[同じ検査を通す](../../../docs/design/200-command.md#カセットを取る口は同じ検査を通す)）。
 
 use std::collections::BTreeMap;
 
 use crate::json::{self, Value};
+use crate::tuning::Tuning;
 use crate::zip::{self, Entries, ZipError};
-use crate::{
-    Baseline, Cassette, Common, Decided, Derived, Fingerprint, Inputs, Movement, Normalization,
-    SceneInputs, Tool,
-};
+use crate::{Cassette, Inputs, Normalization, Stats, Tool};
 
 /// いま書く版。
 ///
-/// 版は、形か意味が非互換に変わったときに上げる。
-/// 版 4 では[1 カセット 1 場面](../../../docs/design/100-cassette.md#1-カセット-1-場面)に
-/// なって場面ごとの階層が消え、[本文を持たなくなった](../../../docs/spec/200-extract.md#素材を正本にする)
-/// ——版 3 のカセットとは形が違う。
+/// 版は、形か意味が非互換に変わったときに上げる。 版 5 では目盛りを持たなくなり、
+/// 文書ごとの統計値と調整を持つ形になった——版 4 とは形が違う。
 ///
-/// 古い版を読む道は持たない。 原本は素材のフォルダなので作り直せる
-/// ——移し替える道を持つと、作り直せないものが増える。
-pub const VERSION: u32 = 4;
+/// 古い版を読む道も、移し替える道も持たない
+/// （[古いカセットは読み戻さない](../../../docs/design/100-cassette.md#古いカセットは読み戻さない)）。
+pub const VERSION: u32 = 5;
+
+/// 版・世代・場面・指紋。
+pub const MANIFEST: &str = "manifest.json";
+/// 調整。
+pub const TUNING: &str = "tuning.json";
+/// 文書ごとの統計値。
+pub const DOCUMENTS: &str = "stats/documents.jsonl";
+/// 語のまとめ方。
+pub const LEXICON: &str = "stats/lexicon.json";
 
 /// 読み書きできない理由。
+///
+/// 壊れている・知らない版・欠け・食い違いを別の理由として返す。 まとめると、
+/// 壊れたカセットと新しすぎるカセットが同じ顔になる——前者は作り直しで、後者は
+/// 道具の更新である。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreError {
-    /// zip として読めない。
+    /// zip として読めない。entry の名前の重複もここである。
     Zip(ZipError),
     /// 知らない版である。
-    ///
-    /// 壊れているとは別の理由で返す。 まとめると、壊れたカセットと新しすぎる
-    /// カセットが同じ顔になる——前者は作り直しで、後者は道具の更新である。
     UnknownVersion {
         /// カセットが名乗った版。
         found: u32,
         /// この道具が読める版。
         known: u32,
     },
-    /// JSON として読めない。
+    /// JSON として読めない。同じ鍵が 2 度現れたときもここである。
     Json {
         /// どのファイルか。
         file: String,
         /// 何が起きたか。
         detail: String,
     },
-    /// 欄が無い。
+    /// 欄が無いか、形が違う。
     Missing {
         /// どのファイルか。
         file: String,
+        /// どの欄か。
+        field: String,
+    },
+    /// 名乗った中身のハッシュか指紋が、中身と合わない。
+    Mismatch {
         /// どの欄か。
         field: String,
     },
@@ -62,7 +81,7 @@ impl std::fmt::Display for StoreError {
             // 言うと、古いカセットを持っている人が更新を待ち続ける。
             StoreError::UnknownVersion { found, known } if found < known => write!(
                 f,
-                "古い版のカセットである（版 {found}。いまは {known}）。素材から作り直す"
+                "古い版のカセットである（版 {found}。いまは {known}）。素材のフォルダから cassette build で作り直す"
             ),
             StoreError::UnknownVersion { found, known } => write!(
                 f,
@@ -72,6 +91,9 @@ impl std::fmt::Display for StoreError {
                 write!(f, "{file} が JSON として読めない: {detail}")
             }
             StoreError::Missing { file, field } => write!(f, "{file} に {field} が無い"),
+            StoreError::Mismatch { field } => {
+                write!(f, "manifest.json の {field} が中身と合わない。壊れている")
+            }
         }
     }
 }
@@ -88,506 +110,297 @@ impl From<ZipError> for StoreError {
 #[must_use]
 pub fn write(c: &Cassette) -> Vec<u8> {
     let mut e = Entries::new();
-    e.insert("manifest.json".into(), manifest(c).write().into_bytes());
-    e.insert(
-        "decided/boilerplate.json".into(),
-        Value::Array(c.decided.boilerplate.iter().map(Value::s).collect())
-            .write()
-            .into_bytes(),
-    );
-    e.insert(
-        "decided/baseline.json".into(),
-        baseline_json(&c.decided.baseline).write().into_bytes(),
-    );
-    e.insert(
-        "decided/movement.json".into(),
-        Value::obj(c.decided.movement.iter().map(|(k, v)| {
-            (
-                k.clone(),
-                Value::s(match v {
-                    Movement::Moves => "moves",
-                    Movement::Stuck => "stuck",
-                }),
-            )
-        }))
-        .write()
-        .into_bytes(),
-    );
-    for (name, body) in derived_files(&c.derived) {
-        e.insert(format!("derived/{name}"), body.into_bytes());
+    e.insert(MANIFEST.into(), manifest(c).write().into_bytes());
+    e.insert(TUNING.into(), c.tuning.to_json().write().into_bytes());
+    for (name, body) in c.stats.entries() {
+        e.insert(name.into(), body.as_bytes().to_vec());
     }
     zip::write(&e)
 }
 
-/// zip のバイトからカセットを読む。
-pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
+/// カセットの原本。作り直せないものだけである。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Originals {
+    /// 世代。
+    pub generation: u64,
+    /// 場面の名前。
+    pub scene: String,
+    /// 調整。
+    pub tuning: Tuning,
+}
+
+/// 原本だけを読む。統計値は読まない。
+///
+/// `cassette build` が作り直す前に使う。 統計値は素材から作り直せるので、
+/// `stats/` を丸ごと失ったカセットからも調整を引き継げなければならない
+/// （[作り直せることを試験する](../../../docs/design/300-test.md#作り直せることを試験する)）。
+///
+/// # Errors
+///
+/// 容器が壊れている、知らない版である、原本の欄が欠けているときに断る。
+pub fn read_originals(bytes: &[u8]) -> Result<Originals, StoreError> {
     let e = zip::read(bytes)?;
-    let manifest = read_json(&e, "manifest.json")?;
-    // 版を確かめる。 知らない版を「たぶん読める」と読んではいけない——
-    // 欠けた項目は空として通り、空と欠けの区別がそこで崩れる。
-    // そして崩れたことはエラーにならない。
-    let raw = manifest
-        .get("version")
-        .and_then(Value::as_f64)
-        .ok_or_else(|| missing("manifest.json", "version"))?;
-    // 整数として厳密に読む。丸めて通さない——`1.5` を版 1 として読めば、
-    // 名乗っていない形を名乗った形として扱うことになる。
-    if raw.fract() != 0.0 || raw < 0.0 || raw > f64::from(u32::MAX) {
-        return Err(StoreError::Json {
-            file: "manifest.json".into(),
-            detail: format!("version が整数でない: {raw}"),
-        });
-    }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let version = raw as u32;
+    let (_, originals) = originals(&e)?;
+    Ok(originals)
+}
+
+/// 版を確かめてから、原本の欄を読む。
+fn originals(e: &Entries) -> Result<(Value, Originals), StoreError> {
+    let manifest = read_json(e, MANIFEST)?;
+    let version = integer(&manifest, "version")?;
+    let version = u32::try_from(version).map_err(|_| StoreError::Json {
+        file: MANIFEST.into(),
+        detail: format!("version が読めない: {version}"),
+    })?;
+    // 知らない版を「たぶん読める」と読まない。 欠けた項目は空として通り、
+    // 空と欠けの区別がそこで崩れる。そして崩れたことはエラーにならない。
     if version != VERSION {
         return Err(StoreError::UnknownVersion {
             found: version,
             known: VERSION,
         });
     }
-    // 世代は欠けていてもよい。 世代を持たない頃のカセットは 0 から数え直す
-    // ——止めるほどのことではない。次に書いた時点で 1 になる。
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let generation = manifest
-        .get("generation")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0) as u64;
-    let provisional = manifest
-        .get("provisional")
-        .and_then(Value::as_array)
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
+    let generation = integer(&manifest, "generation")?;
 
-    // 場面は名乗りが正本である。 保存の中の階層ではなくなったので、
-    // 突き合わせる相手が無い——欠けていたら断る。空に丸めれば、どの場面の目盛りか
-    // 分からないまま検めが通る。
+    // 場面は名乗りが正本である。 空に丸めれば、どの場面のカセットか分からないまま
+    // 検めが通る。
     let scene = manifest
         .get("scene")
         .and_then(Value::as_str)
-        .ok_or_else(|| missing("manifest.json", "scene"))?
+        .ok_or_else(|| missing(MANIFEST, "scene"))?
         .to_owned();
     if !crate::scene_name_ok(&scene) {
-        return Err(StoreError::Json {
-            file: "manifest.json".into(),
-            detail: "scene が空である".into(),
-        });
+        return Err(missing(MANIFEST, "空でない scene"));
     }
 
-    // `decided/` の欠損を既定で埋めない。 書き出しは 3 つとも必ず出すので、
-    // 欠けていること自体が壊れている印である。 空で通せば、次に書いたときに
-    // 作り直せない判断が空として確定する——落ちるより悪い。
-    //
-    // 埋めてよいのは `derived/` だけである。あちらは作り直せる。
-    let baseline = read_decided_baseline(&read_json(&e, "decided/baseline.json")?, "decided/baseline.json")?;
-    let boilerplate = read_json(&e, "decided/boilerplate.json")?
-        .as_array()
-        .ok_or_else(|| missing("decided/boilerplate.json", "配列"))?
-        .iter()
-        .map(|v| {
-            v.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| missing("decided/boilerplate.json", "文字列"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let movement = {
-        let name = "decided/movement.json";
-        let Value::Object(m) = read_json(&e, name)? else {
-            return Err(missing(name, "対象"));
-        };
-        // 知らない値を捨てない。 捨てれば、`stuck` にしたはずの指標が
-        // 「未知」に戻って指摘に出続ける——書き換えたつもりのものが黙って戻る。
-        m.into_iter()
-            .map(|(k, v)| match v.as_str() {
-                Some("moves") => Ok((k, Movement::Moves)),
-                Some("stuck") => Ok((k, Movement::Stuck)),
-                _ => Err(missing(name, &format!("{k} が moves か stuck でない"))),
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?
-    };
-    let derived = Derived {
-        vocabulary: text_of(&e, "derived/vocabulary.json"),
-        values: text_of(&e, "derived/values.jsonl"),
-        spread: text_of(&e, "derived/spread.json"),
-        calibration: text_of(&e, "derived/calibration.json"),
-        scale: text_of(&e, "derived/scale.json"),
-        effective: text_of(&e, "derived/effective.json"),
-        phrases: text_of(&e, "derived/phrases.jsonl"),
-    };
-
-    Ok(Cassette {
-        version,
-        generation,
-        fingerprint: read_fingerprint(&manifest)?,
-        provisional,
-        scene,
-        decided: Decided {
-            boilerplate,
-            baseline,
-            movement,
+    // 調整を既定で埋めない。 空で通せば、次に書いたときに作り直せない判断が
+    // 空として確定する。
+    let tuning = Tuning::from_json(&read_json(e, TUNING)?).map_err(|t| StoreError::Json {
+        file: TUNING.into(),
+        detail: t.0,
+    })?;
+    Ok((
+        manifest,
+        Originals {
+            generation,
+            scene,
+            tuning,
         },
-        derived,
-    })
+    ))
 }
 
-fn derived_files(d: &Derived) -> Vec<(&'static str, String)> {
-    let mut out = Vec::new();
-    for (name, body) in [
-        ("vocabulary.json", &d.vocabulary),
-        ("values.jsonl", &d.values),
-        ("spread.json", &d.spread),
-        ("calibration.json", &d.calibration),
-        ("scale.json", &d.scale),
-        ("effective.json", &d.effective),
-        ("phrases.jsonl", &d.phrases),
-    ] {
-        if let Some(b) = body {
-            out.push((name, b.clone()));
-        }
+/// zip のバイトからカセットを読む。全部を検める。
+///
+/// # Errors
+///
+/// 容器が壊れている、知らない版である、欄が欠けている、中身と名乗りが合わない
+/// ときに断る。
+pub fn read(bytes: &[u8]) -> Result<Cassette, StoreError> {
+    // 版を見る前に容器を検める。 `manifest.json` が 2 つあれば、どちらの版を
+    // 見たかで挙動が変わる——重複は索引を読む段で断っている。
+    let e = zip::read(bytes)?;
+    let (
+        manifest,
+        Originals {
+            generation,
+            scene,
+            tuning,
+        },
+    ) = originals(&e)?;
+
+    let stats = Stats {
+        documents: text(&e, DOCUMENTS)?,
+        lexicon: text(&e, LEXICON)?,
+    };
+    // 形は知らないが、JSON として通ることと鍵が重ならないことは確かめる。
+    for (i, line) in stats.documents.lines().enumerate() {
+        json::parse(line).map_err(|err| StoreError::Json {
+            file: format!("{DOCUMENTS} の {} 行目", i + 1),
+            detail: err.to_string(),
+        })?;
     }
-    out
+    json::parse(&stats.lexicon).map_err(|err| StoreError::Json {
+        file: LEXICON.into(),
+        detail: err.to_string(),
+    })?;
+
+    let c = Cassette {
+        version: VERSION,
+        generation,
+        scene,
+        inputs: read_inputs(&manifest)?,
+        tuning,
+        stats,
+    };
+    // 名乗りを中身と照らす。 合わなければ、どこかが書き換えられている。
+    let fingerprint = c.fingerprint();
+    if manifest.get("content_hash").and_then(Value::as_str)
+        != Some(fingerprint.content_hash.as_str())
+    {
+        return Err(StoreError::Mismatch {
+            field: "content_hash".into(),
+        });
+    }
+    if manifest.get("fingerprint").and_then(Value::as_str) != Some(fingerprint.digest()) {
+        return Err(StoreError::Mismatch {
+            field: "fingerprint".into(),
+        });
+    }
+    Ok(c)
+}
+
+/// 整数として厳密に読む。丸めて通さない。
+///
+/// `5.5` を版 5 として読めば、名乗っていない形を名乗った形として扱うことになる。
+fn integer(v: &Value, key: &str) -> Result<u64, StoreError> {
+    let raw = v
+        .get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| missing(MANIFEST, key))?;
+    #[allow(clippy::cast_precision_loss)]
+    let ok = raw.fract() == 0.0 && raw >= 0.0 && raw <= u64::MAX as f64;
+    if !ok {
+        return Err(StoreError::Json {
+            file: MANIFEST.into(),
+            detail: format!("{key} が整数でない: {raw}"),
+        });
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok(raw as u64)
 }
 
 fn manifest(c: &Cassette) -> Value {
+    let f = c.fingerprint();
     #[allow(clippy::cast_precision_loss)]
     let generation = c.generation as f64;
     Value::obj([
         ("version".into(), Value::Number(f64::from(c.version))),
         ("generation".into(), Value::Number(generation)),
-        // 場面はここにしか無い。 保存の中の階層ではなくなったので、
-        // 突き合わせる相手も無い——ここが原本である。
         ("scene".into(), Value::s(&c.scene)),
-        (
-            "provisional".into(),
-            Value::Array(c.provisional.iter().map(Value::s).collect()),
-        ),
+        ("content_hash".into(), Value::s(&f.content_hash)),
+        ("fingerprint".into(), Value::s(f.digest())),
         // 材料を平文で残す。 ハッシュだけでは、何が変わったかが分からない。
-        (
-            "fingerprint_inputs".into(),
-            inputs_json(&c.fingerprint.inputs),
-        ),
+        ("fingerprint_inputs".into(), inputs_json(&c.inputs)),
     ])
+}
+
+fn strings(m: &BTreeMap<String, String>) -> Value {
+    Value::obj(m.iter().map(|(k, v)| (k.clone(), Value::s(v))))
 }
 
 fn inputs_json(i: &Inputs) -> Value {
-    let c = &i.common;
-    // 共通部分と場面の部分を、構造で分けて残す。 平文で並べるだけでは、
-    // 道具が変わったのか語彙が変わったのかを読み手が数えることになる。
+    let tool = |t: &Tool| {
+        Value::obj([
+            ("name".into(), Value::s(&t.name)),
+            ("version".into(), Value::s(&t.version)),
+            ("config".into(), strings(&t.config)),
+        ])
+    };
+    let n = &i.normalization;
     Value::obj([
+        ("metric_definitions".into(), Value::s(&i.metric_definitions)),
+        ("unit_definitions".into(), Value::s(&i.unit_definitions)),
+        ("morphology".into(), tool(&i.morphology)),
+        ("dependency".into(), tool(&i.dependency)),
+        ("compressor".into(), tool(&i.compressor)),
+        ("external_tables".into(), strings(&i.external_tables)),
         (
-            "common".into(),
+            "normalization".into(),
             Value::obj([
-                ("metric_definitions".into(), Value::s(&c.metric_definitions)),
-                ("unit_definitions".into(), Value::s(&c.unit_definitions)),
-                ("morphology".into(), tool_json(&c.morphology)),
-                ("dependency".into(), tool_json(&c.dependency)),
-                ("compressor".into(), tool_json(&c.compressor)),
                 (
-                    "external_tables".into(),
-                    Value::obj(
-                        c.external_tables
-                            .iter()
-                            .map(|(k, v)| (k.clone(), Value::s(v))),
-                    ),
+                    "sources".into(),
+                    Value::Array(n.sources.iter().map(Value::s).collect()),
                 ),
-                ("normalization".into(), normalization_json(&c.normalization)),
-                (
-                    "settings".into(),
-                    Value::obj(c.settings.iter().map(|(k, v)| (k.clone(), Value::s(v)))),
-                ),
+                ("implementation".into(), Value::s(&n.implementation)),
+                ("version".into(), Value::s(&n.version)),
+                ("mapping".into(), strings(&n.mapping)),
             ]),
         ),
-        ("scene".into(), {
-            let s = &i.scene;
-            Value::obj([
-                (
-                    "vocabulary".into(),
-                    Value::obj(s.vocabulary.iter().map(|(k, v)| {
-                        (k.clone(), Value::Array(v.iter().map(Value::s).collect()))
-                    })),
-                ),
-                (
-                    "selection".into(),
-                    Value::obj(s.selection.iter().map(|(k, v)| {
-                        (k.clone(), Value::Array(v.iter().map(Value::s).collect()))
-                    })),
-                ),
-                (
-                    "z_scores".into(),
-                    Value::obj(s.z_scores.iter().map(|(k, v)| {
-                        (
-                            k.clone(),
-                            Value::Array(
-                                v.iter()
-                                    .map(|(m, sd)| {
-                                        Value::Array(vec![Value::Number(*m), Value::Number(*sd)])
-                                    })
-                                    .collect(),
-                            ),
-                        )
-                    })),
-                ),
-                ("baseline".into(), baseline_json(&s.baseline)),
-                (
-                    "decided".into(),
-                    Value::obj(s.decided.iter().map(|(k, v)| (k.clone(), Value::s(v)))),
-                ),
-            ])
-        }),
+        ("measurement".into(), strings(&i.measurement)),
     ])
 }
 
-fn tool_json(t: &Tool) -> Value {
-    Value::obj([
-        ("name".into(), Value::s(&t.name)),
-        ("version".into(), Value::s(&t.version)),
-        (
-            "config".into(),
-            Value::obj(t.config.iter().map(|(k, v)| (k.clone(), Value::s(v)))),
-        ),
-    ])
-}
-
-fn normalization_json(n: &Normalization) -> Value {
-    Value::obj([
-        (
-            "sources".into(),
-            Value::Array(n.sources.iter().map(Value::s).collect()),
-        ),
-        ("implementation".into(), Value::s(&n.implementation)),
-        ("version".into(), Value::s(&n.version)),
-        (
-            "mapping".into(),
-            Value::obj(n.mapping.iter().map(|(k, v)| (k.clone(), Value::s(v)))),
-        ),
-    ])
-}
-
-fn baseline_json(b: &Baseline) -> Value {
-    Value::obj([
-        ("model".into(), Value::s(&b.model)),
-        ("version".into(), Value::s(&b.version)),
-        (
-            "params".into(),
-            Value::obj(b.params.iter().map(|(k, v)| (k.clone(), Value::s(v)))),
-        ),
-        // 題材は指紋に入る。 言葉づかいだけで帯が動く。
-        (
-            "topics".into(),
-            Value::Array(b.topics.iter().map(Value::s).collect()),
-        ),
-    ])
-}
-
-fn read_baseline(v: &Value) -> Result<Baseline, StoreError> {
-    Ok(Baseline {
-        model: v
-            .get("model")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned(),
-        version: v
-            .get("version")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_owned(),
-        params: read_map(v.get("params")),
-        topics: v
-            .get("topics")
-            .and_then(Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default(),
-    })
-}
-
-/// 人が決めた基準の作り方を読む。欄が欠けていたら断る。
+/// 指紋の材料を読む。欠けていれば断る。
 ///
-/// [指紋に写したほう](read_baseline)とは扱いが違う。 あちらは診断のための控えで、
-/// 欠けても作り直せる。こちらは作り直せない原本なので、空に丸めれば
-/// 次に書いたときにそこで確定する。
-///
-/// 空の値は正しい状態である。 場面を作っただけで基準をまだ入れていなければ、
-/// 4 つとも空で書かれる。断るのは欄そのものが無いときと、型が違うときである。
-fn read_decided_baseline(v: &Value, file: &str) -> Result<Baseline, StoreError> {
-    let text = |key: &str| -> Result<String, StoreError> {
+/// 空で読めば、照らしたときに「全部違う」と言うことになる——どれが本当に
+/// 変わったのかを名指せない。
+fn read_inputs(manifest: &Value) -> Result<Inputs, StoreError> {
+    const FILE: &str = "manifest.json の fingerprint_inputs";
+    let i = manifest
+        .get("fingerprint_inputs")
+        .ok_or_else(|| missing(MANIFEST, "fingerprint_inputs"))?;
+    let text = |v: &Value, key: &str| -> Result<String, StoreError> {
         v.get(key)
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .ok_or_else(|| missing(file, key))
+            .ok_or_else(|| missing(FILE, key))
     };
-    let Some(Value::Object(params)) = v.get("params") else {
-        return Err(missing(file, "params"));
+    let map = |v: &Value, key: &str| -> Result<BTreeMap<String, String>, StoreError> {
+        let Some(Value::Object(m)) = v.get(key) else {
+            return Err(missing(FILE, key));
+        };
+        m.iter()
+            .map(|(k, x)| {
+                x.as_str()
+                    .map(|s| (k.clone(), s.to_owned()))
+                    .ok_or_else(|| missing(FILE, &format!("{key}.{k} の文字列")))
+            })
+            .collect()
     };
-    let params = params
-        .iter()
-        .map(|(k, v)| {
-            v.as_str()
-                .map(|s| (k.clone(), s.to_owned()))
-                .ok_or_else(|| missing(file, &format!("params.{k} が文字列でない")))
+    let tool = |key: &str| -> Result<Tool, StoreError> {
+        let t = i.get(key).ok_or_else(|| missing(FILE, key))?;
+        Ok(Tool {
+            name: text(t, "name")?,
+            version: text(t, "version")?,
+            config: map(t, "config")?,
         })
-        .collect::<Result<_, _>>()?;
-    let topics = v
-        .get("topics")
-        .and_then(Value::as_array)
-        .ok_or_else(|| missing(file, "topics"))?
-        .iter()
-        .map(|x| {
-            x.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| missing(file, "topics の中身が文字列でない"))
-        })
-        .collect::<Result<_, _>>()?;
-    Ok(Baseline {
-        model: text("model")?,
-        version: text("version")?,
-        params,
-        topics,
+    };
+    let n = i
+        .get("normalization")
+        .ok_or_else(|| missing(FILE, "normalization"))?;
+    Ok(Inputs {
+        metric_definitions: text(i, "metric_definitions")?,
+        unit_definitions: text(i, "unit_definitions")?,
+        morphology: tool("morphology")?,
+        dependency: tool("dependency")?,
+        compressor: tool("compressor")?,
+        external_tables: map(i, "external_tables")?,
+        normalization: Normalization {
+            sources: n
+                .get("sources")
+                .and_then(Value::as_array)
+                .ok_or_else(|| missing(FILE, "normalization.sources"))?
+                .iter()
+                .map(|x| {
+                    x.as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| missing(FILE, "normalization.sources の文字列"))
+                })
+                .collect::<Result<_, _>>()?,
+            implementation: text(n, "implementation")?,
+            version: text(n, "version")?,
+            mapping: map(n, "mapping")?,
+        },
+        measurement: map(i, "measurement")?,
     })
 }
 
-fn read_fingerprint(manifest: &Value) -> Result<Fingerprint, StoreError> {
-    let raw = manifest
-        .get("fingerprint_inputs")
-        .ok_or_else(|| missing("manifest.json", "fingerprint_inputs"))?;
-    let i = raw
-        .get("common")
-        .ok_or_else(|| missing("manifest.json", "fingerprint_inputs.common"))?;
-    let common = Common {
-        metric_definitions: str_of(i, "metric_definitions"),
-        unit_definitions: str_of(i, "unit_definitions"),
-        morphology: read_tool(i.get("morphology")),
-        dependency: read_tool(i.get("dependency")),
-        compressor: read_tool(i.get("compressor")),
-        external_tables: read_map(i.get("external_tables")),
-        normalization: {
-            let n = i.get("normalization");
-            Normalization {
-                sources: n
-                    .and_then(|v| v.get("sources"))
-                    .and_then(Value::as_array)
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|x| x.as_str().map(str::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-                implementation: n.map(|v| str_of(v, "implementation")).unwrap_or_default(),
-                version: n.map(|v| str_of(v, "version")).unwrap_or_default(),
-                mapping: read_map(n.and_then(|v| v.get("mapping"))),
-            }
-        },
-        // 欠けていれば空で読む。 設定を持たない頃のカセットは、照らしたときに
-        // 較正の設定の名前を全部挙げて合わない——作り直しを案内するのが正しい。
-        settings: read_map(i.get("settings")),
-    };
-    let scene = match raw.get("scene") {
-        Some(s) => SceneInputs {
-            vocabulary: read_string_lists(s.get("vocabulary")),
-            z_scores: read_pair_lists(s.get("z_scores")),
-            selection: read_string_lists(s.get("selection")),
-            baseline: s
-                .get("baseline")
-                .map(read_baseline)
-                .transpose()?
-                .unwrap_or_default(),
-            decided: read_map(s.get("decided")),
-        },
-        None => SceneInputs::default(),
-    };
-    Ok(Fingerprint::build(Inputs { common, scene }))
-}
-
-fn read_string_lists(v: Option<&Value>) -> BTreeMap<String, Vec<String>> {
-    let Some(Value::Object(m)) = v else {
-        return BTreeMap::new();
-    };
-    m.iter()
-        .map(|(k, v)| {
-            (
-                k.clone(),
-                v.as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|x| x.as_str().map(str::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-            )
-        })
-        .collect()
-}
-
-fn read_pair_lists(v: Option<&Value>) -> BTreeMap<String, Vec<(f64, f64)>> {
-    let Some(Value::Object(m)) = v else {
-        return BTreeMap::new();
-    };
-    m.iter()
-        .map(|(k, v)| {
-            (
-                k.clone(),
-                v.as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|p| {
-                                let p = p.as_array()?;
-                                Some((p.first()?.as_f64()?, p.get(1)?.as_f64()?))
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default(),
-            )
-        })
-        .collect()
-}
-
-fn read_tool(v: Option<&Value>) -> Tool {
-    let Some(v) = v else { return Tool::unused() };
-    Tool {
-        name: str_of(v, "name"),
-        version: str_of(v, "version"),
-        config: read_map(v.get("config")),
-    }
-}
-
-fn read_map(v: Option<&Value>) -> BTreeMap<String, String> {
-    match v {
-        Some(Value::Object(m)) => m
-            .iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_owned())))
-            .collect(),
-        _ => BTreeMap::new(),
-    }
-}
-
-fn str_of(v: &Value, key: &str) -> String {
-    v.get(key).and_then(Value::as_str).unwrap_or("").to_owned()
-}
-
-fn text_of(e: &Entries, name: &str) -> Option<String> {
-    e.get(name).and_then(|b| String::from_utf8(b.clone()).ok())
-}
-
-fn read_json(e: &Entries, name: &str) -> Result<Value, StoreError> {
+fn text(e: &Entries, name: &str) -> Result<String, StoreError> {
     let body = e.get(name).ok_or_else(|| {
         StoreError::Zip(ZipError::NotFound {
             name: name.to_owned(),
         })
     })?;
-    let s = std::str::from_utf8(body).map_err(|_| StoreError::Json {
+    String::from_utf8(body.clone()).map_err(|_| StoreError::Json {
         file: name.to_owned(),
         detail: "UTF-8 でない".into(),
-    })?;
-    json::parse(s).map_err(|e| StoreError::Json {
+    })
+}
+
+fn read_json(e: &Entries, name: &str) -> Result<Value, StoreError> {
+    json::parse(&text(e, name)?).map_err(|err| StoreError::Json {
         file: name.to_owned(),
-        detail: e.to_string(),
+        detail: err.to_string(),
     })
 }
 
@@ -597,165 +410,123 @@ fn missing(file: &str, field: &str) -> StoreError {
         field: field.to_owned(),
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    fn cassette() -> Cassette {
-        Cassette {
-            version: VERSION,
-            generation: 3,
-            fingerprint: Fingerprint::build(Inputs {
-                common: Common {
-                    metric_definitions: "51 本".into(),
-                    unit_definitions: "版 1".into(),
-                    morphology: Tool {
-                        name: "UniDic".into(),
-                        version: "3.1.0".into(),
-                        config: [("dicdir".to_owned(), "/dic".to_owned())].into(),
-                    },
-                    dependency: Tool::unused(),
-                    compressor: Tool::unused(),
-                    external_tables: [("Unicode".to_owned(), "15.1".to_owned())].into(),
-                    normalization: Normalization {
-                        sources: vec!["markdown".into()],
-                        implementation: "kakiburi-normalize".into(),
-                        version: "0.0.0".into(),
-                        mapping: [("message".to_owned(), "補足".to_owned())].into(),
-                    },
-                    settings: [
-                        ("scale::band::GAP_MARGIN".to_owned(), "0.05".to_owned()),
-                        ("review::OVERUSE".to_owned(), "1".to_owned()),
-                    ]
-                    .into(),
-                },
-                scene: SceneInputs {
-                    vocabulary: [("文字bigram".to_owned(), vec!["あい".to_owned()])].into(),
-                    z_scores: [("文字bigram".to_owned(), vec![(0.1, 0.25)])].into(),
-                    selection: [("本人の相手集合".to_owned(), vec!["p00".to_owned()])].into(),
-                    baseline: Baseline {
-                        model: "m".into(),
-                        version: "v1".into(),
-                        params: [("temperature".to_owned(), "1.0".to_owned())].into(),
-                        topics: vec!["Vim のファイラー".into(), "GPG 鍵".into()],
-                    },
-                    decided: [("落とす定型".to_owned(), "この記事では".to_owned())].into(),
-                },
-            }),
-            provisional: vec!["除外の既定".into()],
-            scene: "技術記事".into(),
-            decided: Decided {
-                boilerplate: vec!["この記事では".into()],
-                baseline: Baseline {
-                    model: "m".into(),
-                    version: "v1".into(),
-                    params: [("temperature".to_owned(), "1.0".to_owned())].into(),
-                    topics: vec!["Vim のファイラー".into()],
-                },
-                movement: [("笑い".to_owned(), Movement::Stuck)].into(),
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::tuning::{MuteKind, Register};
+
+    pub(crate) fn inputs() -> Inputs {
+        Inputs {
+            metric_definitions: "定義 51 本".into(),
+            unit_definitions: "版 1".into(),
+            morphology: Tool {
+                name: "Lindera".into(),
+                version: "6.0".into(),
+                config: [("辞書".to_owned(), "UniDic".to_owned())].into(),
             },
-            derived: Derived {
-                scale: Some("{\"ceiling\":[1,2]}".into()),
-                vocabulary: Some("{\"文字bigram\":[\"あい\"]}".into()),
-                phrases: Some("{\"text\":\"と思います。\",\"ceiling\":3.4}\n".into()),
-                ..Derived::default()
+            dependency: Tool::unused(),
+            compressor: Tool::unused(),
+            external_tables: [("Unicode".to_owned(), "15.1".to_owned())].into(),
+            normalization: Normalization {
+                sources: vec!["markdown".into()],
+                implementation: "kakiburi-normalize".into(),
+                version: "0.0.0".into(),
+                mapping: [("markdown".to_owned(), "表 1".to_owned())].into(),
             },
+            measurement: [("metrics::floor::TOKENS".to_owned(), "729".to_owned())].into(),
         }
+    }
+
+    pub(crate) fn cassette() -> Cassette {
+        let mut tuning = Tuning::default();
+        tuning
+            .mute
+            .get_mut(&MuteKind::Metric)
+            .unwrap()
+            .insert("強調".into());
+        tuning.register = Some(Register::Polite);
+        let mut c = Cassette::new(
+            "技術記事",
+            inputs(),
+            Stats {
+                documents: "{\"unit\":\"a\",\"chars\":1200}\n{\"unit\":\"b\",\"chars\":900}\n"
+                    .into(),
+                lexicon: "{\"pairs\":[[\"かき\",\"ぶり\"]]}".into(),
+            },
+            tuning,
+        );
+        c.generation = 3;
+        c
+    }
+
+    fn entries() -> Entries {
+        zip::read(&write(&cassette())).unwrap()
+    }
+
+    fn body(e: &Entries, name: &str) -> String {
+        String::from_utf8(e[name].clone()).unwrap()
     }
 
     #[test]
     fn 書いて読むと同じものが出る() {
         let c = cassette();
-        let back = read(&write(&c)).unwrap();
-        assert_eq!(back, c);
+        assert_eq!(read(&write(&c)), Ok(c));
+    }
+
+    #[test]
+    fn 統計値を失っても原本は読める() {
+        // 統計値は素材から作り直せる。 失ったカセットから調整を引き継げなければ、
+        // 作り直すたびに人が決めたことが消える。
+        let mut e = entries();
+        e.remove(DOCUMENTS);
+        e.remove(LEXICON);
+        let bytes = zip::write(&e);
+        assert!(read(&bytes).is_err(), "カセットとしては壊れている");
+        let o = read_originals(&bytes).expect("原本は読める");
+        assert_eq!(o.tuning, cassette().tuning);
+        assert_eq!(o.scene, "技術記事");
+        assert_eq!(o.generation, 3);
+    }
+
+    #[test]
+    fn 原本を読むときも版と調整を検める() {
+        let mut e = entries();
+        e.remove(TUNING);
+        assert!(read_originals(&zip::write(&e)).is_err());
+        assert!(read_originals(b"PK").is_err());
     }
 
     #[test]
     fn 書き出しは決定的である() {
-        // 作り直しても同じバイトが出る。
+        // 同じフォルダを 2 度 build して同じバイト列が出る。
         assert_eq!(write(&cassette()), write(&cassette()));
     }
 
     #[test]
-    fn 二つの層がそのままディレクトリになる() {
-        let bytes = write(&cassette());
-        let names = zip::index(&bytes).unwrap();
-        assert!(names.iter().any(|n| n.starts_with("decided/")));
-        assert!(names.iter().any(|n| n.starts_with("derived/")));
-        assert!(
-            !names.iter().any(|n| n.starts_with("corpus/")),
-            "本文は持たない"
-        );
+    fn 中身は_4_つの_entry_である() {
+        let names = zip::index(&write(&cassette())).unwrap();
+        assert_eq!(names, vec![MANIFEST, DOCUMENTS, LEXICON, TUNING]);
     }
 
     #[test]
-    fn 場面で割る階層を持たない() {
-        // 1 カセットが 1 場面である。 割る相手が無い。
-        let bytes = write(&cassette());
-        let names = zip::index(&bytes).unwrap();
-        assert!(names.iter().any(|n| n == "decided/baseline.json"));
-        assert!(names.iter().any(|n| n == "derived/scale.json"));
-        assert!(
-            !names.iter().any(|n| n.contains("技術記事")),
-            "場面は名前ではなく manifest の欄である"
-        );
-    }
-
-    #[test]
-    fn 派生物を捨てて作り直すと同じものが出る() {
-        // これが通らなければ、派生物のどこかに原本が混ざっている。
-        // 気付かないまま運用すると、測り直した瞬間に人が決めたことが消える。
-        let c = cassette();
-        let full = write(&c);
-
-        let mut dropped = c.clone();
-        dropped.drop_derived();
-        let back = read(&write(&dropped)).unwrap();
-        assert!(!back.derived.has_scale(), "捨てられている");
-        assert_eq!(back.decided, c.decided, "決めたことは残る");
-        assert_eq!(back.scene, c.scene, "場面も残る");
-        assert!(back.fingerprint.matches(&c.fingerprint), "指紋も残る");
-
-        // 同じ派生物を入れ直すと、元と同じバイトになる。
-        let mut rebuilt = back;
-        rebuilt.derived = c.derived.clone();
-        assert_eq!(write(&rebuilt), full, "作り直すと同じものが出る");
-    }
-
-    #[test]
-    fn 派生物が無いカセットも読める() {
-        let mut c = cassette();
-        c.drop_derived();
-        let back = read(&write(&c)).unwrap();
-        assert_eq!(back, c);
-    }
-
-    #[test]
-    fn 言い回しの表が往復する() {
-        // 本文の代わりである。 落ちれば、繰り返しの上限を言えなくなる。
-        let back = read(&write(&cassette())).unwrap();
-        assert_eq!(back.derived.phrases, cassette().derived.phrases);
+    fn 調整だけを変えても中身のハッシュと指紋は変わらない() {
+        // 調整は測った値を変えない。 変われば、調整しただけで比べられなくなる。
+        let a = cassette();
+        let mut b = cassette();
+        b.tuning.first_person = Some("僕".into());
+        assert_eq!(a.fingerprint(), b.fingerprint());
+        assert_ne!(write(&a), write(&b), "調整そのものは書かれる");
     }
 
     #[test]
     fn 知らない版は壊れているとは別の理由で断る() {
         // まとめると、壊れたカセットと新しすぎるカセットが同じ顔になる。
-        // 前者は作り直しで、後者は道具の更新である。
-        let mut e = zip::read(&write(&cassette())).unwrap();
-        let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
-        // **いま書く版から作る。** 版を上げるたびに書き換える定数を残さない。
         let now = format!("\"version\":{VERSION}");
-        for (found, body) in [
-            (
-                VERSION + 1,
-                m.replace(&now, &format!("\"version\":{}", VERSION + 1)),
-            ),
-            (
-                VERSION - 1,
-                m.replace(&now, &format!("\"version\":{}", VERSION - 1)),
-            ),
-        ] {
-            e.insert("manifest.json".into(), body.into_bytes());
+        for found in [VERSION - 1, VERSION + 1] {
+            let mut e = entries();
+            let m = body(&e, MANIFEST).replace(&now, &format!("\"version\":{found}"));
+            e.insert(MANIFEST.into(), m.into_bytes());
             assert_eq!(
                 read(&zip::write(&e)),
                 Err(StoreError::UnknownVersion {
@@ -767,18 +538,27 @@ mod tests {
     }
 
     #[test]
+    fn 古い版は作り直しを案内し新しい版は更新を案内する() {
+        let old = StoreError::UnknownVersion {
+            found: 4,
+            known: VERSION,
+        };
+        assert!(old.to_string().contains("作り直す"), "{old}");
+        let new = StoreError::UnknownVersion {
+            found: VERSION + 1,
+            known: VERSION,
+        };
+        assert!(new.to_string().contains("更新"), "{new}");
+    }
+
+    #[test]
     fn 版が整数でなければ読まない() {
-        // 丸めて通せば、名乗っていない形を名乗った形として扱うことになる。
-        let mut e = zip::read(&write(&cassette())).unwrap();
-        let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
-        e.insert(
-            "manifest.json".into(),
-            m.replace(
-                &format!("\"version\":{VERSION}"),
-                &format!("\"version\":{VERSION}.5"),
-            )
-            .into_bytes(),
+        let mut e = entries();
+        let m = body(&e, MANIFEST).replace(
+            &format!("\"version\":{VERSION}"),
+            &format!("\"version\":{VERSION}.5"),
         );
+        e.insert(MANIFEST.into(), m.into_bytes());
         assert!(matches!(
             read(&zip::write(&e)),
             Err(StoreError::Json { .. })
@@ -786,127 +566,130 @@ mod tests {
     }
 
     #[test]
-    fn 決めたことが欠けていたら断る() {
-        // 書き出しは 3 つとも必ず出す。 欠けていること自体が壊れている印
-        // である——空で通せば、次に書いたときに作り直せない判断が空として確定する。
-        for name in [
-            "decided/baseline.json",
-            "decided/boilerplate.json",
-            "decided/movement.json",
-        ] {
-            let mut e = zip::read(&write(&cassette())).unwrap();
+    fn 必ずある_entry_が欠けていたら断る() {
+        for name in [MANIFEST, TUNING, DOCUMENTS, LEXICON] {
+            let mut e = entries();
             e.remove(name);
-            assert!(read(&zip::write(&e)).is_err(), "{name}");
+            let err = read(&zip::write(&e)).unwrap_err();
+            assert!(
+                matches!(err, StoreError::Zip(ZipError::NotFound { .. })),
+                "{name}: {err:?}"
+            );
         }
     }
 
     #[test]
+    fn 調整の欄が欠けていたら空で埋めずに断る() {
+        let mut e = entries();
+        let t = body(&e, TUNING).replace("\"register\"", "\"消した\"");
+        e.insert(TUNING.into(), t.into_bytes());
+        assert!(matches!(
+            read(&zip::write(&e)),
+            Err(StoreError::Json { .. })
+        ));
+    }
+
+    #[test]
+    fn 文体の申告に知らない値があれば断る() {
+        // 捨てれば、申告したはずの文体が数えた結果に戻る。
+        let mut e = entries();
+        let t = body(&e, TUNING).replace("\"polite\"", "\"desu\"");
+        e.insert(TUNING.into(), t.into_bytes());
+        assert!(read(&zip::write(&e)).is_err());
+    }
+
+    #[test]
     fn 場面を名乗らないカセットは読めない() {
-        // 保存の中の階層ではなくなったので、突き合わせる相手が無い。
-        // 空に丸めれば、どの場面の目盛りか分からないまま検めが通る。
         for broken in ["\"scene\"", "\"scene\":\"技術記事\""] {
-            let mut e = zip::read(&write(&cassette())).unwrap();
-            let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
-            let body = if broken == "\"scene\"" {
-                m.replace("\"scene\"", "\"ばめん\"")
+            let mut e = entries();
+            let m = body(&e, MANIFEST);
+            let m = if broken == "\"scene\"" {
+                m.replace(broken, "\"ばめん\"")
             } else {
                 m.replace(broken, "\"scene\":\"\"")
             };
-            e.insert("manifest.json".into(), body.into_bytes());
+            e.insert(MANIFEST.into(), m.into_bytes());
             assert!(read(&zip::write(&e)).is_err(), "{broken}");
         }
     }
 
     #[test]
-    fn 決めた基準の欄が欠けていたら断る() {
-        // 空の値は正しい状態である——作っただけなら 4 つとも空で書かれる。
-        // 断るのは欄そのものが無いときである：空に丸めれば、次に書いたときに
-        // 作り直せない設定がそこで確定する。
-        for key in ["model", "version", "params", "topics"] {
-            let mut e = zip::read(&write(&cassette())).unwrap();
-            let body = String::from_utf8(e.get("decided/baseline.json").unwrap().clone())
-                .unwrap()
-                .replace(&format!("\"{key}\""), &format!("\"{key}を消した\""));
-            e.insert("decided/baseline.json".into(), body.into_bytes());
-            assert!(read(&zip::write(&e)).is_err(), "{key}");
-        }
+    fn 場面の名前を変えても中身のハッシュと指紋は変わらない() {
+        // 場面は名札である。 中身の同一性には入らない。
+        let a = cassette();
+        let mut b = cassette();
+        b.scene = "日記".into();
+        assert_eq!(a.fingerprint(), b.fingerprint());
     }
 
     #[test]
-    fn 空の基準は正しい状態である() {
-        // 作っただけで基準をまだ入れていなければ、4 つとも空で書かれる。
-        let mut c = cassette();
-        c.decided.baseline = Baseline::default();
-        let back = read(&write(&c)).expect("読める");
-        assert_eq!(back.decided.baseline, Baseline::default());
-    }
-
-    #[test]
-    fn 知らない_movement_の値は捨てない() {
-        // 捨てれば、`stuck` にしたはずの指標が「未知」に戻って指摘に出続ける。
-        let mut e = zip::read(&write(&cassette())).unwrap();
-        let body = String::from_utf8(e.get("decided/movement.json").unwrap().clone())
-            .unwrap()
-            .replace("\"stuck\"", "\"うごかない\"");
-        e.insert("decided/movement.json".into(), body.into_bytes());
-        assert!(read(&zip::write(&e)).is_err());
-    }
-
-    #[test]
-    fn 較正の設定が往復する() {
-        // 落ちれば、閾値を動かす前のカセットと後のカセットが同じ指紋になる。
-        let back = read(&write(&cassette())).unwrap();
+    fn 中身のハッシュが統計値と合わなければ断る() {
+        let mut e = entries();
+        let d = body(&e, DOCUMENTS).replace("1200", "1201");
+        e.insert(DOCUMENTS.into(), d.into_bytes());
         assert_eq!(
-            back.fingerprint.inputs.common.settings,
-            cassette().fingerprint.inputs.common.settings
+            read(&zip::write(&e)),
+            Err(StoreError::Mismatch {
+                field: "content_hash".into()
+            })
         );
-        assert!(back.fingerprint.matches(&cassette().fingerprint));
     }
 
     #[test]
-    fn 設定を持たないカセットは閾値を名指して合わない() {
-        // 設定を指紋に入れる前に作ったカセットである。 空で読んで照らせば、
-        // 何が足りないかを名前で言える。
-        let mut e = zip::read(&write(&cassette())).unwrap();
-        let m = String::from_utf8(e.get("manifest.json").unwrap().clone()).unwrap();
-        e.insert(
-            "manifest.json".into(),
-            m.replace("\"settings\"", "\"古い欄\"").into_bytes(),
-        );
-        let old = read(&zip::write(&e)).expect("読める");
-        assert!(old.fingerprint.inputs.common.settings.is_empty());
+    fn 指紋が材料と合わなければ断る() {
+        let mut e = entries();
+        let m = body(&e, MANIFEST).replace("\"729\"", "\"730\"");
+        e.insert(MANIFEST.into(), m.into_bytes());
         assert_eq!(
-            old.fingerprint.differences(&cassette().fingerprint),
-            vec![
-                "較正の設定: review::OVERUSE",
-                "較正の設定: scale::band::GAP_MARGIN",
-            ]
+            read(&zip::write(&e)),
+            Err(StoreError::Mismatch {
+                field: "fingerprint".into()
+            })
         );
     }
 
     #[test]
-    fn 題材が往復する() {
-        // 外せば古い目盛りが黙って使われる。
-        let back = read(&write(&cassette())).unwrap();
-        assert_eq!(back.fingerprint.inputs.scene.baseline.topics.len(), 2);
+    fn 指紋の材料が欠けていたら断る() {
+        let mut e = entries();
+        let m = body(&e, MANIFEST).replace("\"measurement\"", "\"消した\"");
+        e.insert(MANIFEST.into(), m.into_bytes());
+        assert!(matches!(
+            read(&zip::write(&e)),
+            Err(StoreError::Missing { .. })
+        ));
     }
 
     #[test]
-    fn manifest_が無ければ読めない() {
-        let mut e = zip::read(&write(&cassette())).unwrap();
-        e.remove("manifest.json");
+    fn 統計値の行に同じ鍵が_2_度あれば断る() {
+        // どちらを拾うかは読み手によって違う。
+        let mut e = entries();
+        let d = body(&e, DOCUMENTS).replace("\"chars\":900", "\"chars\":900,\"chars\":901");
+        e.insert(DOCUMENTS.into(), d.into_bytes());
         let err = read(&zip::write(&e)).unwrap_err();
         assert!(
-            matches!(err, StoreError::Zip(ZipError::NotFound { .. })),
+            matches!(&err, StoreError::Json { file, .. } if file.contains("2 行目")),
             "{err:?}"
         );
     }
 
     #[test]
+    fn manifest_に同じ鍵が_2_度あれば断る() {
+        let mut e = entries();
+        let m = body(&e, MANIFEST).replacen('{', "{\"version\":4,", 1);
+        e.insert(MANIFEST.into(), m.into_bytes());
+        assert!(matches!(
+            read(&zip::write(&e)),
+            Err(StoreError::Json { .. })
+        ));
+    }
+
+    #[test]
     fn 壊れた_json_は読めない() {
-        let mut e = zip::read(&write(&cassette())).unwrap();
-        e.insert("manifest.json".into(), "{壊れている".as_bytes().to_vec());
-        let err = read(&zip::write(&e)).unwrap_err();
-        assert!(matches!(err, StoreError::Json { .. }), "{err:?}");
+        let mut e = entries();
+        e.insert(MANIFEST.into(), "{壊れている".as_bytes().to_vec());
+        assert!(matches!(
+            read(&zip::write(&e)),
+            Err(StoreError::Json { .. })
+        ));
     }
 }

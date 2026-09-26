@@ -224,13 +224,13 @@ impl Weights {
         self.intercept
     }
 
-    /// 保存した派生物から組み立てる。
+    /// 切片・傾き・標準化の平均と標準偏差から組み立てる。
     ///
-    /// 当てはめ直しではない。[`Weights::fit`]が全体から作ったものを読み戻す道で
+    /// 当てはめ直しではない。[`Weights::fit`]が作ったものの一部を差し替える道で
     /// ある——検める 1 本からは、渡す素材が無いので呼べない。
     ///
-    /// 平均と標準偏差も読み戻す。 落とせば、検めが標準化なしの値に標準化ずみの
-    /// 重みを当てることになり、値だけが静かに変わる。
+    /// 平均と標準偏差も渡す。 落とせば、標準化なしの値に標準化ずみの重みを
+    /// 当てることになり、値だけが静かに変わる。
     ///
     /// だから欠けていたら組み立てない。 長さが揃わないものを受けると、
     /// [`Self::log_lr`]が足りない次元を「平均 0・標準偏差 1」で埋める——
@@ -240,7 +240,7 @@ impl Weights {
     ///
     /// 標準偏差 0 も断る。 割れば無限大か NaN になり、そこから先の比較が
     /// すべて壊れる。広がりが 0 の次元は 1 として持つのが仕様なので、
-    /// 保存されたものに 0 が入っていること自体が壊れている印である。
+    /// 渡されたものに 0 が入っていること自体が壊れている印である。
     #[must_use]
     pub fn restore(
         intercept: f64,
@@ -426,40 +426,6 @@ impl Calibration {
     pub fn systems(&self) -> &[String] {
         &self.systems
     }
-
-    /// 保存した派生物から組み立てる。
-    ///
-    /// 系統の数と重みの数が合わなければ組み立てない。 合わないまま合算すれば、
-    /// 系統を 1 つずれた重みで掛ける。
-    #[must_use]
-    pub fn restore(
-        systems: Vec<String>,
-        per_system: Vec<Weights>,
-        fusion: Weights,
-    ) -> Option<Self> {
-        // 系統が 0 本の較正は組み立てない。 数が揃っていることだけを見ると、
-        // 空どうしが揃っているとして通る——そのとき照合値は入力を 1 つも要求せず、
-        // 合算の切片をいつも返す。 防ごうとした「定数を返す判定器」が、
-        // ここだけ残る。
-        if systems.is_empty() || systems.len() != per_system.len() {
-            return None;
-        }
-        // 本数だけでは足りない。 傾きが 0 本の重みは、どんな入力でも切片だけを
-        // 返す——壊れた目盛りが「いつも同じ値」を出す判定器として正常に動く。
-        //
-        // 系統ごとは距離 1 つを受けるので 1 次元、合算は系統の数だけ受ける。
-        if per_system.iter().any(|w| w.slopes().len() != 1) {
-            return None;
-        }
-        if fusion.slopes().len() != systems.len() {
-            return None;
-        }
-        Some(Self {
-            systems,
-            per_system,
-            fusion,
-        })
-    }
 }
 
 /// 中央値。
@@ -486,40 +452,6 @@ mod tests {
 
     fn names(n: usize) -> Vec<String> {
         (0..n).map(|i| format!("s{i}")).collect()
-    }
-
-    /// 傾きが `n` 本の重み。
-    fn weights_of(n: usize) -> Weights {
-        Weights::restore(0.0, vec![1.0; n], vec![0.0; n], vec![1.0; n]).expect("組める")
-    }
-
-    #[test]
-    fn 傾きの本数が合わなければ組み立てない() {
-        // 本数だけでは足りない。 傾きが 0 本の重みは、どんな入力でも切片だけを
-        // 返す——壊れた目盛りが「いつも同じ値」を出す判定器として正常に動く。
-        let systems = names(3);
-        // 系統ごとは距離 1 つを受けるので 1 次元、合算は系統の数だけ受ける。
-        assert!(
-            Calibration::restore(systems.clone(), vec![weights_of(1); 3], weights_of(3)).is_some()
-        );
-        assert!(
-            Calibration::restore(systems.clone(), vec![weights_of(0); 3], weights_of(3)).is_none(),
-            "系統ごとの傾きが空でも通っている"
-        );
-        assert!(
-            Calibration::restore(systems.clone(), vec![weights_of(1); 3], weights_of(0)).is_none(),
-            "合算の傾きが空でも通っている"
-        );
-        assert!(
-            Calibration::restore(systems, vec![weights_of(1); 3], weights_of(2)).is_none(),
-            "合算の幅が系統の数と違っても通っている"
-        );
-        // 空どうしは「揃っている」ので、数を見るだけでは通ってしまう。
-        // そのとき照合値は入力を 1 つも要求せず、合算の切片をいつも返す。
-        assert!(
-            Calibration::restore(vec![], vec![], weights_of(0)).is_none(),
-            "系統 0 本の較正が組み立っている"
-        );
     }
 
     /// 1 列を行の形にする。

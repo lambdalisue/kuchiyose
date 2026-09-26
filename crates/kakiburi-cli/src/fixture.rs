@@ -6,7 +6,9 @@
 use kakiburi_doc::node::{Kind, Node};
 use kakiburi_doc::Document;
 use kakiburi_metrics::morph::{Analyzer, Dictionary, Morpheme};
-use kakiburi_scale::{assemble, Sample, Scale};
+use kakiburi_scale::Sample;
+
+use crate::testdir::TempDir;
 
 /// 試験用の解析器。UniDic を名乗り、字で切る。
 ///
@@ -75,19 +77,41 @@ fn word(n: usize) -> String {
         .collect()
 }
 
+/// 構造を持つ文書。見出し・箇条書き・一人称を含み、指示できる指標が値を持つ。
+fn rich(index: usize) -> Document {
+    let mut nodes = vec![Node::heading(1, format!("第{index}章のはなし"))];
+    for i in 0..(12 + index) {
+        if i % 4 == 0 {
+            nodes.push(Node::heading(3, format!("小さな節{i}")));
+        }
+        nodes.push(Node::leaf(
+            Kind::Paragraph,
+            format!(
+                "僕は{}を静かに書く。それは、{}のためです。まあ、{}ではない。",
+                word(index * 7 + i),
+                word(i),
+                word(index + i * 3)
+            ),
+        ));
+    }
+    let items: Vec<Node> = (0..12)
+        .map(|i| {
+            Node::leaf(
+                Kind::Item,
+                format!("項目の{}は{}です", word(i), word(index + i)),
+            )
+        })
+        .collect();
+    nodes.push(Node::branch(Kind::Bullet, items));
+    Document::new(nodes)
+}
+
 /// 名前と文書の組。
 pub type Named = Vec<(String, Document)>;
 
-/// 名前と文書の組を 10 本ずつ。
-pub fn corpus() -> (Named, Named) {
-    (
-        (0..10)
-            .map(|i| (format!("p{i:02}"), document(i, false)))
-            .collect(),
-        (0..10)
-            .map(|i| (format!("b{i:02}"), document(i, true)))
-            .collect(),
-    )
+/// 構造を持つ文書を `n` 本。
+pub fn rich_corpus(n: usize) -> Named {
+    (0..n).map(|i| (format!("r{i:02}"), rich(i))).collect()
 }
 
 /// 素材の形にする。
@@ -100,16 +124,14 @@ pub fn samples(v: &[(String, Document)]) -> Vec<Sample<'_>> {
         .collect()
 }
 
-/// 目盛りを作る。作れなければ試験を落とす。
-pub fn scale() -> Scale {
-    let (person, baseline) = corpus();
-    assemble(
-        kakiburi_scale::assemble::Material {
-            person: &samples(&person),
-            baseline: &samples(&baseline),
-            others: &[],
-        },
-        Some(&Chars),
-    )
-    .expect("目盛りができる")
+/// 10 本の文書をフォルダに Markdown で書き、フォルダの経路を返す。
+///
+/// 本人の側は `p00`〜、基準の側は `b00`〜と名付ける。
+pub fn write_corpus(dir: &TempDir, folder: &str, machine: bool) -> String {
+    let prefix = if machine { "b" } else { "p" };
+    for i in 0..10 {
+        let body = kakiburi_metrics::humanness::joined(&document(i, machine).prose());
+        dir.write(&format!("{folder}/{prefix}{i:02}.md"), body);
+    }
+    dir.join(folder)
 }

@@ -17,6 +17,10 @@ kakiburi-metrics = { path = "../kakiburi-metrics" }
 kakiburi-normalize = { path = "../kakiburi-normalize" }
 kakiburi-review = { path = "../kakiburi-review" }
 kakiburi-scale = { path = "../kakiburi-scale" }
+# 表の桁を和文の見える幅で揃える。dialoguer が既に使う。
+console = { version = "0.16", default-features = false, features = ["std", "unicode-width"] }
+# cassette edit の対話画面。対話はここだけにする。
+dialoguer = { version = "0.12", default-features = false }
 
 [lints]
 workspace = true

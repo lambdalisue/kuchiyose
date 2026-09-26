@@ -6,14 +6,18 @@ use File::Spec;
 
 my $root = shift or die "need root";
 
-my @files;
+# Markdown と、Rust のコメント。 コードのコメントも仕様へリンクしているので、
+# 節の名前を変えるとそこが黙って腐る。ビルドの出力（target）は見ない。
+my (@files, @sources);
 sub walk {
     my $d = shift;
     opendir(my $dh, $d) or die "$d: $!";
     for my $e (sort readdir $dh) {
-        next if $e =~ /^\./;
+        next if $e =~ /^\./ or $e eq 'target';
         my $p = "$d/$e";
-        if (-d $p) { walk($p) } elsif ($e =~ /\.md$/) { push @files, $p }
+        if (-d $p) { walk($p) }
+        elsif ($e =~ /\.md$/) { push @files, $p }
+        elsif ($e =~ /\.rs$/) { push @sources, $p }
     }
     closedir $dh;
 }
@@ -49,14 +53,17 @@ for my $p (@files) {
 }
 
 my $bad = 0; my $total = 0;
-for my $p (@files) {
+for my $p (@files, @sources) {
     my $dp = decode_utf8($p);
+    my $rust = $p =~ /\.rs$/;
     open(my $fh, '<:encoding(UTF-8)', $p) or die $!;
     my $body = do { local $/; <$fh> };
     close $fh;
     while ($body =~ m{\]\(([^)\s#]*\.md)?(#[^)]*)?\)}g) {
         my ($file, $frag) = ($1, $2);
         next unless defined $file or defined $frag;
+        # Rust の `(#…)` は Markdown の錨ではない。 文書へのリンクだけを見る。
+        next if $rust and not defined $file;
         $total++;
         my $target = norm(defined $file ? dirname($dp) . '/' . $file : $dp);
         unless (-f encode_utf8($target)) {

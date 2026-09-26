@@ -99,15 +99,6 @@ $K review draft.md --cassette articles.kb
 
 数秒で終わる。直して、また `review` する、を繰り返す。
 
-草稿を LLM に書かせたときは、あなたの記事を手本として見せたかどうかを `--own-writing` で
-伝える。`shown`（見せた）、`not-shown`（見せていない）、`unknown`（分からない）のどれかで、
-省くと `unknown` になる。見せた草稿では数値が実際より良く出やすいので、`shown` と
-`unknown` では判定に但し書きが付く。判定そのものは変わらない。
-
-```sh
-$K review draft.md --cassette articles.kb --own-writing not-shown
-```
-
 直すたびの版を並べて渡すと、1 本 1 行で判定と主な値（照合値と基準との距離）を並べる。
 近づいているかを見るのに使う。指摘は出ないので、読みたい版は 1 本だけ渡して検め直す。
 
@@ -298,6 +289,10 @@ $K review draft.md --cassette articles.kb --baseline baseline-claude-2026-08.kb
 つながっていない。
 
 確かめたのはまだ 1 人分の記事である。ほかの書き手で同じように働くかは言えない。
+
+閾値のいくつかは暫定値である。除外の既定、帯の端、語彙の大きさがそうで、どれも 1 人分の
+実測か、出どころの無い値で置いている。どれが暫定かは[仕様](docs/spec/200-extract.md)の
+それぞれの箇所に書いてある。
 
 ## もっと知りたい
 

@@ -22,8 +22,8 @@ pub mod vocabulary;
 mod testing;
 
 pub use assemble::{
-    assemble, diverging, inspect, measure_against, Divergence, HumannessByMetric, Measured, Report,
-    Sample, Substituted,
+    diverging, measure_against, Divergence, HumannessByMetric, Measured, Report, Sample,
+    Substituted,
 };
 pub use band::{Band, BandError, Ends, Verdict};
 pub use calibrate::{Calibration, MatchError, Weights};
@@ -78,7 +78,7 @@ pub enum ScaleError {
     ///
     /// ここが壊れると、分離するように合わせたものの分離具合を測ることになる。
     SharedPairs,
-    /// 同じ名前の単位が 1 つの側に 2 つある。
+    /// 同じ名前の単位が 2 つある。1 つの側の中でも、本人と基準の側を跨いでも。
     ///
     /// 測った値を名前で引くので、重なれば片方の値がもう片方で黙って置き換わる。
     DuplicateName(String),
@@ -177,12 +177,14 @@ pub fn length_range_ok(person: &[usize], baseline: &[usize]) -> Result<(), Scale
     Ok(())
 }
 
-/// 目盛りを決める較正の設定と閾値。指紋に入れる材料である。
+/// 目盛りを決める較正の設定と閾値。判定と一緒に平文で出す。
 ///
-/// 平文で返す。 ハッシュにすると、合わないときにどれが変わったかを言えない。
+/// 同じ 2 つのカセットでも、ここが変われば別の目盛りができる。 判定を後で比べる
+/// とき、差が草稿から来たのか設定から来たのかを閾値の名前で言えるようにする
+/// （[較正の設定](../../../docs/spec/200-extract.md#較正の設定は判定と一緒に平文で出す)）。
 ///
-/// 同じ素材・同じ道具でも、ここが変われば別の目盛りができる。 入れなければ、
-/// 閾値を動かしたあとも古いカセットが同じ指紋を名乗り、黙って使われる。
+/// カセットの指紋には入れない。 統計値を変えないので、入れれば閾値を 1 つ
+/// 動かしただけで人からもらったカセットが全部使えなくなる。
 #[must_use]
 pub fn settings() -> Vec<(&'static str, String)> {
     let list = |v: &[usize]| {
@@ -276,6 +278,19 @@ pub fn settings() -> Vec<(&'static str, String)> {
         (
             "scale::assemble::GOI_THEIRS",
             assemble::GOI_THEIRS.to_string(),
+        ),
+        (
+            "scale::select::POLITE_SHARE_MIN",
+            select::POLITE_SHARE_MIN.to_string(),
+        ),
+        ("scale::select::POOL_TAKE", select::POOL_TAKE.to_string()),
+        (
+            "scale::stats::PHRASE_CHARS",
+            stats::PHRASE_CHARS.to_string(),
+        ),
+        (
+            "scale::stats::PHRASE_UNITS",
+            stats::PHRASE_UNITS.to_string(),
         ),
     ]
 }
@@ -397,38 +412,6 @@ impl Scale {
     #[must_use]
     pub fn partners(&self) -> &[String] {
         &self.selection.person_partners
-    }
-
-    /// [取り置いたベクトル](Self::partner_vectors)が目盛りと噛み合っているか。
-    ///
-    /// 読めることと、噛み合っていることは別である。 次元の数がずれていても
-    /// [距離](crate::vocabulary::cosine_delta)は短いほうまでで計算されるので、
-    /// エラーにならずに違う照合値が出る——目盛りがあるのに壊れている
-    /// という、いちばん見えにくい形になる。
-    ///
-    /// 欠けた系統も同じである。 相手ごと落ちるだけで、残りの相手で
-    /// 中央値が出てしまう。
-    #[must_use]
-    pub fn partner_vectors_ok(&self) -> bool {
-        if self.partner_vectors.len() != self.selection.person_partners.len() {
-            return false;
-        }
-        for ((unit, parts), want) in self
-            .partner_vectors
-            .iter()
-            .zip(&self.selection.person_partners)
-        {
-            if unit != want || parts.len() != self.frozen.len() {
-                return false;
-            }
-            for ((name, v), (fname, set)) in parts.iter().zip(&self.frozen) {
-                let dims: usize = set.parts().iter().map(crate::vocabulary::Frozen::len).sum();
-                if name != fname || v.len() != dims || v.iter().any(|x| !x.is_finite()) {
-                    return false;
-                }
-            }
-        }
-        true
     }
 }
 

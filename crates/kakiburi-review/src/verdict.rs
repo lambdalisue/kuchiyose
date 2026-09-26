@@ -26,7 +26,7 @@ impl Stage {
     pub fn name(self) -> &'static str {
         match self {
             Stage::Writing => "書き方",
-            Stage::Humanness => "人らしさ値",
+            Stage::Humanness => "基準との距離",
             Stage::Matching => "照合値",
             Stage::Directive => "指示できる指標",
         }
@@ -168,6 +168,11 @@ pub struct Notes<'a> {
     /// 目盛りの壊れと同じ顔で止まる。 測れた段は値で決める——短さは
     /// 測れなかった理由であって、測れた値を覆す理由ではない。
     pub too_short: Option<&'a str>,
+    /// 効く指標はあったが、本人が全部を無効にしたために前に出す指標が空になった。
+    ///
+    /// 理由をそう言う。 「効く指標が無い」と言えば、書き手の性質の話に見えてしまう
+    /// （[前に出す指標が無ければ判定できない](../../../docs/spec/300-revise.md#前に出す指標が無ければ判定できない)）。
+    pub directives_muted: bool,
 }
 
 /// 判定する。値の出どころを `notes` に添える。
@@ -208,21 +213,21 @@ pub fn judge_with(
             verdict: Verdict::Unknown,
             stage: Stage::Humanness,
             reason:
-                "機械の書きぶりが残っているかを測れていない。読みづらさの元を確かめずに先へ進めない"
+                "基準の書きぶりが残っているかを測れていない。読みづらさの元を確かめずに先へ進めない"
                     .into(),
         },
         Some(Side::Machine) => {
             return Outcome {
                 verdict: Verdict::Fail,
                 stage: Stage::Humanness,
-                reason: "機械の書きぶりが残っている".into(),
+                reason: "基準の書きぶりが残っている".into(),
             }
         }
         Some(Side::InBand) => {
             return Outcome {
                 verdict: Verdict::Unknown,
                 stage: Stage::Humanness,
-                reason: "機械の書きぶりが残っているかを決められない".into(),
+                reason: "基準の書きぶりが残っているかを決められない".into(),
             }
         }
         Some(Side::Human) => {}
@@ -271,6 +276,15 @@ pub fn judge_with(
     // 集合が空なら通さない。 空の集合は「すべて幅の中」を必ず満たすので、
     // その人らしさを 1 本も確かめていないのに通るが返る——この書き手では、
     // 効く指標があるという仮説そのものが確かめられなかったのである。
+    if directives.is_empty() && notes.directives_muted {
+        return Outcome {
+            verdict: Verdict::Unknown,
+            stage: Stage::Directive,
+            reason:
+                "効く指標を本人のカセットで全部無効にしたため、その人らしさを指標で確かめられない"
+                    .into(),
+        };
+    }
     if directives.is_empty() {
         return Outcome {
             verdict: Verdict::Unknown,
@@ -410,6 +424,22 @@ mod tests {
             too_short: Some(what),
             ..Notes::default()
         }
+    }
+
+    #[test]
+    fn 前に出す指標を全部無効にしたなら無効にしたためと言う() {
+        // 「効く指標が無い」と言えば、書き手の性質の話に見えてしまう。
+        let muted = Notes {
+            directives_muted: true,
+            ..Notes::default()
+        };
+        let o = judge_with(&[], Some(Side::Human), Some(Side::Human), muted, &[]);
+        assert_eq!(o.verdict, Verdict::Unknown);
+        assert_eq!(o.stage, Stage::Directive);
+        assert!(o.reason.contains("無効にした"), "{}", o.reason);
+
+        let none = judge(&[], Some(Side::Human), Some(Side::Human), &[]);
+        assert!(none.reason.contains("効く指標が無い"), "{}", none.reason);
     }
 
     #[test]

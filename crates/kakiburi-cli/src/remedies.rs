@@ -6,12 +6,17 @@
 //! 向きは札から引く。 上限だけの指標に「足す」と言わせない——言えば、直す側は
 //! 指摘を消すために逆へ動く。
 
-use std::path::Path;
-
 use kakiburi_metrics::definitions::{self, Definition};
 use kakiburi_metrics::tag::{Direction, Tag};
 use kakiburi_metrics::Registry;
 use kakiburi_review::Remedies;
+
+/// 実行ファイルに埋め込んだ定義ファイル。ファイル名（拡張子なし）と本文の組。
+///
+/// `build.rs` が `docs/spec/metrics` から一覧を作る。 実行時に置き場を探さない
+/// ——リポジトリの外では見つからず、指摘の文が引けないうえに、定義を読めなかった
+/// ことが指紋に入って同梱の基準と合わなくなる。
+const EMBEDDED: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/definitions.rs"));
 
 /// 定義ファイルから引く直し方。
 pub struct FromDefinitions {
@@ -20,22 +25,12 @@ pub struct FromDefinitions {
 }
 
 impl FromDefinitions {
-    /// 置き場を探して読む。見つからなければ空である——指摘が出ないだけで、
-    /// 判定は止まったままになる。
+    /// 埋め込んだ定義を読む。どのディレクトリから走らせても同じものを読む。
     #[must_use]
     pub fn load() -> Self {
-        let defs = definitions::find_dir(std::env::current_dir().unwrap_or_else(|_| ".".into()))
-            .or_else(|| definitions::find_dir(Path::new(env!("CARGO_MANIFEST_DIR"))))
-            .map(definitions::read)
-            .unwrap_or_default();
+        let defs = definitions::from_texts(EMBEDDED.iter().copied());
         let registry = definitions::registry(&defs).unwrap_or_default();
         Self { defs, registry }
-    }
-
-    /// 読めた定義の数。
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.defs.len()
     }
 
     /// 指紋に入れる、定義の集合そのもの。
@@ -61,10 +56,20 @@ impl FromDefinitions {
         format!("定義 {} 本 fnv1a:{h:016x}", self.defs.len())
     }
 
-    /// 空か。
+    /// 意味の節の最初の 1 文。一覧で名前に添える。
+    ///
+    /// `敬体率・段落` のように node の種類ごとに割った指標は、割る前の定義の意味を使う。
+    /// 定義ファイルは割る前の 1 本しか無い。
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.defs.is_empty()
+    pub fn meaning(&self, name: &str) -> Option<&str> {
+        let family = name.split('・').next().unwrap_or(name);
+        [name, family].into_iter().find_map(|n| {
+            self.defs
+                .iter()
+                .find(|d| d.name == n)
+                .map(|d| d.meaning.as_str())
+                .filter(|m| !m.is_empty())
+        })
     }
 
     /// 札に書かれた向き。
@@ -188,12 +193,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn 埋め込んだ定義は置き場の定義と同じである() {
+        // 食い違えば、定義を直したのに実行ファイルが古い定義で指摘し、指紋を作る。
+        let dir = definitions::find_dir(env!("CARGO_MANIFEST_DIR")).expect("置き場がある");
+        let on_disk = definitions::read(dir);
+        assert!(!on_disk.is_empty());
+        assert_eq!(FromDefinitions::load().defs, on_disk);
+    }
+
+    #[test]
+    fn 埋め込んだ定義はすべて札まで読める() {
+        // 定義は実行ファイルに埋め込むので、読めないのは実行時の事情ではなく作り方の誤りである。
+        // review は読めなかったときの断りを出さないので、ここで止める。
+        let r = FromDefinitions::load();
+        assert!(!r.defs.is_empty());
+        assert!(definitions::registry(&r.defs).is_ok());
+    }
+
+    #[test]
+    fn 割った指標の意味は割る前の定義から引く() {
+        let r = FromDefinitions::load();
+        assert_eq!(r.meaning("敬体率・段落"), r.meaning("敬体率"));
+        assert!(r.meaning("敬体率").is_some());
+        assert_eq!(r.meaning("存在しない指標"), None);
+    }
+
+    #[test]
     fn 定義ファイルから引ける() {
         let r = FromDefinitions::load();
-        if r.is_empty() {
-            eprintln!("定義ファイルが見つからないので飛ばした");
-            return;
-        }
         // 両側の指標は上下の両方が引ける。
         assert!(r.upper("絵文字").is_some());
         assert!(r.lower("絵文字").is_some());
@@ -203,9 +230,6 @@ mod tests {
     fn 札が持たない向きは返さない() {
         // 上限だけの指標に「足す」と言わせない。
         let r = FromDefinitions::load();
-        if r.is_empty() {
-            return;
-        }
         assert_eq!(r.upper("段落長の変動係数"), None, "下限だけの指標である");
         assert!(r.lower("段落長の変動係数").is_some());
     }

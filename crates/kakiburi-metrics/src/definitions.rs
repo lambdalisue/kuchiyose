@@ -22,6 +22,8 @@ pub struct Definition {
     pub tag_line: String,
     /// 直し方の節。無ければ空である。
     pub remedy: String,
+    /// 意味の節の最初の 1 文。一覧で名前に添える。無ければ空である。
+    pub meaning: String,
     /// 切り口そのものを調べた研究があるか。
     ///
     /// `出どころ` の見出しの直後の `直接。` の 1 行で名乗る。 名乗らなければ
@@ -125,22 +127,31 @@ pub fn read(dir: impl AsRef<Path>) -> Vec<Definition> {
     let Ok(entries) = std::fs::read_dir(dir.as_ref()) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    for e in entries.filter_map(Result::ok) {
-        let path = e.path();
-        if path.extension().is_none_or(|x| x != "md") {
-            continue;
-        }
-        let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+    let files: Vec<(String, String)> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|path| path.extension().is_some_and(|x| x == "md"))
+        .filter_map(|path| {
+            let stem = path.file_stem()?.to_string_lossy().into_owned();
+            let body = std::fs::read_to_string(&path).ok()?;
+            Some((stem, body))
+        })
+        .collect();
+    from_texts(files.iter().map(|(n, b)| (n.as_str(), b.as_str())))
+}
+
+/// ファイル名（拡張子なし）と本文の組から読む。ファイル名の昇順。
+///
+/// 実行ファイルに埋め込んだ定義を読む道である。 置き場から読む道と同じ手続きを
+/// 通すので、どちらから読んでも同じ定義になる。
+#[must_use]
+pub fn from_texts<'a>(files: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<Definition> {
+    let mut out: Vec<Definition> = files
+        .into_iter()
         // README は定義ではない。
-        if stem == "README" {
-            continue;
-        }
-        let Ok(body) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        out.push(parse(&stem, &body));
-    }
+        .filter(|(stem, _)| *stem != "README")
+        .map(|(stem, body)| parse(stem, body))
+        .collect();
     out.sort();
     out
 }
@@ -167,12 +178,48 @@ fn parse(file: &str, body: &str) -> Definition {
         name,
         tag_line,
         remedy: section(body, "## 直し方"),
+        meaning: first_sentence(&section(body, "## 意味")),
         direct: section(body, "## 出どころ")
             .lines()
             .find(|l| !l.trim().is_empty())
             .is_some_and(|l| l.trim() == "直接。"),
         digest: digest_of(body),
     }
+}
+
+/// 最初の段落の最初の 1 文。強調の印を落とす。
+///
+/// 一覧は 1 行 1 項目なので、改行も落とす。
+fn first_sentence(section: &str) -> String {
+    let paragraph = section.split("\n\n").next().unwrap_or("");
+    let flat = paragraph
+        .replace("<strong>", "")
+        .replace("</strong>", "")
+        .replace(['\n', '`'], "");
+    let flat = unlink(&flat);
+    match flat.find('。') {
+        Some(i) => flat[..i + '。'.len_utf8()].trim().to_owned(),
+        None => flat.trim().to_owned(),
+    }
+}
+
+/// `[文字](先)` を `文字` にする。
+fn unlink(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(open) = rest.find('[') {
+        let Some(close) = rest[open..].find("](").map(|i| open + i) else {
+            break;
+        };
+        let Some(end) = rest[close..].find(')').map(|i| close + i) else {
+            break;
+        };
+        out.push_str(&rest[..open]);
+        out.push_str(&rest[open + 1..close]);
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// 見出しから次の同じ深さの見出しまで。
@@ -216,6 +263,7 @@ mod tests {
             name: "ためし".into(),
             tag_line: "指示 / なし / 記号 / 両側 / 割合。".into(),
             remedy: remedy.to_owned(),
+            meaning: String::new(),
             direct: false,
             digest: digest_of(remedy),
         }
@@ -245,11 +293,60 @@ mod tests {
     }
 
     #[test]
+    fn 意味の節の最初の_1_文を一覧の説明にする() {
+        let body = "# 強調\n\n札。\n\n## 意味\n\n<strong>強調を</strong>どれだけ\n置くか。太字と斜体を区別しない。\n\n次の段落。\n";
+        assert_eq!(parse("強調", body).meaning, "強調をどれだけ置くか。");
+        assert_eq!(parse("x", "# x\n\n札。\n").meaning, "", "無ければ空");
+    }
+
+    #[test]
+    fn 一覧の説明にはリンクとコードの印を残さない() {
+        // 一覧は端末と fzf で読む。 Markdown の印は読めない。
+        // リンクの書き方を 2 つに割って書く。 リンク検査が試験の文字列を拾わないようにする。
+        let body = concat!(
+            "# 半角括弧\n\n札。\n\n## 意味\n\n[全角括弧]",
+            "(全角括弧.md)と対になる。\n"
+        );
+        assert_eq!(parse("半角括弧", body).meaning, "全角括弧と対になる。");
+        let body = "# 数字\n\n札。\n\n## 意味\n\n半角 `1` を使うか、全角 `１` を使うか。\n";
+        assert_eq!(
+            parse("数字", body).meaning,
+            "半角 1 を使うか、全角 １ を使うか。"
+        );
+    }
+
+    #[test]
     fn 見出しと札を読む() {
         let body = "# 絵文字\n\n指示 / なし / 記号 / 両側 / 割合。\n\n## 意味\n\nある。\n";
         let d = parse("絵文字", body);
         assert_eq!(d.name, "絵文字");
         assert_eq!(d.tag_line, "指示 / なし / 記号 / 両側 / 割合。");
+    }
+
+    #[test]
+    fn 本文の組から読んでもファイルから読んだものと同じになる() {
+        // 実行ファイルに埋め込んだ定義と、置き場から読んだ定義が食い違えば、
+        // 同じ定義なのに指紋が合わなくなる。
+        let dir = find_dir(env!("CARGO_MANIFEST_DIR")).expect("置き場がある");
+        let files: Vec<(String, String)> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "md"))
+            .map(|p| {
+                (
+                    p.file_stem().unwrap().to_string_lossy().into_owned(),
+                    std::fs::read_to_string(&p).unwrap(),
+                )
+            })
+            .collect();
+        let got = from_texts(files.iter().map(|(n, b)| (n.as_str(), b.as_str())));
+        assert!(!got.is_empty());
+        assert!(
+            got.iter().all(|d| d.file != "README"),
+            "README は定義ではない"
+        );
+        assert_eq!(got, read(&dir));
     }
 
     #[test]

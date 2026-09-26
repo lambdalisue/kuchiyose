@@ -74,6 +74,74 @@ pub mod floor {
     pub const ITEMS: usize = 5;
 }
 
+/// 統計値を決める測り方の設定。窓の大きさ・下限・言い回しの長さ・語のまとめ方の線。
+///
+/// [指紋](../../../docs/spec/200-extract.md#何で測ったかを指紋にする)の材料である。
+/// どれも文書 1 本の統計値を変えるので、変われば古いカセットと比べられない。
+///
+/// 較正の設定とは分ける。 あちらは統計値を変えず、指紋に入れれば閾値を 1 つ
+/// 動かしただけで人からもらったカセットが全部使えなくなる。
+///
+/// 平文で返す。 合わないときに、どれが変わったかを名指すためである。
+#[must_use]
+pub fn measurement_settings() -> Vec<(&'static str, String)> {
+    let list = |v: &[usize]| {
+        v.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    vec![
+        (
+            "metrics::floor::JAPANESE_CHARS",
+            floor::JAPANESE_CHARS.to_string(),
+        ),
+        ("metrics::floor::TOKENS", floor::TOKENS.to_string()),
+        ("metrics::floor::BIGRAMS", floor::BIGRAMS.to_string()),
+        (
+            "metrics::floor::FUNCTION_WORDS",
+            floor::FUNCTION_WORDS.to_string(),
+        ),
+        (
+            "metrics::floor::PROSE_BYTES",
+            floor::PROSE_BYTES.to_string(),
+        ),
+        ("metrics::floor::SENTENCES", floor::SENTENCES.to_string()),
+        ("metrics::floor::PARAGRAPHS", floor::PARAGRAPHS.to_string()),
+        ("metrics::floor::SECTIONS", floor::SECTIONS.to_string()),
+        ("metrics::floor::NODES", floor::NODES.to_string()),
+        ("metrics::floor::ITEMS", floor::ITEMS.to_string()),
+        ("metrics::humanness::WINDOW", humanness::WINDOW.to_string()),
+        (
+            "metrics::humanness::WINDOW_BYTES",
+            humanness::WINDOW_BYTES.to_string(),
+        ),
+        ("metrics::humanness::SHORT_N", list(&humanness::SHORT_N)),
+        ("metrics::humanness::LONG_N", list(&humanness::LONG_N)),
+        (
+            "metrics::lexicon::MIN_COUNT",
+            lexicon::MIN_COUNT.to_string(),
+        ),
+        ("metrics::lexicon::BOUND", lexicon::BOUND.to_string()),
+        (
+            "metrics::lexicon::NOUN_SHARE",
+            lexicon::NOUN_SHARE.to_string(),
+        ),
+        (
+            "metrics::matching::COMMA_GAP_MAX",
+            matching::COMMA_GAP_MAX.to_string(),
+        ),
+        (
+            "metrics::matching::COMMA_FLOOR",
+            matching::COMMA_FLOOR.to_string(),
+        ),
+        (
+            "metrics::matching::CHAR_TYPE_FLOOR",
+            matching::CHAR_TYPE_FLOOR.to_string(),
+        ),
+    ]
+}
+
 /// 測った結果。
 ///
 /// 0 と「測っていない」は別である。 下限を下回った指標は 0 を返さない——
@@ -121,6 +189,24 @@ pub enum Unmeasured {
 }
 
 impl Unmeasured {
+    /// 全部。直せる手のいちばん限られたものが先である。
+    pub const ALL: [Unmeasured; 5] = [
+        Unmeasured::ToolFailed,
+        Unmeasured::ToolMissing,
+        Unmeasured::NotWritable,
+        Unmeasured::NoDenominator,
+        Unmeasured::BelowFloor,
+    ];
+
+    /// [名前](Self::name)から引く。知らない名前なら `None`。
+    ///
+    /// 保存した統計値を読み戻すのに使う。 知らない名前を別の理由に倒さない
+    /// ——倒せば、環境の壊れがコーパスの性質として読み戻される。
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|u| u.name() == name)
+    }
+
     /// 使う側に見せる名前。
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -230,6 +316,21 @@ mod tests {
         reasons.dedup();
         assert_eq!(reasons.len(), before, "5 つとも別の理由である");
         assert_eq!(before, 5);
+    }
+
+    #[test]
+    fn 理由は名前から引き戻せる() {
+        for u in Unmeasured::ALL {
+            assert_eq!(Unmeasured::from_name(u.name()), Some(u));
+        }
+        assert_eq!(Unmeasured::from_name("知らない理由"), None);
+    }
+
+    #[test]
+    fn 測り方の設定は名前が重ならない() {
+        let names: Vec<&str> = measurement_settings().iter().map(|(n, _)| *n).collect();
+        let unique: std::collections::BTreeSet<&str> = names.iter().copied().collect();
+        assert_eq!(unique.len(), names.len(), "{names:?}");
     }
 
     #[test]

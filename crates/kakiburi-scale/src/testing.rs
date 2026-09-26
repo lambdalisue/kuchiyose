@@ -7,7 +7,9 @@ use kakiburi_doc::node::{Kind, Node};
 use kakiburi_doc::Document;
 use kakiburi_metrics::morph::{Analyzer, Dictionary, Morpheme};
 
-use crate::assemble::Sample;
+use crate::assemble::{build, lexicon_of, Measurements, Sample, Units};
+use crate::stats::{compose, CassetteStats};
+use crate::{Scale, ScaleError};
 
 /// 試験用の解析器。UniDic を名乗り、字で切る。
 ///
@@ -115,6 +117,28 @@ impl Fixture {
                 document: d,
             })
             .collect()
+    }
+
+    /// 束ねずに組み立てる。基準も本人の語のまとめ方で測る。
+    ///
+    /// 文体と題材で選ぶ段も束ねる段も通さない。 組み立ての中身だけを試すためである。
+    pub(crate) fn built(&self, analyzer: Option<&dyn Analyzer>) -> Result<Scale, ScaleError> {
+        let (person, baseline) = (Self::samples(&self.person), Self::samples(&self.baseline));
+        let lexicon = lexicon_of(&person, analyzer);
+        let units = |samples: &[Sample<'_>]| -> Vec<(String, Measurements)> {
+            let stats = CassetteStats::measure_with(samples, analyzer, lexicon.clone())
+                .expect("名前が重ならない");
+            stats
+                .documents
+                .iter()
+                .map(|d| (d.name.clone(), compose(&[d])))
+                .collect()
+        };
+        build(Units {
+            person: units(&person),
+            baseline: units(&baseline),
+            lexicon: lexicon.clone(),
+        })
     }
 }
 

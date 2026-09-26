@@ -14,8 +14,9 @@ pub enum Exit {
     Fail,
     /// 判定できない。
     ///
-    /// 目盛りの無いカセットもここである。 素材が足りずに目盛りが作れなかったのは
-    /// 正常な状態であり、仕様がそのために判定できないを置いている。
+    /// 目盛りが組み立てられなかったときもここである。 素材が足りない、長さの範囲が
+    /// 重ならない、帯が重なりすぎる、自己検査が崩れた——どれも正常な状態であり、
+    /// 仕様がそのために判定できないを置いている。
     Unknown,
     /// 使い方の誤り。
     Usage,
@@ -23,6 +24,10 @@ pub enum Exit {
     Unreadable,
     /// 指紋が環境と合わない。
     FingerprintMismatch,
+    /// 環境の側の理由で測れない。道具が無い、道具が失敗した。
+    ///
+    /// 素材を足しても直らない。 直すのは環境である。
+    Environment,
 }
 
 impl Exit {
@@ -39,6 +44,7 @@ impl Exit {
             Exit::Usage => 64,
             Exit::Unreadable => 65,
             Exit::FingerprintMismatch => 66,
+            Exit::Environment => 69,
         }
     }
 
@@ -66,7 +72,12 @@ mod tests {
 
     #[test]
     fn 使う前の問題は_64_以上である() {
-        for e in [Exit::Usage, Exit::Unreadable, Exit::FingerprintMismatch] {
+        for e in [
+            Exit::Usage,
+            Exit::Unreadable,
+            Exit::FingerprintMismatch,
+            Exit::Environment,
+        ] {
             assert!(e.code() >= 64, "{e:?} が {} になっている", e.code());
         }
     }
@@ -80,8 +91,8 @@ mod tests {
     }
 
     #[test]
-    fn 目盛りの無いカセットは_64_ではなく_2_である() {
-        // 素材が足りずに作れなかったのは正常な状態である。
+    fn 目盛りが組み立てられなければ_64_ではなく_2_である() {
+        // 素材が足りずに組み立てられなかったのは正常な状態である。
         assert_eq!(Exit::Unknown.code(), 2);
     }
 

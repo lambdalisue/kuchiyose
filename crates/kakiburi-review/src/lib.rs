@@ -6,12 +6,10 @@
 //!
 //! この境界は `Cargo.toml` が守っている——`kakiburi-scale` を依存に持たない。
 
-pub mod own_writing;
 pub mod point;
 pub mod range;
 pub mod verdict;
 
-pub use own_writing::{OwnWriting, OWN_WRITING_CAVEAT};
 pub use point::{Point, PointError, Remedies};
 pub use range::{appearance_size, Lower, Outside, Range, APPEARANCE_FLOOR};
 pub use verdict::{
@@ -446,6 +444,8 @@ pub struct Observations<'a> {
     pub too_short: Option<&'a str>,
     /// 前に出す指標の観測。3 段目。
     pub directives: &'a [Observed],
+    /// 効く指標はあったが、本人が全部を無効にしたために前に出す指標が空になったか。
+    pub directives_muted: bool,
     /// 一貫しているだけの指標の観測。判定には使わない。
     ///
     /// [条件 2](kakiburi_scale::effective::Effective::narrow_only)で捨てられた軸である
@@ -585,6 +585,7 @@ pub fn review(o: &Observations<'_>, remedies: &dyn Remedies) -> Review {
         Notes {
             substituted: o.matching_substituted,
             too_short: o.too_short,
+            directives_muted: o.directives_muted,
         },
         directives,
     );
@@ -753,9 +754,9 @@ fn humanness_remedies(
             // 並べる値はその指標だけで見た人らしさであって、指標そのものの
             // 量ではない。 「密度が本人より足りない」と書けば、続く直し方の
             // 「減らす」と食い違って読める。
-            let way = if o.target > o.value { "低い" } else { "高い" };
+            let way = if o.target > o.value { "近い" } else { "遠い" };
             let mut line = format!(
-                "{}の人らしさが本人より{way}（この文章 {:.3} / 本人 {:.3}）。{remedy}人らしさ値が {:+.3} 動く。",
+                "{}で見た基準との距離が本人より{way}（この文章 {:.3} / 本人 {:.3}）。{remedy}基準との距離が {:+.3} 動く。",
                 o.name, o.value, o.target, o.effect
             );
             // 本人が現に繰り返している言い回しを添える。 添えなければ、
@@ -866,6 +867,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -896,6 +898,7 @@ mod tests {
                 matching_substituted: Some("読点の打ち方"),
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -929,6 +932,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &h,
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -1053,6 +1057,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &v,
@@ -1087,6 +1092,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &v,
@@ -1120,6 +1126,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &v,
@@ -1149,6 +1156,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &v,
@@ -1182,6 +1190,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[ok, done],
                 diverging: &[],
@@ -1237,6 +1246,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[down],
                 diverging: &[],
@@ -1255,7 +1265,7 @@ mod tests {
         let line = &r.humanness[0];
         assert!(
             line.starts_with(
-                "句読点の密度の人らしさが本人より低い（この文章 -0.900 / 本人 1.000）"
+                "句読点の密度で見た基準との距離が本人より近い（この文章 -0.900 / 本人 1.000）"
             ),
             "{line}"
         );
@@ -1264,7 +1274,7 @@ mod tests {
             "直し方は残す: {line}"
         );
         assert!(
-            line.contains("人らしさ値が +0.100 動く"),
+            line.contains("基準との距離が +0.100 動く"),
             "動く量も残す: {line}"
         );
     }
@@ -1284,6 +1294,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[h],
                 diverging: &[],
@@ -1316,6 +1327,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[h],
                 diverging: &[],
@@ -1357,6 +1369,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[h],
                 diverging: &[],
@@ -1405,6 +1418,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[bad, good],
                 diverging: &[],
@@ -1440,6 +1454,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[deep, shallow],
                 diverging: &[],
@@ -1478,6 +1493,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[a, b],
                 diverging: &[],
@@ -1508,6 +1524,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &h,
                 diverging: &[],
@@ -1540,6 +1557,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -1570,6 +1588,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &h,
                 diverging: &[],
@@ -1604,6 +1623,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[down],
                 diverging: &[],
@@ -1629,6 +1649,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[human("圧縮率", -0.9)],
                 diverging: &[],
@@ -1669,6 +1690,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &h,
                 diverging: &[],
@@ -1699,6 +1721,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &h,
                 diverging: &[],
@@ -1728,6 +1751,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -1757,6 +1781,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -1789,6 +1814,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -1821,6 +1847,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -1856,6 +1883,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],
@@ -1887,6 +1915,7 @@ mod tests {
                 matching_substituted: None,
                 too_short: None,
                 directives: &d,
+                directives_muted: false,
                 habits: &[],
                 humanness_by_metric: &[],
                 diverging: &[],

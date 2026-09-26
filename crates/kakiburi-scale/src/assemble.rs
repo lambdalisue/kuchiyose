@@ -28,7 +28,7 @@ use crate::examples::{examples_for, ExampleTable};
 use crate::humanness::HumannessScale;
 use crate::pairing::{pair, Pair};
 use crate::split::{self, Unit};
-use crate::stats::{compose, phrases_in, CassetteStats, Phrases, StatsError};
+use crate::stats::{phrases_in, Phrases};
 use crate::vocabulary::{cosine_delta, Counts, FrozenSet};
 use crate::{length_range_ok, Scale, ScaleError};
 
@@ -193,91 +193,15 @@ impl Report {
     }
 }
 
-/// 素材を測って内訳を返す。目盛りは作らない。
-#[must_use]
-pub fn inspect(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Vec<Report> {
-    samples
-        .iter()
-        .map(|s| Measurements::of(*s, analyzer, &Lexicon::default()).report(s.name))
-        .collect()
-}
-
-/// 目盛りを作る材料。
-///
-/// 場面を跨げる素材を、跨げない素材と同じ配列に入れない。 入れれば、
-/// 相手集合にも天井にも他人が混ざる道が開く——[場面ごとに閉じる](../../../docs/spec/010-strategy.md#場面ごとに閉じる)
-/// が、呼ぶ側の注意だけで守られることになる。
-///
-/// 欄で分けたうえで、[`assemble`]は [`others`](Self::others) を較正にしか渡さない
-/// ——相手集合にも語彙にも帯にも入らない。 型が全部を守るわけではないが、
-/// 跨ぐ道が 1 本に絞られる。
-#[derive(Debug, Clone, Copy)]
-pub struct Material<'a> {
-    /// 1 つの場面の本人の単位。
-    pub person: &'a [Sample<'a>],
-    /// 同じ場面の基準の単位。
-    pub baseline: &'a [Sample<'a>],
-    /// 他人の文書。場面を跨いでよい唯一の素材である。
-    ///
-    /// 較正の 2 か所に足す。 照合値の較正では[違う人の側](crate::pairing)に
-    /// 他人 × 相手集合の対として、[人らしさの較正](../../../docs/spec/200-extract.md#人らしさの境目は同じ材料から出る)
-    /// では人の側に。 帯の側には足さない——2 つ目の床は作らない。足せば、
-    /// 帯の点の数が本人と基準で釣り合わなくなる。
-    pub others: &'a [Sample<'a>],
-}
-
-/// 本文から組み立てる。
-///
-/// 語のまとめ方は本人の素材から見つけ、基準と他人もそれで測る。 基準の単位は
-/// 渡されたまま 1 単位ずつ測る——束ねるなら、呼ぶ側が束ねた本文を渡す。
-///
-/// 作れないことは失敗ではない。 素材が足りなければ目盛りを作らず、検めが
-/// 判定できないを返す——それが正しい振る舞いである。
-///
-/// # Errors
-///
-/// 目盛りを作れなければ、その理由を返す。
-pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scale, ScaleError> {
-    // 2 度測る。 1 度目でコーパスから語を見つけ、2 度目でその語を畳んで測る。
-    //
-    // 辞書に無い語は割れる。 書き手の名前も、その分野の言い回しも、解析器の
-    // 辞書は知らない——割れたままだと、その語のところで機能語も品詞 bigram も型も
-    // 狂う（[語](kakiburi_metrics::lexicon)）。
-    let lexicon = lexicon_of(m.person, analyzer);
-    // 名前が重なる素材は呼ぶ側が断っている。 ここで重なれば、統計値を作れない。
-    let measure = |samples: &[Sample<'_>]| -> Result<CassetteStats, ScaleError> {
-        CassetteStats::measure_with(samples, analyzer, lexicon.clone())
-            .map_err(|StatsError::DuplicateName(n)| ScaleError::DuplicateName(n))
-    };
-    let (person, baseline, others) = (measure(m.person)?, measure(m.baseline)?, measure(m.others)?);
-    let units = |samples: &[Sample<'_>], stats: &CassetteStats| -> Vec<(String, Measurements)> {
-        samples
-            .iter()
-            .filter_map(|s| {
-                let d = stats.document(s.name)?;
-                Some((s.name.to_owned(), compose(&[d])))
-            })
-            .collect()
-    };
-    build(Units {
-        person: units(m.person, &person),
-        baseline: units(m.baseline, &baseline),
-        others: units(m.others, &others),
-        lexicon,
-    })
-}
-
 /// 組み立てに渡す、測り終えた単位。
 ///
-/// 名前は 3 つの欄を跨いで一意でなければならない——測った値を名前で引くので、
+/// 名前は 2 つの欄を跨いで一意でなければならない——測った値を名前で引くので、
 /// 重なれば片方の値がもう片方で黙って置き換わる。
 pub(crate) struct Units {
     /// 本人の単位。
     pub(crate) person: Vec<(String, Measurements)>,
     /// 基準の単位。
     pub(crate) baseline: Vec<(String, Measurements)>,
-    /// 他人の単位。較正にしか入らない。
-    pub(crate) others: Vec<(String, Measurements)>,
     /// 本人の側の語のまとめ方。検める草稿もこれで測る。
     pub(crate) lexicon: Lexicon,
 }
@@ -287,7 +211,6 @@ pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
     let Units {
         person,
         baseline,
-        others,
         lexicon,
     } = u;
     let as_unit = |name: &str, m: &Measurements| -> Unit {
@@ -299,9 +222,15 @@ pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
     };
     let person_units: Vec<Unit> = person.iter().map(|(n, m)| as_unit(n, m)).collect();
     let baseline_units: Vec<Unit> = baseline.iter().map(|(n, m)| as_unit(n, m)).collect();
-    let others_all: Vec<Unit> = others.iter().map(|(n, m)| as_unit(n, m)).collect();
-    let measured: BTreeMap<String, Measurements> =
-        person.into_iter().chain(baseline).chain(others).collect();
+    // 渡す側が一意にしたつもりでも、ここで確かめる。 名前は読み戻したカセットから
+    // 来るので、重ならないことを渡す側の約束に預けない。
+    let mut measured: BTreeMap<String, Measurements> = BTreeMap::new();
+    for (name, m) in person.into_iter().chain(baseline) {
+        if measured.contains_key(&name) {
+            return Err(ScaleError::DuplicateName(name));
+        }
+        measured.insert(name, m);
+    }
 
     // 1. 測れた単位だけを取り、どちらも 5 ＋ 5 に届くことを確かめる。
     let person_split = split::split(&person_units).map_err(ScaleError::Split)?;
@@ -350,20 +279,9 @@ pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
         ));
     }
 
-    // 他人は系統が測れたものだけを使う。 投影できない単位を対にしても捨てられる。
-    //
-    // 語彙には入れない。 固定するのは本人と基準からで、他人はその語彙へ投影する
-    // ——検めるときの草稿と同じ扱いである。他人の語で次元を決めれば、
-    // 他人が何人来たかで本人の測り方が変わる。
-    let other_units: Vec<Unit> = others_all
-        .iter()
-        .filter(|u| u.systems_measured)
-        .cloned()
-        .collect();
-
     // 系統ごとの、単位 → z 得点のベクトル。
     let mut projected: BTreeMap<(String, String), Vec<f64>> = BTreeMap::new();
-    for u in used.iter().copied().chain(other_units.iter()) {
+    for u in used.iter().copied() {
         let m = &measured[&u.name];
         for (name, set) in &frozen {
             let Some(system) = System::from_name(name) else {
@@ -379,7 +297,7 @@ pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
     }
 
     // 4. 対を割り当てる。作り手を 1 つにしたうえで、それでも確かめる。
-    let pairing = pair(&person_split, &baseline_split, &other_units);
+    let pairing = pair(&person_split, &baseline_split);
     if pairing.shares_pairs() {
         return Err(ScaleError::SharedPairs);
     }
@@ -451,11 +369,6 @@ pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
             })
             .collect()
     };
-    // 他人の文書は較正の側にだけ足す（照合値の側は対を作るときに足してある）。
-    // 人らしさの人の側は「誰の文章でも人が
-    // 書いたものは人の側に落ちる」ので、素材が足りなければ混ぜてよい——
-    // 場面は人と機械の別を跨がない。
-    //
     // 較正には、帯に使う分を除いた全部を渡す。
     //
     // 帯の端を各側 5 点に固定したのは、最小・最大が n とともに外へ広がるから
@@ -475,20 +388,7 @@ pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
 
     // 測れなかったものは落とす。 次元が揃わない行を混ぜれば、列の数が
     // 行ごとに変わる。
-    let mut human_rows = rows_of(&human_units);
-    for u in &others_all {
-        let h = &measured[&u.name].humanness;
-        if !h.all_measured() {
-            continue;
-        }
-        human_rows.push(
-            h.flat()
-                .into_iter()
-                .filter_map(|(_, v)| v.value())
-                .collect(),
-        );
-    }
-    let humanness = HumannessScale::fit(&human_rows, &rows_of(&machine_units));
+    let humanness = HumannessScale::fit(&rows_of(&human_units), &rows_of(&machine_units));
     let side = |us: &[Unit]| -> Vec<f64> {
         us.iter()
             .filter_map(|u| humanness.value(&measured[&u.name].humanness.flat()).ok())
@@ -501,7 +401,7 @@ pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
     let humanness_band = Band::build_humanness(&human, &machine).map_err(|source| {
         ScaleError::Band(Box::new(crate::BandStop {
             source,
-            which: "人らしさ値",
+            which: "基準との距離",
             ceiling: human.clone(),
             floor: machine.clone(),
             // 照合の帯は作れている。 止まったのは人らしさの側である。
@@ -1372,6 +1272,19 @@ pub fn measure_against(
                 })
                 .collect()
         },
+        humanness_metrics: scale
+            .humanness
+            .by_metric(&t.humanness.flat())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(n, v)| (n.to_owned(), v))
+            .collect(),
+        humanness_dims: t
+            .humanness
+            .flat()
+            .into_iter()
+            .map(|(n, m)| (n, m.value()))
+            .collect(),
         missing_humanness: t.humanness.missing(),
         missing_systems: FOR_VERDICT
             .iter()
@@ -1794,6 +1707,13 @@ pub struct Measured {
     /// 測れなければ空である。 直し方を渡す側が、測れていないことと機械の
     /// 側にあることを取り違えないようにする。
     pub humanness_by_metric: Vec<HumannessByMetric>,
+    /// 指標ごとの人らしさ値。向きの割れた指標も含めて全部。1 次元でも欠ければ空である。
+    ///
+    /// [直し方の材料](Self::humanness_by_metric)は、向きを言えない指標を外す。
+    /// 測った値を並べるときに外すと、合算に効いているのに見えない指標が残る。
+    pub humanness_metrics: Vec<(String, f64)>,
+    /// 人らしさの次元ごとの、測った量。測れなかった次元は `None`。
+    pub humanness_dims: Vec<(String, Option<f64>)>,
     /// 測れなかった人らしさの次元。
     pub missing_humanness: Vec<String>,
     /// 測れなかった系統。
@@ -1822,15 +1742,7 @@ mod tests {
     fn 素材が足りなければ目盛りを作らない() {
         // 作れないことは失敗ではない。判定できないが返る。
         let m = Fixture::new(4);
-        let e = assemble(
-            Material {
-                person: &Fixture::samples(&m.person),
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .unwrap_err();
+        let e = m.built(Some(&Chars)).unwrap_err();
         assert!(matches!(e, ScaleError::Split(_)), "{e}");
     }
 
@@ -1838,94 +1750,24 @@ mod tests {
     fn 解析器が無ければ系統が揃わない() {
         // 一部の系統が形態素を要る。抜いて合算しない。
         let m = Fixture::new(10);
-        let e = assemble(
-            Material {
-                person: &Fixture::samples(&m.person),
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            None,
-        )
-        .unwrap_err();
+        let e = m.built(None).unwrap_err();
         assert!(matches!(e, ScaleError::Split(_)), "{e}");
     }
 
     #[test]
     fn 端まで通ると目盛りができる() {
         let m = Fixture::new(10);
-        let scale = assemble(
-            Material {
-                person: &Fixture::samples(&m.person),
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .expect("目盛りができる");
+        let scale = m.built(Some(&Chars)).expect("目盛りができる");
         assert_eq!(scale.frozen.len(), 5, "判定に使う系統が揃う");
         assert_eq!(scale.partners().len(), 5);
         assert_eq!(scale.calibration.systems().len(), 5);
     }
 
     #[test]
-    fn 他人の文書は較正にだけ効き帯には効かない() {
-        // 足せる形を決めておく。 決めずに置くと、素材だけ入って判定に効かないと
-        // いういちばん質の悪い状態になる——使う側は効いていると思って集め続ける。
-        //
-        // 較正の違う人の側には効く。 基準だけで学習すると、測っているのは
-        // 「その人らしさ」ではなく「この基準との違い」になる。
-        //
-        // 帯・割り・語彙には効かない。 帯の点の数が本人と基準で釣り合わなくなり、
-        // 他人が何人来たかで本人の測り方が変わる。
-        let m = Fixture::new(10);
-        let extra = Fixture::new(14);
-        // 別の場面の他人。**名前が本人・基準と衝突しないようにする。**
-        let others: Vec<(String, Document)> = extra.person[10..]
-            .iter()
-            .map(|(n, d)| (format!("o-{n}"), d.clone()))
-            .collect();
-        let bare = assemble(
-            Material {
-                person: &Fixture::samples(&m.person),
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .expect("目盛りができる");
-        let with = assemble(
-            Material {
-                person: &Fixture::samples(&m.person),
-                baseline: &Fixture::samples(&m.baseline),
-                others: &Fixture::samples(&others),
-            },
-            Some(&Chars),
-        )
-        .expect("目盛りができる");
-
-        // 割りと語彙は 1 ミリも動かない。 動けば、相手集合か語彙に
-        // 他人が混ざっている。
-        assert_eq!(with.selection, bare.selection, "割りが動かない");
-        assert_eq!(with.frozen, bare.frozen, "語彙が動かない");
-
-        // 較正は動く。 動かなければ、入れたものが読まれていない。
-        assert_ne!(with.calibration, bare.calibration, "照合値の較正は動く");
-        assert_ne!(with.humanness, bare.humanness, "人らしさの較正は動く");
-    }
-
-    #[test]
     fn 語彙は割る前に全体から固定する() {
         // 側ごとに違う語彙を使えば、側ごとに次元の意味が変わる。
         let m = Fixture::new(10);
-        let scale = assemble(
-            Material {
-                person: &Fixture::samples(&m.person),
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .unwrap();
+        let scale = m.built(Some(&Chars)).unwrap();
         let (_, set) = scale
             .frozen
             .iter()
@@ -1944,15 +1786,7 @@ mod tests {
     fn 検めは目盛りを受け取るだけである() {
         let m = Fixture::new(10);
         let person = Fixture::samples(&m.person);
-        let scale = assemble(
-            Material {
-                person: &person,
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .unwrap();
+        let scale = m.built(Some(&Chars)).unwrap();
         // 相手集合は目盛りが持っている。 本文はもう要らない。
         assert_eq!(scale.partner_vectors.len(), 5);
         let got = measure_against(&scale, person[9], Some(&Chars));
@@ -1962,18 +1796,26 @@ mod tests {
     }
 
     #[test]
-    fn 系統が欠ければ照合値を出さない() {
+    fn 測った値を全部出すために指標ごとと次元ごとの値を持つ() {
+        // 向きの割れた指標は直し方から外れるが、値は出す。 出さなければ、
+        // 合算に効いているのに見えない指標が残る。
         let m = Fixture::new(10);
         let person = Fixture::samples(&m.person);
-        let scale = assemble(
-            Material {
-                person: &person,
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .unwrap();
+        let scale = m.built(Some(&Chars)).unwrap();
+        let got = measure_against(&scale, person[9], Some(&Chars));
+        assert_eq!(
+            got.humanness_metrics.len(),
+            kakiburi_metrics::humanness::Metric::ALL.len()
+        );
+        assert!(got.humanness_metrics.len() >= got.humanness_by_metric.len());
+        assert_eq!(got.humanness_dims.len(), crate::humanness::dims().len());
+        assert!(got.humanness_dims.iter().all(|(_, v)| v.is_some()));
+    }
+
+    #[test]
+    fn 系統が欠ければ照合値を出さない() {
+        let m = Fixture::new(10);
+        let scale = m.built(Some(&Chars)).unwrap();
         // 短い文書は除外に掛かる。0 ではなく、出ないである。
         let short = Document::new(vec![Node::leaf(Kind::Paragraph, "短い。")]);
         let got = measure_against(
@@ -1993,16 +1835,7 @@ mod tests {
     #[test]
     fn 系統が_1_つだけ欠ければ代わりの値で照合値を出す() {
         let m = Fixture::new(10);
-        let person = Fixture::samples(&m.person);
-        let scale = assemble(
-            Material {
-                person: &person,
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .unwrap();
+        let scale = m.built(Some(&Chars)).unwrap();
         let no_comma = document_with(9, false, "");
         let got = measure_against(
             &scale,
@@ -2023,15 +1856,7 @@ mod tests {
     fn そろっていれば代わりの値を置かない() {
         let m = Fixture::new(10);
         let person = Fixture::samples(&m.person);
-        let scale = assemble(
-            Material {
-                person: &person,
-                baseline: &Fixture::samples(&m.baseline),
-                others: &[],
-            },
-            Some(&Chars),
-        )
-        .unwrap();
+        let scale = m.built(Some(&Chars)).unwrap();
         let got = measure_against(&scale, person[9], Some(&Chars));
         assert!(got.matching.is_some());
         assert_eq!(got.matching_substituted, None);

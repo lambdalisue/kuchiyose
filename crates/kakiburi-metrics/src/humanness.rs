@@ -1,6 +1,6 @@
 //! 人らしさの指標。その人らしさではない。
 //!
-//! 人が書いたものに見えるかを測る（[通るための 2 つ目の条件](../../../docs/spec/010-strategy.md#通るには-2-つ要る)）。
+//! 人が書いたものに見えるかを測る（[通るための 2 つ目の条件](../../../docs/spec/010-strategy.md#味が出るには-2-つ要る)）。
 //!
 //! 語彙の狭さを見る指標を、独立した証拠として数えない。 圧縮率・短い繰り返し・
 //! 長い繰り返し・語彙の豊富さ・エントロピーは同じ現象を別の角度から見ている。
@@ -111,6 +111,12 @@ impl Metric {
         Metric::Entropy,
         Metric::Punctuation,
     ];
+
+    /// [名前](Self::name)から引く。知らない名前なら `None`。
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|m| m.name() == name)
+    }
 
     /// 指標の名前。定義ファイルの 1 行目と同じ。
     #[must_use]
@@ -772,6 +778,14 @@ mod tests {
             kind: Kind::Paragraph,
             text: t.to_owned(),
         }
+    }
+
+    #[test]
+    fn 指標は名前から引き戻せる() {
+        for m in Metric::ALL {
+            assert_eq!(Metric::from_name(m.name()), Some(m));
+        }
+        assert_eq!(Metric::from_name("知らない指標"), None);
     }
 
     /// 圧縮率の下限を越える地の文。

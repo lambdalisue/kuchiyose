@@ -108,8 +108,8 @@ fn separates(column: &[f64], labels: &[u8]) -> bool {
 
 /// 傾きを 0 にした重み。どんな入力でも 0 を返す。
 ///
-/// 次元を[並び](dims)から外さない——外すと保存した派生物の形が変わり、
-/// 古いカセットが読めなくなる。効かせないことだけを傾きで表す。
+/// 次元を[並び](dims)から外さない——並びは指標の定義から決まり、重みも値も
+/// その並びで引く。効かせないことだけを傾きで表す。
 fn silenced(w: &Weights) -> Weights {
     Weights::restore(
         0.0,
@@ -291,30 +291,6 @@ impl HumannessScale {
     #[must_use]
     pub fn fusion(&self) -> &Weights {
         &self.fusion
-    }
-
-    /// 保存した派生物から組み立てる。
-    #[must_use]
-    pub fn restore(per_dim: Vec<Weights>, fusion: Weights) -> Option<Self> {
-        let dims = dims();
-        if per_dim.len() != dims.len() {
-            return None;
-        }
-        // 本数だけでは足りない。 傾きが 0 本の重みは、どんな入力でも切片だけを
-        // 返す——壊れた目盛りが「いつも同じ値」を出す判定器として正常に動く。
-        //
-        // 次元ごとは値 1 つを受けるので 1 次元、合算は指標の数だけ受ける。
-        if per_dim.iter().any(|w| w.slopes().len() != 1) {
-            return None;
-        }
-        if fusion.slopes().len() != Metric::ALL.len() {
-            return None;
-        }
-        Some(Self {
-            dims,
-            per_dim,
-            fusion,
-        })
     }
 
     /// 較正が定義と逆を学んだ次元の名前。
@@ -730,26 +706,6 @@ mod tests {
         let s = scale();
         let row = human_row(0.0);
         assert_eq!(per_metric(s.per_dim(), &row).len(), Metric::ALL.len());
-    }
-
-    #[test]
-    fn 読み戻しは次元の数が合わなければ組み立てない() {
-        let s = scale();
-        assert!(HumannessScale::restore(s.per_dim().to_vec(), s.fusion().clone()).is_some());
-        assert!(HumannessScale::restore(vec![], s.fusion().clone()).is_none());
-
-        // 本数だけでは足りない。 傾きが 0 本の重みは、どんな入力でも切片だけを
-        // 返す——壊れた目盛りが「いつも同じ値」を出す判定器として正常に動く。
-        let empty = Weights::restore(0.0, vec![], vec![], vec![]).expect("組める");
-        assert!(
-            HumannessScale::restore(vec![empty.clone(); dims().len()], s.fusion().clone())
-                .is_none(),
-            "次元ごとの傾きが空でも通っている"
-        );
-        assert!(
-            HumannessScale::restore(s.per_dim().to_vec(), empty).is_none(),
-            "合算の傾きが空でも通っている"
-        );
     }
 
     #[test]

@@ -44,6 +44,9 @@ perl tools/checklinks.pl .
 相対リンクと見出しアンカーを全部たどる。<strong>アンカーは GitHub の規則で作る</strong>——約物を
 落とし、空白を `-` にする。節の名前を変えたら、ここが落ちる。
 
+Rust のソースのコメントに書いた文書へのリンクも同じ規則でたどる。 コードのコメントも
+仕様の節を指しているので、節の名前を変えると黙って腐る。
+
 <strong>経路は両側を同じ関数で正す。</strong> `canonpath` は先頭の `./` を落とすので、片側だけに
 通すと <strong>`..` を含むリンクが全部壊れて見える</strong>。実際にそうなっていて、
 <strong>1,162 本のうち 478 本を誤って壊れと報告していた</strong>——ディレクトリを跨ぐリンクを
@@ -91,8 +94,7 @@ kakiburi cassette mute|unmute <カセット> <名前または ID>... | --kind <�
 kakiburi cassette first-person <カセット> <一人称>|auto
 kakiburi cassette register <カセット> polite|plain|auto
 kakiburi cassette edit  <カセット>
-kakiburi review <草稿>... --cassette <カセット> [--baseline <カセット>] [--values]
-                          [--own-writing shown|not-shown|unknown] [--json]
+kakiburi review <草稿>... --cassette <カセット> [--baseline <カセット>] [--values] [--json]
 ```
 
 同梱の基準カセットは `baselines/` の文書から `cassette build` で作り、実行ファイルに

@@ -29,7 +29,7 @@ use kakiburi_metrics::system::System;
 use kakiburi_metrics::word::Counts;
 use kakiburi_metrics::{Humanness, Unmeasured};
 
-use crate::assemble::{lexicon_of, Measurements, Sample, KATA_N};
+use crate::assemble::{lexicon_of, Measurements, Report, Sample, KATA_N};
 use crate::examples::{self, ExampleTable};
 
 /// 1 つの言い回しの、1 単位の中での出方。
@@ -183,6 +183,12 @@ impl DocumentStats {
         }
     }
 
+    /// 1 本で 1 単位としたときに、測れたかの内訳。
+    #[must_use]
+    pub fn report(&self) -> Report {
+        compose(&[self]).report(&self.name)
+    }
+
     /// 環境の側の理由で測れなかった指標と、その理由。
     ///
     /// コーパスの性質（下限未満・分母 0・書けない記法）は入れない。 道具が無い・
@@ -242,17 +248,51 @@ pub struct CassetteStats {
 pub enum StatsError {
     /// 同じ名前の単位が 2 つある。黙って上書きしない。
     DuplicateName(String),
+    /// 単位の名前に制御文字がある。
+    ///
+    /// 組み立ては名前を 1 つの文字列として引き回し、役の前置と束の繋ぎに制御文字を
+    /// 使う。 名前に混ざれば、別の単位と同じ名前を作れてしまう。
+    ControlInName(String),
 }
 
 impl std::fmt::Display for StatsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StatsError::DuplicateName(n) => write!(f, "単位の名前が重なっている: `{n}`"),
+            StatsError::ControlInName(n) => write!(f, "単位の名前に制御文字がある: {n:?}"),
         }
     }
 }
 
 impl std::error::Error for StatsError {}
+
+/// 単位の名前を確かめる。 測って書くときも、カセットから読み戻すときも、これを通す。
+///
+/// # Errors
+///
+/// 名前に制御文字があれば断る。
+pub fn check_name(name: &str) -> Result<(), StatsError> {
+    if name.chars().any(char::is_control) {
+        return Err(StatsError::ControlInName(name.to_owned()));
+    }
+    Ok(())
+}
+
+/// 単位の名前の並びを確かめる。1 つずつ[確かめ](check_name)、重なりも断る。
+///
+/// # Errors
+///
+/// 名前に制御文字があるか、同じ名前が 2 つあれば断る。
+pub fn check_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<(), StatsError> {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for name in names {
+        check_name(name)?;
+        if !seen.insert(name) {
+            return Err(StatsError::DuplicateName(name.to_owned()));
+        }
+    }
+    Ok(())
+}
 
 impl CassetteStats {
     /// 文書を測る。
@@ -262,7 +302,7 @@ impl CassetteStats {
     ///
     /// # Errors
     ///
-    /// 同じ名前の文書が 2 つあれば断る。
+    /// 同じ名前の文書が 2 つあるか、名前に制御文字があれば断る。
     pub fn measure(
         samples: &[Sample<'_>],
         analyzer: Option<&dyn Analyzer>,
@@ -276,12 +316,7 @@ impl CassetteStats {
         analyzer: Option<&dyn Analyzer>,
         lexicon: Lexicon,
     ) -> Result<Self, StatsError> {
-        let mut seen: BTreeSet<&str> = BTreeSet::new();
-        for s in samples {
-            if !seen.insert(s.name) {
-                return Err(StatsError::DuplicateName(s.name.to_owned()));
-            }
-        }
+        check_names(samples.iter().map(|s| s.name))?;
         let mut measured: Vec<(DocumentStats, String)> = samples
             .iter()
             .map(|s| DocumentStats::measure(*s, analyzer, &lexicon))
@@ -309,15 +344,95 @@ impl CassetteStats {
     pub fn document(&self, name: &str) -> Option<&DocumentStats> {
         self.documents.iter().find(|d| d.name == name)
     }
+
+    /// 言い回し → その言い回しを使う、日本語 1,000 字あたりの最大。
+    ///
+    /// [繰り返せと言うなら上限も言う](../../../docs/spec/300-revise.md#繰り返せと言うなら上限も言う)
+    /// は、どの言い回しを訊かれるかが検めるまで決まらない。 だから
+    /// [`PHRASE_UNITS`] 本以上の文書に出る言い回しを全部表にしておく。
+    ///
+    /// 1 本にしか出ない言い回しは持たない。 その記事の題材であって書きぶりではなく、
+    /// 持っても上限がほぼ 0 で、持たないのと同じ結論になる。表に無い言い回しを草稿が
+    /// 繰り返していれば、本人が使っていないことがそのまま指摘になる。
+    #[must_use]
+    pub fn phrase_ceilings(&self) -> BTreeMap<String, f64> {
+        let mut seen: BTreeMap<&str, (usize, f64)> = BTreeMap::new();
+        for d in self.documents.iter().filter(|d| d.chars > 0) {
+            for (text, p) in &d.phrases {
+                if text.chars().count() < PHRASE_CHARS {
+                    continue;
+                }
+                #[allow(clippy::cast_precision_loss)]
+                let rate = 1000.0 * p.count as f64 / d.chars as f64;
+                let e = seen.entry(text).or_insert((0, 0.0));
+                e.0 += 1;
+                e.1 = e.1.max(rate);
+            }
+        }
+        seen.into_iter()
+            .filter(|(_, (units, _))| *units >= PHRASE_UNITS)
+            .map(|(text, (_, ceiling))| (text.to_owned(), ceiling))
+            .collect()
+    }
 }
 
-/// 束ねた単位の名前。束ねた文書の名前を束ねた順に `+` で繋ぐ。
+/// 上限の表に載せる言い回しの最短の字数。草稿を見る側と同じ線である。
+pub const PHRASE_CHARS: usize = 4;
+
+/// 上限の表に載せるのに要る文書の数。
+pub const PHRASE_UNITS: usize = 2;
+
+/// 文書 1 本の統計値を決める設定のうち、目盛りの側が持つもの。指紋の材料である。
+///
+/// 残りは[指標の側](kakiburi_metrics::measurement_settings)が持つ。
 #[must_use]
-pub fn bundle_name(docs: &[&DocumentStats]) -> String {
+pub fn measurement_settings() -> Vec<(&'static str, String)> {
+    let list = |v: &[usize]| {
+        v.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    vec![
+        ("scale::stats::KATA_N", list(&KATA_N)),
+        (
+            "scale::examples::EXAMPLE_SYSTEMS",
+            examples::EXAMPLE_SYSTEMS
+                .iter()
+                .map(|s| s.name())
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        ("scale::examples::WANT", examples::WANT.to_string()),
+        ("scale::examples::AROUND", examples::AROUND.to_string()),
+    ]
+}
+
+/// 束の中の名前を組み立ての中で繋ぐ文字。
+///
+/// 単位の名前は[制御文字を持てない](check_name)ので、束の名前が 1 本の文書の名前と
+/// 重ならない。 `+` で繋げば、`a` と `b` の束が `a+b` という文書と重なる。
+const BUNDLE_JOINER: char = '\u{1f}';
+
+/// 束ねた単位を組み立ての中で指す名前。見せるときは[表示の名前](display_name)にする。
+pub(crate) fn bundle_key(docs: &[&DocumentStats]) -> String {
     docs.iter()
         .map(|d| d.name.as_str())
         .collect::<Vec<_>>()
-        .join("+")
+        .join(&BUNDLE_JOINER.to_string())
+}
+
+/// 組み立ての中の名前を、見せる名前にする。束の繋ぎを `+` にする。
+pub(crate) fn display_name(key: &str) -> String {
+    key.replace(BUNDLE_JOINER, "+")
+}
+
+/// 束ねた単位の見せる名前。束ねた文書の名前を束ねた順に `+` で繋ぐ。
+///
+/// 見せるためだけのもので、単位を引くのには使わない。`a+b` という文書と重なりうる。
+#[must_use]
+pub fn bundle_name(docs: &[&DocumentStats]) -> String {
+    display_name(&bundle_key(docs))
 }
 
 /// 何本かを 1 単位に束ねて、測り終えた形にする。1 本なら、その文書を測ったものと一致する。
@@ -682,6 +797,37 @@ mod tests {
     }
 
     #[test]
+    fn 名前に制御文字がある文書は断る() {
+        // 組み立ては制御文字で役を分け、束を繋ぐ。 名前に混ざれば別の単位と同じ名前になりうる。
+        let doc = document(0, false);
+        for bad in ["\u{0}u00", "改\n行", "タブ\t", "a\u{1f}b"] {
+            let samples = [Sample {
+                name: bad,
+                document: &doc,
+            }];
+            assert_eq!(
+                CassetteStats::measure(&samples, a()),
+                Err(StatsError::ControlInName(bad.to_owned())),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn 束の内側の名前は表示の名前と分かれる() {
+        // `a` と `b` の束は、`a+b` という名前の文書と重ならない。 表示は `+` で繋ぐ。
+        let doc = document(0, false);
+        let lexicon = lexicon_for(&[&doc]);
+        let stats = measured(&[("a", &doc), ("b", &doc), ("a+b", &doc)], &lexicon);
+        let a = stats.document("a").expect("a");
+        let b = stats.document("b").expect("b");
+        let ab = stats.document("a+b").expect("a+b");
+        assert_ne!(bundle_key(&[a, b]), bundle_key(&[ab]));
+        assert_eq!(bundle_name(&[a, b]), "a+b");
+        assert_eq!(display_name(&bundle_key(&[a, b])), "a+b");
+    }
+
+    #[test]
     fn 語のまとめ方はそのカセットの文書から見つける() {
         let person: Vec<(String, Document)> = (0..4)
             .map(|i| (format!("p{i}"), document(i, false)))
@@ -724,5 +870,44 @@ mod tests {
             with.documents[0].content_words.is_disjoint(&folded),
             "畳んだ語は題材の語に入らない"
         );
+    }
+
+    fn phrase(count: usize) -> Phrase {
+        Phrase {
+            first: 0.0,
+            count,
+            nodes: BTreeSet::from([0]),
+        }
+    }
+
+    #[test]
+    fn 言い回しの上限は_2_本以上に出るものを_1000_字あたりの最大で持つ() {
+        let mut stats = measured(
+            &[("a", &document(0, false)), ("b", &document(1, false))],
+            &Lexicon::default(),
+        );
+        stats.documents[0].chars = 2000;
+        stats.documents[0].phrases = [
+            ("と思います。".to_owned(), phrase(4)),
+            ("かもしれない".to_owned(), phrase(9)),
+            ("です。".to_owned(), phrase(9)),
+        ]
+        .into();
+        stats.documents[1].chars = 1000;
+        stats.documents[1].phrases = [
+            ("と思います。".to_owned(), phrase(1)),
+            ("です。".to_owned(), phrase(9)),
+        ]
+        .into();
+
+        let got = stats.phrase_ceilings();
+
+        assert_eq!(
+            got.get("と思います。"),
+            Some(&2.0),
+            "2000 字に 4 回と 1000 字に 1 回"
+        );
+        assert_eq!(got.get("かもしれない"), None, "1 本にしか出ない");
+        assert_eq!(got.get("です。"), None, "{PHRASE_CHARS} 字に届かない");
     }
 }

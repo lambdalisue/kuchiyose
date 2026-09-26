@@ -9,6 +9,7 @@
 //! 文体を題材より先に揃えるのは、文体のずれのほうが床を大きく動かすからである。
 
 use std::collections::BTreeSet;
+use std::ops::RangeInclusive;
 
 use crate::stats::{CassetteStats, DocumentStats};
 
@@ -227,15 +228,24 @@ pub struct BaselineSelection<'a> {
 ///
 /// 題材で選んでから、長さで[束ねる](crate::bundle)。 逆にすると、題材の合わない分を
 /// 束ねてから捨てることになる。
+///
+/// `within` を渡すと、題材で選ぶ前に、地の文の字数がその範囲に入る文書だけを
+/// 候補にする。 長さの範囲で断られたときの選び直しに使う
+/// （[組み立て](crate::assembly::assemble_stats)）。
 #[must_use]
 pub fn select_baseline<'a>(
     target: &CassetteStats,
     baseline: &'a CassetteStats,
     declared: Option<Register>,
+    within: Option<RangeInclusive<usize>>,
 ) -> BaselineSelection<'a> {
     let person = RegisterCount::of(target.documents.iter().map(|d| d.polite_share));
     let pool: Vec<&DocumentStats> = baseline.documents.iter().collect();
-    let (candidates, register) = restrict_to_register(person, declared, pool, |d| d.polite_share);
+    let (mut candidates, register) =
+        restrict_to_register(person, declared, pool, |d| d.polite_share);
+    if let Some(w) = within {
+        candidates.retain(|d| w.contains(&d.chars));
+    }
     let picked = pick_by_topic(
         || {
             target

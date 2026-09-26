@@ -28,10 +28,10 @@ use crate::vocabulary::FrozenSet;
 pub const EXAMPLE_SYSTEMS: [System; 3] = [System::FunctionWord, System::Comma, System::CharType];
 
 /// 1 つの次元あたりに拾う実例の数。
-const WANT: usize = 3;
+pub(crate) const WANT: usize = 3;
 
 /// 実例の前後に付ける字数。
-const AROUND: usize = 6;
+pub(crate) const AROUND: usize = 6;
 
 /// 1 文書の実例。系統の名前と次元の名前から、実例の並びへ。
 pub type ExampleTable = BTreeMap<(String, String), Vec<String>>;
