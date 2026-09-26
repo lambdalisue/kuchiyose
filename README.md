@@ -4,14 +4,24 @@ LLM に、あなたの代わりに日本語の文章を書かせるツール。�
 （`claude` や `codex`）で、kuchiyose は書かせるためのプロンプトを作り、書かれた文章が
 あなたの書き方からどこでずれているかを数えて、直させる。
 
-```
-あなたの記事のフォルダ ── build ─→ あなたの形代（統計値・調整・ペルソナ）
-                                           │
-何を書きたいか ── write ─→ 代筆のプロンプト ─→ LLM の道具と対話 ─→ 草稿
-                                                                      │
-                               ┌────────── 表現を寄せる周回 ──────────┘
-                               ▼
-                        検める ─→ 直させる ─→ 検める ─→ …… ─→ 判定 ＋ 残った指摘
+```mermaid
+flowchart TB
+  subgraph b ["build"]
+    direction LR
+    articles[("あなたの記事")] --> katashiro[["形代<br/>統計値とペルソナ"]]
+  end
+  subgraph w ["write"]
+    direction LR
+    brief(["要約"]) --> prompt["プロンプト"] --> agent["LLM の道具と対話"] --> draft["草稿"]
+  end
+  subgraph p ["polish"]
+    direction LR
+    check["検める"] -- 指摘 --> fix["道具に直させる"]
+    fix -- 良くなった版 --> check
+  end
+  katashiro --> prompt
+  draft --> check
+  katashiro -. 目盛り .-> check
 ```
 
 ペルソナで寄るのは内容や話の運び方までで、表面の書きぶりは書かせ方を工夫してもほとんど
