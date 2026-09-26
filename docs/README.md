@@ -18,7 +18,7 @@
 | --- | --- |
 | この言葉は何を指すのか | [用語集](glossary.md) |
 | この道具は何に賭けているのか | [仕様 000-axis](spec/000-axis.md) |
-| 使い方 | [README](../README.md) |
+| 使い方 | [README](../README.md)、[詳しい使い方](guide.md) |
 | なぜ判定が 3 値なのか | [仕様 010-strategy](spec/010-strategy.md) |
 | 代筆はどう進むのか。ペルソナ、プロンプト、表現を寄せる周回 | [仕様 400-write](spec/400-write.md) |
 | `claude` や `codex` をどう起動するのか | [設計 400-agent](design/400-agent.md) |
