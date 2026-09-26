@@ -35,11 +35,16 @@ AI が書いたことを隠すためのツールではない。見ているの�
 ## 入れる
 
 ```sh
-cargo install --path crates/kuchiyose-cli
+cargo install kuchiyose
 ```
 
+手元のリポジトリから入れるなら `cargo install --path crates/kuchiyose-cli` とする。組んだ
+実行ファイルは [GitHub Releases](https://github.com/lambdalisue/kuchiyose/releases) にも
+ある（Linux と macOS）。
+
 要るのは Rust だけである。形態素解析器と辞書、比べる相手になる基準の形代は実行ファイルに
-入っている。代筆させるには `claude`（Claude Code）か `codex`（Codex CLI）が `PATH` に要る。
+入っている。辞書は組むときに取ってくるので、`cargo install` にはネットへの接続が要る。
+代筆させるには `claude`（Claude Code）か `codex`（Codex CLI）が `PATH` に要る。
 
 ## 使う
 

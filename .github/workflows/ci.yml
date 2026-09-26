@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  # Linux and macOS, because those are the platforms the binaries ship for.
+  # Windows is not here: the CLI uses `std::os::unix` for its private files and
+  # does not compile there (see build.yml).
+  #
+  # The tests need the morphological analyser's dictionary, which lindera's
+  # build script downloads and embeds. rust-cache keeps that build output, so
+  # only a cold cache pays for the download.
+  test:
+    name: clippy + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  # `rust-version` is a promise to whoever builds from crates.io, and nothing
+  # else checks it: every other job runs the latest stable. The `+` form
+  # overrides rust-toolchain.toml, which would otherwise select stable again.
+  msrv:
+    name: rust-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read rust-version
+        id: msrv
+        run: |
+          set -euo pipefail
+          v=$(perl -ne 'if (/^rust-version = "([^"]+)"/) { print $1; exit }' Cargo.toml)
+          test -n "$v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo "+${{ steps.msrv.outputs.version }}" check --workspace --all-targets --locked
+
+  # The same matrix the release publishes, so a target that stops compiling
+  # fails here rather than at the moment a release is cut. Archives are uploaded
+  # as run artifacts, which also makes a PR build downloadable for a quick check.
+  targets:
+    name: cross-platform build
+    uses: ./.github/workflows/build.yml
+    with:
+      tag: dev
+
+  # Whether every crate is still publishable, checked here for the same reason
+  # the matrix above is: manifest metadata that crates.io rejects, or a file a
+  # crate reaches outside its own directory, would otherwise surface only once a
+  # release is published, and a crates.io version cannot be replaced. The dry
+  # run needs no credentials — it packages each crate in dependency order,
+  # builds what it packaged against the others' packages, and stops before the
+  # upload. The version it packages is the committed placeholder, which is all
+  # this check needs — the release workflow supplies the real one.
+  package:
+    name: cargo publish --dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --workspace --dry-run --locked

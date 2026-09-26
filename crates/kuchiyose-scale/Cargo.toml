@@ -1,14 +1,18 @@
 [package]
 name = "kuchiyose-scale"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+description = "kuchiyose の目盛り。語彙・重み・天井・床・帯を作る"
+keywords = ["japanese", "writing", "stylometry", "nlp"]
+categories = ["text-processing"]
 
 [dependencies]
-kuchiyose-doc = { path = "../kuchiyose-doc" }
-kuchiyose-metrics = { path = "../kuchiyose-metrics" }
+kuchiyose-doc = { workspace = true }
+kuchiyose-metrics = { workspace = true }
 
 [lints]
 workspace = true

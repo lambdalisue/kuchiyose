@@ -476,7 +476,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kuchiyose-cli"
+name = "kuchiyose"
 version = "0.0.0"
 dependencies = [
  "console",

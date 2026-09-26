@@ -15,6 +15,9 @@ sub walk {
     for my $e (sort readdir $dh) {
         next if $e =~ /^\./ or $e eq 'target';
         my $p = "$d/$e";
+        # 実体は別の場所にあり、そちらで検める。 リンクの経路は実体の置き場から
+        # 数えて書いてあるので、ここから辿ると正しいリンクまで壊れて見える。
+        next if -l $p;
         if (-d $p) { walk($p) }
         elsif ($e =~ /\.md$/) { push @files, $p }
         elsif ($e =~ /\.rs$/) { push @sources, $p }

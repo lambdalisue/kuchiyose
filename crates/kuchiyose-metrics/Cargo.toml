@@ -1,13 +1,17 @@
 [package]
 name = "kuchiyose-metrics"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+description = "kuchiyose の指標。日本語の文章の書きぶりを読まずに数える登録簿と計測"
+keywords = ["japanese", "writing", "stylometry", "metrics", "nlp"]
+categories = ["text-processing"]
 
 [dependencies]
-kuchiyose-doc = { path = "../kuchiyose-doc" }
+kuchiyose-doc = { workspace = true }
 # 圧縮率がこれで測る。<strong>器と版が値を決めるので、指紋に入れる。</strong>
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 # 形態素解析。<strong>辞書を同梱する</strong>ので、利用者は何も用意しなくてよい。
@@ -15,7 +19,7 @@ lindera = { version = "6.0", features = ["embed-unidic"] }
 lindera-unidic = { version = "6.0", features = ["embed-unidic"] }
 
 [dev-dependencies]
-kuchiyose-normalize = { path = "../kuchiyose-normalize" }
+kuchiyose-normalize = { workspace = true }
 
 [lints]
 workspace = true

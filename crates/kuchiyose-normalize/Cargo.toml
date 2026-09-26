@@ -1,13 +1,17 @@
 [package]
 name = "kuchiyose-normalize"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+description = "kuchiyose の正規化。Markdown と HTML を文書の形に落とす"
+keywords = ["japanese", "markdown", "html", "stylometry"]
+categories = ["text-processing", "parser-implementations"]
 
 [dependencies]
-kuchiyose-doc = { path = "../kuchiyose-doc" }
+kuchiyose-doc = { workspace = true }
 
 [lints]
 workspace = true

@@ -12,9 +12,31 @@ members = [
 ]
 
 [workspace.package]
+# 仮の値である。 公開の手順が GitHub Release のタグから書き換えてから `cargo publish` する
+# ので、ここに書いた値が出ていくことは無い。 もっともらしい番号にしないのは、現在の版と
+# 読まれないためである。 版の記録はタグにある。
+version = "0.0.0"
 edition = "2021"
-rust-version = "1.85"
+# lindera 6 が 1.88 を要る。 これより下げても依存が組めない。
+rust-version = "1.88"
 license = "MIT"
+authors = ["Alisue <lambdalisue@gmail.com>"]
+repository = "https://github.com/lambdalisue/kuchiyose"
+
+# クレート同士の依存はここにだけ書く。 `version` は上の仮の値と揃え、公開の手順が同じ
+# 置換でまとめて書き換える。 `path` はリポジトリの中で組むため、`version` は crates.io
+# から取る利用者のためにある。
+#
+# `=` で版を 1 つに固める。 同梱の基準の形代は同じ版の指標で作ってある。 後から出た版の
+# 指標を混ぜて組めると、指紋は合うのに値の出し方が違う実行ファイルができうる。
+[workspace.dependencies]
+kuchiyose-doc = { path = "crates/kuchiyose-doc", version = "=0.0.0" }
+kuchiyose-katashiro = { path = "crates/kuchiyose-katashiro", version = "=0.0.0" }
+kuchiyose-metrics = { path = "crates/kuchiyose-metrics", version = "=0.0.0" }
+kuchiyose-normalize = { path = "crates/kuchiyose-normalize", version = "=0.0.0" }
+kuchiyose-prompt = { path = "crates/kuchiyose-prompt", version = "=0.0.0" }
+kuchiyose-review = { path = "crates/kuchiyose-review", version = "=0.0.0" }
+kuchiyose-scale = { path = "crates/kuchiyose-scale", version = "=0.0.0" }
 
 [workspace.lints.rust]
 missing_docs = "warn"

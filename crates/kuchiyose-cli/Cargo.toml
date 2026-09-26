@@ -1,23 +1,28 @@
 [package]
-name = "kuchiyose-cli"
-version = "0.0.0"
+name = "kuchiyose"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+description = "LLM にあなたの代わりに日本語の文章を書かせ、あなたの書き方からのずれを数えて直させる"
+readme = "../../README.md"
+keywords = ["japanese", "writing", "llm", "stylometry", "cli"]
+categories = ["command-line-utilities", "text-processing"]
 
 [[bin]]
 name = "kuchiyose"
 path = "src/main.rs"
 
 [dependencies]
-kuchiyose-doc = { path = "../kuchiyose-doc" }
-kuchiyose-katashiro = { path = "../kuchiyose-katashiro" }
-kuchiyose-metrics = { path = "../kuchiyose-metrics" }
-kuchiyose-normalize = { path = "../kuchiyose-normalize" }
-kuchiyose-prompt = { path = "../kuchiyose-prompt" }
-kuchiyose-review = { path = "../kuchiyose-review" }
-kuchiyose-scale = { path = "../kuchiyose-scale" }
+kuchiyose-doc = { workspace = true }
+kuchiyose-katashiro = { workspace = true }
+kuchiyose-metrics = { workspace = true }
+kuchiyose-normalize = { workspace = true }
+kuchiyose-prompt = { workspace = true }
+kuchiyose-review = { workspace = true }
+kuchiyose-scale = { workspace = true }
 # 表の桁を和文の見える幅で揃える。dialoguer が既に使う。
 console = { version = "0.16", default-features = false, features = ["std", "unicode-width"] }
 # katashiro edit の対話画面。対話はここだけにする。

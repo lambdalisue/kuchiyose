@@ -1,13 +1,17 @@
 [package]
 name = "kuchiyose-katashiro"
-version = "0.0.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-publish = false
+authors.workspace = true
+repository.workspace = true
+description = "kuchiyose の形代。書き手の統計値と調整を 1 つの容器に収める"
+keywords = ["japanese", "writing", "stylometry"]
+categories = ["text-processing"]
 
 [dependencies]
-kuchiyose-doc = { path = "../kuchiyose-doc" }
+kuchiyose-doc = { workspace = true }
 # 容器の entry を deflate で縮める。 圧縮率の指標と同じ実装を使い、依存を増やさない。
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 

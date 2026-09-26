@@ -18,7 +18,7 @@ SCENE='同梱の基準'
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-cargo run --release --quiet --manifest-path "$ROOT/Cargo.toml" -p kuchiyose-cli -- \
+cargo run --release --quiet --manifest-path "$ROOT/Cargo.toml" -p kuchiyose -- \
   katashiro build "$ROOT/baselines" -o "$TMP/baseline.katashiro" --scene "$SCENE"
 # 素材のフォルダの経路は手元の事情なので外す。 残せば、作った人の経路が実行ファイルに
 # 入り、どこで作り直したかによってバイト列が変わる。

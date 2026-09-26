@@ -1,0 +1,80 @@
+name: Build
+
+# The distributable binaries, built once and called from two places: CI runs it
+# on every pull request, the release workflow runs it when a release is
+# published. Keeping one definition is the point — a target that no longer
+# compiles shows up on the pull request that broke it, not when a tag is cut.
+#
+# Every target passes an explicit `--target`, so the arm64 macOS runner can also
+# produce the Intel macOS binary; the rest build natively on a matching runner.
+#
+# No Windows target: the CLI creates its private files through
+# `std::os::unix::fs` (owner-only modes) and does not compile there. The
+# checkout also relies on symlinks (`crates/*/LICENSE`,
+# `crates/kuchiyose-cli/definitions`), which a default Windows checkout turns
+# into plain text files.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: >-
+          Version string embedded in the archive names. The release workflow
+          passes the tag; CI passes a placeholder, since its archives are only
+          ever downloaded by a human checking a pull request.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds run on the oldest supported runner so the binaries link
+          # against an older glibc and stay usable on distros that a newer runner
+          # image would have left behind.
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          # Cross-compiled from the arm64 runner rather than built on an Intel
+          # image, which is on its way out. Build scripts (the lindera
+          # dictionary among them) run on the host, so nothing else changes.
+          - { target: x86_64-apple-darwin, os: macos-latest }
+    # The tag reaches the steps through the environment rather than being
+    # interpolated into a script, so its text can never be read as shell.
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      # Also keeps the UniDic dictionary that lindera's build script downloads
+      # (tens of MB) in the cached build output, so a warm run does not fetch it.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p kuchiyose
+
+      # The archive name carries the tag and the triple so every archive can sit
+      # in one release and still say which machine it is for. LICENSE travels
+      # with the binary because MIT asks for the notice in every copy.
+      - name: Package
+        run: |
+          set -euo pipefail
+          staging="kuchiyose-${TAG}-${{ matrix.target }}"
+          mkdir "$staging"
+          cp "target/${{ matrix.target }}/release/kuchiyose" LICENSE README.md "$staging/"
+          tar -czf "$staging.tar.gz" "$staging"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kuchiyose-${{ matrix.target }}
+          path: kuchiyose-*.tar.gz
+          if-no-files-found: error
