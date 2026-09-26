@@ -93,3 +93,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo publish --workspace --dry-run --locked
+
+      # `cargo publish` unpacks each crate under target/package/ to verify it.
+      # rust-cache's post step treats those copies as workspace members and
+      # tries to clean test directories they do not have, flooding the run with
+      # ENOENT annotations. Nothing there is worth caching, so drop it first.
+      - name: Drop packaged copies before caching
+        if: always()
+        run: rm -rf target/package
