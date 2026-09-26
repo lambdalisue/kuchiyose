@@ -515,9 +515,10 @@ fn inline_with_children(s: impl AsRef<str>, refs: &Refs) -> Result<(String, Vec<
             // 潰す。 それ以外は、ブロックの札でも断る——認めれば補足や表に 2 通りの
             // 書き方ができる。HTML で書くなら `.html` として入れる。
             '<' => {
+                let mut look = chars.clone();
                 let mut raw = String::new();
                 let mut closed = false;
-                for c in chars.by_ref() {
+                for c in look.by_ref() {
                     if c == '>' {
                         closed = true;
                         break;
@@ -526,17 +527,26 @@ fn inline_with_children(s: impl AsRef<str>, refs: &Refs) -> Result<(String, Vec<
                 }
                 if !closed {
                     // 記法ではない。`a < b` のような地の文である。
+                    chars = look;
                     out.push('<');
                     out.push_str(&raw);
                     continue;
                 }
                 // 自動リンク。 見えている URL は参照先そのものなので、地の文に入らない。
                 if is_autolink(&raw) {
+                    chars = look;
                     out.push(WRAP);
                     kids.push(Node::leaf(Kind::Link, ""));
                     continue;
                 }
                 let name = html_tag_name(&raw);
+                // HTML の要素名でなければ札ではない。`Box<dyn Trait>` や `Vec<T>` のような
+                // 地の文である。 `<` だけを出し、後ろは地の文として読み続ける。
+                if !markup::is_html_element(&name) {
+                    out.push('<');
+                    continue;
+                }
+                chars = look;
                 let Some(kind) = inline_html_kind(&name) else {
                     return Err(Refusal::UnknownMarkup {
                         markup: format!("<{name}>"),
@@ -616,20 +626,24 @@ fn inline_with_children(s: impl AsRef<str>, refs: &Refs) -> Result<(String, Vec<
                     markup: "~~".into(),
                 });
             }
-            // エスケープ。 通せば `\` が記号として数えられ、落とせば表示と違う
-            // 文字列を測る。どちらにしても黙って値が動く。
+            // エスケープ。 CommonMark のとおり、記号そのものにして記法にしない。
+            // `\` を残せば記号として数えられ、表示と違う文字列を測る。
             '\\' if chars.peek().is_some_and(char::is_ascii_punctuation) => {
-                let p = chars.peek().copied().unwrap_or_default();
-                return Err(Refusal::UnknownMarkup {
-                    markup: format!("\\{p}"),
-                });
+                out.extend(chars.next());
             }
-            // 文字参照。 エスケープと同じ理由で断る。
+            // 文字参照。 数値のものは文字にする——CommonMark と同じく、記法にはしない。
+            // 名前のものは断る。 名前から文字を引く表を持たず、残せば記号として数えられる。
             '&' if char_reference(&chars).is_some() => {
                 let name = char_reference(&chars).unwrap_or_default();
-                return Err(Refusal::UnknownMarkup {
-                    markup: format!("&{name};"),
-                });
+                let Some(c) = numeric_reference(&name) else {
+                    return Err(Refusal::UnknownMarkup {
+                        markup: format!("&{name};"),
+                    });
+                };
+                for _ in 0..=name.chars().count() {
+                    chars.next();
+                }
+                out.push(c);
             }
             // 強調の記法だけを落とす。開くときだけ数える。
             //
@@ -821,6 +835,22 @@ fn char_reference(chars: &Peekable<Chars<'_>>) -> Option<String> {
             && name.chars().all(|c| c.is_ascii_alphanumeric())
     };
     ok.then_some(name)
+}
+
+/// 数値の文字参照が指す文字。名前の文字参照なら `None`。
+///
+/// 文字にならない値（0、サロゲート、範囲外）は U+FFFD にする。CommonMark と同じである。
+fn numeric_reference(name: &str) -> Option<char> {
+    let num = name.strip_prefix('#')?;
+    let code = match num.strip_prefix(['x', 'X']) {
+        Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+        None => num.parse::<u32>().ok()?,
+    };
+    Some(
+        char::from_u32(code)
+            .filter(|&c| c != '\0')
+            .unwrap_or('\u{FFFD}'),
+    )
 }
 
 fn heading(line: &str) -> Option<(u8, &str)> {
@@ -1446,10 +1476,29 @@ mod tests {
     }
 
     #[test]
-    fn エスケープは断る() {
-        // 通せば `\` が記号として数えられる。落とせば、表示と違う文字列を測る。
-        let e = parse("これは \\*強調ではない\\* 文である。\n").unwrap_err();
-        assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    fn エスケープは表示される記号にする() {
+        // 表示のとおりの文字列を測る。 `\` を残せば記号として数えられる。
+        let d = parse("識別子は trace\\_id と span\\_id である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "識別子は trace_id と span_id である。");
+    }
+
+    #[test]
+    fn エスケープした記号は記法にならない() {
+        let d = parse(
+            "これは \\*\\*強調ではない\\*\\* 文で \\[角括弧\\](a) と \\`記号\\` と \\<em> である。\n",
+        )
+        .unwrap();
+        assert_eq!(
+            d.nodes[0].text,
+            "これは **強調ではない** 文で [角括弧](a) と `記号` と <em> である。"
+        );
+        assert!(d.nodes[0].children.is_empty(), "{:?}", d.nodes[0].children);
+    }
+
+    #[test]
+    fn 逆斜線そのものもエスケープできる() {
+        let d = parse("置き場は C:\\\\Users である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "置き場は C:\\Users である。");
     }
 
     #[test]
@@ -1459,15 +1508,36 @@ mod tests {
     }
 
     #[test]
-    fn 文字参照は断る() {
+    fn 名前の文字参照は断る() {
+        // 名前から文字を引く表を持たない。 残せば `&amp;` が記号として数えられる。
+        let e = parse("A &amp; B である。\n").unwrap_err();
+        assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn 数値の文字参照は表示される文字にする() {
         for md in [
-            "A &amp; B である。\n",
             "&#12354; である。\n",
             "&#x3042; である。\n",
+            "&#X3042; である。\n",
         ] {
-            let e = parse(md).unwrap_err();
-            assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{md:?} {e:?}");
+            let d = parse(md).unwrap();
+            assert_eq!(d.nodes[0].text, "あ である。", "{md:?}");
         }
+    }
+
+    #[test]
+    fn 文字にならない数値の文字参照は置換文字にする() {
+        // CommonMark と同じ。 0 とサロゲートと範囲外は U+FFFD になる。
+        let d = parse("&#0; と &#xD800; と &#1114112; である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "\u{FFFD} と \u{FFFD} と \u{FFFD} である。");
+    }
+
+    #[test]
+    fn 文字参照で書いた記号は記法にならない() {
+        let d = parse("これは &#42;&#42;強調ではない&#42;&#42; である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "これは **強調ではない** である。");
+        assert!(d.nodes[0].children.is_empty());
     }
 
     #[test]
@@ -1599,6 +1669,46 @@ mod tests {
     fn 対応表に無い_html_の札は断る() {
         let e = parse("これは <blink>点滅</blink> する。\n").unwrap_err();
         assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{e:?}");
+    }
+
+    #[test]
+    fn html_の要素名でない札は地の文である() {
+        // 型の引数を書いた地の文である。 HTML の札として断れば、技術記事が丸ごと入らない。
+        for (md, want) in [
+            (
+                "戻り値は Box<dyn Trait> である。\n",
+                "戻り値は Box<dyn Trait> である。",
+            ),
+            ("型は Vec<T> である。\n", "型は Vec<T> である。"),
+            ("型は Result<T, E> である。\n", "型は Result<T, E> である。"),
+            (
+                "型は Result<(), Box<dyn Error>> である。\n",
+                "型は Result<(), Box<dyn Error>> である。",
+            ),
+        ] {
+            let d = parse(md).unwrap();
+            assert_eq!(d.nodes[0].text, want, "{md:?}");
+        }
+    }
+
+    #[test]
+    fn 要素名でない札の後ろの記法は潰れる() {
+        // 札でないなら、`<` の後ろも地の文として読む。
+        let d = parse("型は Vec<T> で **大事** である。\n").unwrap();
+        assert_eq!(d.nodes[0].text, "型は Vec<T> で 大事 である。");
+        assert!(d.nodes[0].children.iter().any(|c| c.kind == Kind::Emphasis));
+    }
+
+    #[test]
+    fn 要素名の札は対応表に無ければ断る() {
+        for md in [
+            "本文の途中に <aside> がある。\n",
+            "これは <blink>点滅</blink> する。\n",
+            "これは <span>範囲</span> である。\n",
+        ] {
+            let e = parse(md).unwrap_err();
+            assert!(matches!(e, Refusal::UnknownMarkup { .. }), "{md:?} {e:?}");
+        }
     }
 
     #[test]

@@ -35,7 +35,7 @@ pub enum Writable {
 ///
 /// 升目そのものも指紋に出るので、上げ忘れても中身の差で気付ける。逆も同じで、
 /// 升目が同じまま解釈だけを変えたときは、この版でしか気付けない。
-pub const MAPPING_VERSION: &str = "対応表 2";
+pub const MAPPING_VERSION: &str = "対応表 3";
 
 /// 升目が分かれる node。これ以外はどの取り込み元でも書ける。
 const GATED: [Kind; 5] = [

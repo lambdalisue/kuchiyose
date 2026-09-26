@@ -68,6 +68,174 @@ pub fn html_kind(tag: impl AsRef<str>) -> Option<Kind> {
     }
 }
 
+/// HTML の要素名。小文字で持つ。
+///
+/// HTML Living Standard の要素の索引と、廃止された要素（同じ規格の「Obsolete
+/// features」の節）を合わせたものである。 廃止された要素も入れるのは、`<blink>` や
+/// `<font>` を書く人がいまもいて、それを地の文として通すと札が記号として数えられる
+/// からである。
+///
+/// Markdown の中で `<` と `>` に挟まれた語は、ここにある名前のときだけ札として扱う。
+/// 無い名前は地の文である——技術記事の `Box<dyn Trait>` や `Vec<T>` は型の引数であって、
+/// 札として断れば記事が丸ごと入らない。
+///
+/// 名前の大小は区別しない（HTML と同じ）。 だから `Option<U>` の `<U>` は下線の札になる。
+pub const HTML_ELEMENTS: &[&str] = &[
+    // 要素の索引。
+    "a",
+    "abbr",
+    "address",
+    "area",
+    "article",
+    "aside",
+    "audio",
+    "b",
+    "base",
+    "bdi",
+    "bdo",
+    "blockquote",
+    "body",
+    "br",
+    "button",
+    "canvas",
+    "caption",
+    "cite",
+    "code",
+    "col",
+    "colgroup",
+    "data",
+    "datalist",
+    "dd",
+    "del",
+    "details",
+    "dfn",
+    "dialog",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "embed",
+    "fieldset",
+    "figcaption",
+    "figure",
+    "footer",
+    "form",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "head",
+    "header",
+    "hgroup",
+    "hr",
+    "html",
+    "i",
+    "iframe",
+    "img",
+    "input",
+    "ins",
+    "kbd",
+    "label",
+    "legend",
+    "li",
+    "link",
+    "main",
+    "map",
+    "mark",
+    "math",
+    "menu",
+    "meta",
+    "meter",
+    "nav",
+    "noscript",
+    "object",
+    "ol",
+    "optgroup",
+    "option",
+    "output",
+    "p",
+    "picture",
+    "pre",
+    "progress",
+    "q",
+    "rp",
+    "rt",
+    "ruby",
+    "s",
+    "samp",
+    "script",
+    "search",
+    "section",
+    "select",
+    "slot",
+    "small",
+    "source",
+    "span",
+    "strong",
+    "style",
+    "sub",
+    "summary",
+    "sup",
+    "svg",
+    "table",
+    "tbody",
+    "td",
+    "template",
+    "textarea",
+    "tfoot",
+    "th",
+    "thead",
+    "time",
+    "title",
+    "tr",
+    "track",
+    "u",
+    "ul",
+    "var",
+    "video",
+    "wbr",
+    // 廃止された要素。
+    "acronym",
+    "applet",
+    "basefont",
+    "bgsound",
+    "big",
+    "blink",
+    "center",
+    "dir",
+    "font",
+    "frame",
+    "frameset",
+    "image",
+    "isindex",
+    "keygen",
+    "listing",
+    "marquee",
+    "menuitem",
+    "multicol",
+    "nextid",
+    "nobr",
+    "noembed",
+    "noframes",
+    "param",
+    "plaintext",
+    "rb",
+    "rtc",
+    "spacer",
+    "strike",
+    "tt",
+    "xmp",
+];
+
+/// HTML の要素名か。大小は区別しない。
+#[must_use]
+pub fn is_html_element(name: impl AsRef<str>) -> bool {
+    let name = name.as_ref().to_ascii_lowercase();
+    HTML_ELEMENTS.contains(&name.as_str())
+}
+
 /// node を作らず、中身を親へ透かす要素か。
 ///
 /// 行と区分は node ではない——[文書の形](../../../docs/spec/020-document.md#文書は-node-でできている)は
@@ -119,6 +287,49 @@ mod tests {
     #[test]
     fn aside_は補足である() {
         assert_eq!(html_kind("aside"), Some(Kind::Note));
+    }
+
+    #[test]
+    fn 要素名は規格の名前だけである() {
+        for name in ["em", "EM", "aside", "blink", "h6"] {
+            assert!(is_html_element(name), "{name}");
+        }
+        for name in ["dyn", "t", "e", "string", "h7"] {
+            assert!(!is_html_element(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn 対応表の札はどれも要素名である() {
+        // 対応表に要素名でない名前があれば、その札は地の文として通って引かれない。
+        for name in HTML_ELEMENTS {
+            assert_eq!(*name, name.to_ascii_lowercase(), "小文字で持つ");
+        }
+        for name in [
+            "aside",
+            "details",
+            "table",
+            "td",
+            "th",
+            "blockquote",
+            "p",
+            "ul",
+            "ol",
+            "li",
+            "pre",
+            "code",
+            "hr",
+            "img",
+            "em",
+            "strong",
+            "b",
+            "i",
+            "a",
+            "h1",
+            "h6",
+        ] {
+            assert!(html_kind(name).is_some() && is_html_element(name), "{name}");
+        }
     }
 
     #[test]
