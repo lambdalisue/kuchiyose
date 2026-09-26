@@ -9,6 +9,9 @@
 //! | 3 | 割る前に語彙を固定する | 側ごとに次元の意味が変わる |
 //! | 4 | 対を割り当てる | 較正と目盛りが対を共有し、いちばん危ない検査が無効になる |
 //! | 5 | 較正して帯を作る | |
+//!
+//! 組み立てるのは測り終えた単位からである。 単位は文書ごとの
+//! [統計値](crate::stats)から作る——本文から測る道も、1 本ずつ統計値にしてから通す。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,9 +24,11 @@ use kakiburi_metrics::Humanness;
 
 use crate::band::Band;
 use crate::calibrate::{median, Calibration};
+use crate::examples::{examples_for, ExampleTable};
 use crate::humanness::HumannessScale;
 use crate::pairing::{pair, Pair};
 use crate::split::{self, Unit};
+use crate::stats::{compose, phrases_in, CassetteStats, Phrases, StatsError};
 use crate::vocabulary::{cosine_delta, Counts, FrozenSet};
 use crate::{length_range_ok, Scale, ScaleError};
 
@@ -37,45 +42,49 @@ pub struct Sample<'a> {
 }
 
 /// 1 単位を測り終えた形。
-struct Measurements {
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Measurements {
     /// 系統ごとの部分ベクトルの数え上げ。測れなかった系統は入っていない。
-    parts: BTreeMap<System, Vec<Counts>>,
+    pub(crate) parts: BTreeMap<System, Vec<Counts>>,
     /// その単位の中で再来した言い回し。
-    recurring: Vec<String>,
-    /// その単位が繰り返しすぎている短い言い回し。
-    overused: Vec<String>,
-    /// その単位で一度しか出てこない語。語を散らしている当のものである。
-    once_only: Vec<String>,
+    pub(crate) recurring: Vec<String>,
+    /// その単位が繰り返しすぎている短い言い回し。検める 1 本でだけ測る。
+    pub(crate) overused: Vec<String>,
+    /// その単位で一度しか出てこない語。語を散らしている当のものである。検める 1 本でだけ測る。
+    pub(crate) once_only: Vec<String>,
     /// その単位に現れる語の並びと、位置と node の番号。型を取り出す材料。
-    grams: Vec<(String, f64, usize)>,
+    pub(crate) phrases: Phrases,
     /// その単位に現れる[語](kakiburi_metrics::word::goi)の語彙素と、品詞と回数。
     /// 語形が散っても 1 つに合流する。
-    goi: BTreeMap<String, (String, usize)>,
+    pub(crate) goi: BTreeMap<String, (String, usize)>,
     /// その単位に現れる[一人称](kakiburi_metrics::word::FIRST_PERSON)と、その回数。
-    first_person: BTreeMap<String, usize>,
+    pub(crate) first_person: BTreeMap<String, usize>,
     /// [書き出しの node の種類](kakiburi_doc::Document::opening)の名前。
-    opening: Option<String>,
+    pub(crate) opening: Option<String>,
     /// 人らしさの次元。
-    humanness: Humanness,
+    pub(crate) humanness: Humanness,
     /// 地の文の日本語の文字数。長さの範囲に使う。
-    chars: usize,
-    /// 地の文をつないだもの。言い回しの上限を文字列として数えるために持つ。
+    pub(crate) chars: usize,
+    /// 本人の側で再来した言い回しが、この単位の地の文に現れた回数。言い回しの上限に使う。
     ///
-    /// [文節の並び](Self::grams)では数えられない。 渡す言い回しは
+    /// [文節の並び](Self::phrases)では数えられない。 渡す言い回しは
     /// `ています。` のように文節にならないものを含むので、文節の並びと照らすと
     /// ほとんどが 0 になる——実測で、20 本のうち 15 本の上限が 0 だった。
-    text: String,
+    /// だから地の文を文字列として数える。
+    pub(crate) phrase_hits: BTreeMap<String, usize>,
+    /// 読める系統の次元ごとの実例。
+    pub(crate) examples: ExampleTable,
 }
 
-/// 本人の素材からコーパスの語を見つける。
+/// 素材からコーパスの語を見つける。
 ///
 /// 解析するだけで、測らない。 ここで測ってしまうと、割れたままの値が
 /// 派生物に残る。
-fn lexicon_of(person: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Lexicon {
+pub(crate) fn lexicon_of(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Lexicon {
     let Some(a) = analyzer else {
         return Lexicon::default();
     };
-    let units: Vec<Vec<Vec<kakiburi_metrics::morph::Morpheme>>> = person
+    let units: Vec<Vec<Vec<kakiburi_metrics::morph::Morpheme>>> = samples
         .iter()
         .filter_map(|s| {
             let prose = kakiburi_doc::prose::mask_identifiers(&s.document.prose());
@@ -86,7 +95,15 @@ fn lexicon_of(person: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Lexicon
 }
 
 impl Measurements {
-    fn of(sample: Sample<'_>, analyzer: Option<&dyn Analyzer>, lexicon: &Lexicon) -> Self {
+    /// 検める 1 本を本文から測る。
+    ///
+    /// 目盛りの材料は[統計値](crate::stats)から作る。 ここで測るのは、目盛りに
+    /// 載せる側の 1 本だけである。
+    pub(crate) fn of(
+        sample: Sample<'_>,
+        analyzer: Option<&dyn Analyzer>,
+        lexicon: &Lexicon,
+    ) -> Self {
         // 識別子を伏せてから測る。 `denops.vim` のような半角英字の連なりは
         // 書き手が選んだ書きぶりではなく題材が決めるもので、そのまま入れると
         // 同じ人が別の題材で書いた文章を「その人らしくない」と言う。
@@ -104,8 +121,6 @@ impl Measurements {
         }
         Self {
             parts,
-            // 長いほうだけを取る。 短い言い回しは誰でも繰り返すので、
-            // 渡しても癖にならない。
             recurring: kakiburi_metrics::humanness::recurring(
                 analyzed.as_ref(),
                 &kakiburi_metrics::humanness::LONG_N,
@@ -118,7 +133,7 @@ impl Measurements {
             ),
             // 「散らすな」と言うなら、どれが散らしているのかを言う。
             once_only: kakiburi_metrics::humanness::once_only(analyzed.as_ref(), ONCE_ONLY),
-            grams: kakiburi_metrics::word::grams_with_position(analyzed.as_ref(), &KATA_N),
+            phrases: phrases_in(analyzed.as_ref()),
             goi: kakiburi_metrics::word::goi(analyzed.as_ref()),
             // どの一人称を選ぶかは、題材が変わっても動かない。
             first_person: kakiburi_metrics::word::first_person(analyzed.as_ref()),
@@ -129,13 +144,28 @@ impl Measurements {
                 .map(|k| k.name().to_owned()),
             humanness: Humanness::measure(&prose, analyzed.as_ref()),
             chars: sample.document.japanese_chars(),
-            text: kakiburi_metrics::humanness::joined(&prose),
+            phrase_hits: BTreeMap::new(),
+            examples: ExampleTable::new(),
         }
     }
 
     /// 判定に使う系統が全部測れたか。
     fn systems_measured(&self) -> bool {
         FOR_VERDICT.iter().all(|s| self.parts.contains_key(s))
+    }
+
+    /// 測れたかの内訳。
+    pub(crate) fn report(&self, name: &str) -> Report {
+        Report {
+            name: name.to_owned(),
+            chars: self.chars,
+            missing_systems: FOR_VERDICT
+                .iter()
+                .filter(|sys| !self.parts.contains_key(sys))
+                .map(|sys| sys.name().to_owned())
+                .collect(),
+            missing_humanness: self.humanness.missing(),
+        }
     }
 }
 
@@ -168,19 +198,7 @@ impl Report {
 pub fn inspect(samples: &[Sample<'_>], analyzer: Option<&dyn Analyzer>) -> Vec<Report> {
     samples
         .iter()
-        .map(|s| {
-            let m = Measurements::of(*s, analyzer, &Lexicon::default());
-            Report {
-                name: s.name.to_owned(),
-                chars: m.chars,
-                missing_systems: FOR_VERDICT
-                    .iter()
-                    .filter(|sys| !m.parts.contains_key(sys))
-                    .map(|sys| sys.name().to_owned())
-                    .collect(),
-                missing_humanness: m.humanness.missing(),
-            }
-        })
+        .map(|s| Measurements::of(*s, analyzer, &Lexicon::default()).report(s.name))
         .collect()
 }
 
@@ -208,43 +226,82 @@ pub struct Material<'a> {
     pub others: &'a [Sample<'a>],
 }
 
-/// 組み立てる。
+/// 本文から組み立てる。
+///
+/// 語のまとめ方は本人の素材から見つけ、基準と他人もそれで測る。 基準の単位は
+/// 渡されたまま 1 単位ずつ測る——束ねるなら、呼ぶ側が束ねた本文を渡す。
 ///
 /// 作れないことは失敗ではない。 素材が足りなければ目盛りを作らず、検めが
 /// 判定できないを返す——それが正しい振る舞いである。
+///
+/// # Errors
+///
+/// 目盛りを作れなければ、その理由を返す。
 pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scale, ScaleError> {
-    let (person, baseline) = (m.person, m.baseline);
     // 2 度測る。 1 度目でコーパスから語を見つけ、2 度目でその語を畳んで測る。
     //
     // 辞書に無い語は割れる。 書き手の名前も、その分野の言い回しも、解析器の
     // 辞書は知らない——割れたままだと、その語のところで機能語も品詞 bigram も型も
     // 狂う（[語](kakiburi_metrics::lexicon)）。
-    //
-    // 見つけるのは本人の素材からである。 基準から見つければ、基準の書きぶりが
-    // 本人の測り方を決めることになる。
-    let lexicon = lexicon_of(person, analyzer);
-    let measured: BTreeMap<String, Measurements> = person
-        .iter()
-        .chain(baseline.iter())
-        .chain(m.others.iter())
-        .map(|s| {
-            (
-                (*s.name).to_owned(),
-                Measurements::of(*s, analyzer, &lexicon),
-            )
-        })
-        .collect();
+    let lexicon = lexicon_of(m.person, analyzer);
+    // 名前が重なる素材は呼ぶ側が断っている。 ここで重なれば、統計値を作れない。
+    let measure = |samples: &[Sample<'_>]| -> Result<CassetteStats, ScaleError> {
+        CassetteStats::measure_with(samples, analyzer, lexicon.clone())
+            .map_err(|StatsError::DuplicateName(n)| ScaleError::DuplicateName(n))
+    };
+    let (person, baseline, others) = (measure(m.person)?, measure(m.baseline)?, measure(m.others)?);
+    let units = |samples: &[Sample<'_>], stats: &CassetteStats| -> Vec<(String, Measurements)> {
+        samples
+            .iter()
+            .filter_map(|s| {
+                let d = stats.document(s.name)?;
+                Some((s.name.to_owned(), compose(&[d])))
+            })
+            .collect()
+    };
+    build(Units {
+        person: units(m.person, &person),
+        baseline: units(m.baseline, &baseline),
+        others: units(m.others, &others),
+        lexicon,
+    })
+}
 
-    let unit = |s: &Sample<'_>| -> Unit {
-        let m = &measured[s.name];
+/// 組み立てに渡す、測り終えた単位。
+///
+/// 名前は 3 つの欄を跨いで一意でなければならない——測った値を名前で引くので、
+/// 重なれば片方の値がもう片方で黙って置き換わる。
+pub(crate) struct Units {
+    /// 本人の単位。
+    pub(crate) person: Vec<(String, Measurements)>,
+    /// 基準の単位。
+    pub(crate) baseline: Vec<(String, Measurements)>,
+    /// 他人の単位。較正にしか入らない。
+    pub(crate) others: Vec<(String, Measurements)>,
+    /// 本人の側の語のまとめ方。検める草稿もこれで測る。
+    pub(crate) lexicon: Lexicon,
+}
+
+/// 測り終えた単位から組み立てる。
+pub(crate) fn build(u: Units) -> Result<Scale, ScaleError> {
+    let Units {
+        person,
+        baseline,
+        others,
+        lexicon,
+    } = u;
+    let as_unit = |name: &str, m: &Measurements| -> Unit {
         Unit {
-            name: s.name.to_owned(),
+            name: name.to_owned(),
             systems_measured: m.systems_measured(),
             humanness_measured: m.humanness.all_measured(),
         }
     };
-    let person_units: Vec<Unit> = person.iter().map(unit).collect();
-    let baseline_units: Vec<Unit> = baseline.iter().map(unit).collect();
+    let person_units: Vec<Unit> = person.iter().map(|(n, m)| as_unit(n, m)).collect();
+    let baseline_units: Vec<Unit> = baseline.iter().map(|(n, m)| as_unit(n, m)).collect();
+    let others_all: Vec<Unit> = others.iter().map(|(n, m)| as_unit(n, m)).collect();
+    let measured: BTreeMap<String, Measurements> =
+        person.into_iter().chain(baseline).chain(others).collect();
 
     // 1. 測れた単位だけを取り、どちらも 5 ＋ 5 に届くことを確かめる。
     let person_split = split::split(&person_units).map_err(ScaleError::Split)?;
@@ -298,11 +355,10 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     // 語彙には入れない。 固定するのは本人と基準からで、他人はその語彙へ投影する
     // ——検めるときの草稿と同じ扱いである。他人の語で次元を決めれば、
     // 他人が何人来たかで本人の測り方が変わる。
-    let other_units: Vec<Unit> = m
-        .others
+    let other_units: Vec<Unit> = others_all
         .iter()
-        .map(unit)
         .filter(|u| u.systems_measured)
+        .cloned()
         .collect();
 
     // 系統ごとの、単位 → z 得点のベクトル。
@@ -420,8 +476,8 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     // 測れなかったものは落とす。 次元が揃わない行を混ぜれば、列の数が
     // 行ごとに変わる。
     let mut human_rows = rows_of(&human_units);
-    for s in m.others {
-        let h = &measured[s.name].humanness;
+    for u in &others_all {
+        let h = &measured[&u.name].humanness;
         if !h.all_measured() {
             continue;
         }
@@ -482,8 +538,7 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
     };
 
     // 相手集合のベクトルを取り置く。 検めるときに本文が無くても照合値を
-    // 出せるようにするためである——ここで作らなければ、素材を持っている瞬間が
-    // 二度と来ない。
+    // 出せるようにするためである。
     let partner_vectors: Vec<crate::PartnerVector> = person_split
         .partners
         .iter()
@@ -501,14 +556,14 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         .collect();
 
     // 実例も取り置く。 検めるときに本文へ読みに行く道が無い。
-    let partner_samples: Vec<Sample<'_>> = m
-        .person
+    let partner_examples: Vec<&ExampleTable> = person_split
+        .partners
         .iter()
-        .filter(|s| person_split.partners.iter().any(|u| u.name == s.name))
-        .copied()
+        .map(|u| &measured[&u.name].examples)
         .collect();
-    let examples = examples_for(&frozen, &partner_samples);
+    let examples = examples_for(&frozen, &partner_examples);
 
+    let phrases = recurring_phrases(&person_units, &measured);
     Ok(Scale {
         frozen,
         calibration,
@@ -529,13 +584,9 @@ pub fn assemble(m: Material<'_>, analyzer: Option<&dyn Analyzer>) -> Result<Scal
         // 作るのはここだけである。 検めが作り直せる形にしておくと、検める文書を
         // 見てから言い回しを選び直す経路が書ける。
         humanness_target,
-        phrases: phrases_of(&person_units, &measured),
         // 渡した言い回しには上限も渡す。 繰り返せとだけ言えば、行きすぎる。
-        phrase_ceilings: ceilings_of(
-            &phrases_of(&person_units, &measured),
-            &person_units,
-            &measured,
-        ),
+        phrase_ceilings: ceilings_of(&phrases, &person_units, &measured),
+        phrases,
         lexicon,
         katas: katas_of(&person_units, &machine_units, &measured, KATAS),
         // 役を入れ替えて、もう 1 度回す。 同じ仕組みで機械の型が出る。
@@ -573,7 +624,7 @@ fn ceilings_of(
             if m.chars == 0 {
                 continue;
             }
-            let n = m.text.matches(p.as_str()).count();
+            let n = m.phrase_hits.get(p).copied().unwrap_or(0);
             #[allow(clippy::cast_precision_loss)]
             let r = 1000.0 * n as f64 / m.chars as f64;
             if r > top {
@@ -589,7 +640,7 @@ fn ceilings_of(
 ///
 /// 1 本にしか出ない言い回しは、その文書の題材が作ったものである。 2 本以上で
 /// 再来したものだけを、その人の癖として残す。
-fn phrases_of(units: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<String> {
+fn recurring_phrases(units: &[Unit], measured: &BTreeMap<String, Measurements>) -> Vec<String> {
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     for u in units {
         let Some(m) = measured.get(&u.name) else {
@@ -955,9 +1006,11 @@ fn frames_of(
                     return out;
                 };
                 let mut at: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
-                for (g, _, node) in &m.grams {
+                for (g, p) in &m.phrases {
                     if let Some(i) = katas.iter().position(|k| k.text == *g) {
-                        at.entry(*node).or_default().insert(i);
+                        for node in &p.nodes {
+                            at.entry(*node).or_default().insert(i);
+                        }
                     }
                 }
                 for here in at.values() {
@@ -1119,14 +1172,10 @@ fn katas_of(
             let Some(m) = measured.get(&u.name) else {
                 continue;
             };
-            let mut here: BTreeMap<&str, f64> = BTreeMap::new();
-            for (g, at, _) in &m.grams {
-                here.entry(g.as_str()).or_insert(*at);
-            }
-            for (g, at) in here {
-                let e = out.entry(g.to_owned()).or_insert((0, Vec::new()));
+            for (g, p) in &m.phrases {
+                let e = out.entry(g.clone()).or_insert((0, Vec::new()));
                 e.0 += 1;
-                e.1.push(at);
+                e.1.push(p.first);
             }
         }
         out
@@ -1143,11 +1192,8 @@ fn katas_of(
             if m.chars == 0 {
                 continue;
             }
-            let mut here: BTreeMap<&str, usize> = BTreeMap::new();
-            for (g, _, _) in &m.grams {
-                *here.entry(g.as_str()).or_default() += 1;
-            }
-            for (g, n) in here {
+            for (g, p) in &m.phrases {
+                let n = p.count;
                 #[allow(clippy::cast_precision_loss)]
                 let r = 1000.0 * n as f64 / m.chars as f64;
                 let e = out.entry(g.to_owned()).or_insert(0.0);
@@ -1333,6 +1379,16 @@ pub fn measure_against(
             .map(|s| s.name().to_owned())
             .collect(),
     }
+}
+
+/// 測り終えた 1 単位の照合値。相手集合との中央値で、系統が欠ければ出さない。
+pub(crate) fn matching_of_unit(scale: &Scale, m: &Measurements) -> Option<f64> {
+    let vector = |name: &str| -> Option<Vec<f64>> {
+        let system = System::from_name(name)?;
+        let set = &scale.frozen.iter().find(|(n, _)| n == name)?.1;
+        set.project(m.parts.get(&system)?)
+    };
+    matching_median(scale, &vector).0
 }
 
 /// 欠けた系統に代わりの値を置いて出した照合値。
@@ -1699,42 +1755,6 @@ pub fn diverging(
     out
 }
 
-/// 実例を拾う系統。次元が語や記号として読めるものだけである。
-///
-/// 品詞 bigram の「名詞-助詞」を増やせとは言えない。
-pub const EXAMPLE_SYSTEMS: [System; 3] = [System::FunctionWord, System::Comma, System::CharType];
-
-/// 読める系統の次元ごとに、本人の実例を拾っておく。
-///
-/// 作るのはここだけである。 検めるときに本文へ読みに行く道が無い——
-/// カセットは[本文を持たない](../../../docs/spec/200-extract.md#素材を正本にする)。
-fn examples_for(
-    scale_frozen: &[(String, crate::vocabulary::FrozenSet)],
-    partners: &[Sample<'_>],
-) -> Vec<(String, String, Vec<String>)> {
-    let mut out = Vec::new();
-    for system in EXAMPLE_SYSTEMS {
-        let name = system.name();
-        let Some((_, set)) = scale_frozen.iter().find(|(n, _)| n == name) else {
-            continue;
-        };
-        for dim in set.parts().iter().flat_map(crate::vocabulary::Frozen::dims) {
-            let found = examples_of(name, dim, partners);
-            if found.is_empty() {
-                continue;
-            }
-            out.push((name.to_owned(), dim.clone(), found));
-        }
-    }
-    out
-}
-
-/// 本人がその次元をどう書いているかを、実際の文から拾う。
-///
-/// 「増やせ」と言うだけでは、どこに置くのかが分からない。 数値と向きだけを
-/// 渡された側は、結局その人の文章を自分で読みに行くことになる。
-///
-/// 拾えないものは無理に作らない。 間隔のような、字面に現れない次元がある。
 /// この文章の、その次元を作っている場所。
 ///
 /// 「減らせ」と言うなら、どれを減らすのかを言う。 本人の実例だけを渡しても、
@@ -1753,191 +1773,6 @@ fn spots_of(system: &str, dim: &str, target: Sample<'_>) -> Vec<String> {
     out.sort();
     out.dedup();
     out.truncate(WANT);
-    out
-}
-
-fn examples_of(system: &str, dim: &str, partners: &[Sample<'_>]) -> Vec<String> {
-    const WANT: usize = 3;
-    const AROUND: usize = 6;
-
-    // どこにでもある字は実例にならない。 ひらがなや漢字を 1 つ抜き出して
-    // 見せても、どこをどう直せばよいかは何も伝わらない。
-    if matches!((system, dim), ("文字種", "ひらがな" | "漢字" | "その他")) {
-        return Vec::new();
-    }
-
-    // 次元が字面に現れるものと、字の種類を指すものを分ける。
-    let hit: Box<dyn Fn(char) -> bool> = match (system, dim) {
-        ("文字種", "空白") => Box::new(|c: char| c == ' ' || c == '\u{3000}'),
-        ("文字種", "約物") => Box::new(|c: char| {
-            matches!(
-                c,
-                '、' | '。' | '「' | '」' | '（' | '）' | '・' | '！' | '？'
-            )
-        }),
-        ("文字種", "カタカナ") => {
-            Box::new(|c: char| ('ァ'..='ヶ').contains(&c) || c == 'ー')
-        }
-        ("文字種", "半角数字") => Box::new(|c: char| c.is_ascii_digit()),
-        ("文字種", "半角英字") => Box::new(|c: char| c.is_ascii_alphabetic()),
-        _ => {
-            // 字面に現れる次元。読点の直前・直後は 1 文字、機能語は語である。
-            let needle: String = if system == "読点の打ち方" {
-                if dim.ends_with('字') || dim.ends_with("字以上") {
-                    // 間隔の次元は、字面に現れない。 その間隔を作っている読点を
-                    // まわりごと見せる——「増やせ」だけでは直せない。
-                    let mut out: Vec<String> = partners
-                        .iter()
-                        .flat_map(|p| {
-                            let prose = kakiburi_doc::prose::mask_identifiers(&p.document.prose());
-                            matching::comma_gaps(&prose)
-                        })
-                        .filter(|(name, _)| name == dim)
-                        .map(|(_, ctx)| ctx)
-                        .collect();
-                    out.sort();
-                    out.dedup();
-                    out.truncate(WANT);
-                    return out;
-                }
-                format!("{dim}、")
-            } else {
-                dim.to_owned()
-            };
-            return snippets(
-                partners,
-                &|t: &str| t.match_indices(&needle).map(|(i, _)| i).collect(),
-                needle.chars().count(),
-                WANT,
-                AROUND,
-            );
-        }
-    };
-    snippets(
-        partners,
-        &|t: &str| {
-            t.char_indices()
-                .filter(|(_, c)| hit(*c))
-                .map(|(i, _)| i)
-                .collect()
-        },
-        1,
-        WANT,
-        AROUND,
-    )
-}
-
-#[cfg(test)]
-mod example_tests {
-    use super::*;
-    use kakiburi_doc::node::{Kind, Node};
-
-    fn doc(t: &str) -> Document {
-        Document::new(vec![Node {
-            kind: Kind::Paragraph,
-            text: t.to_owned(),
-            children: Vec::new(),
-            raw_depth: None,
-        }])
-    }
-
-    #[test]
-    fn 空白の実例は打ち方が分かる形で出る() {
-        // 「増やせ」と言うだけでは、どこに置くのかが分からない。
-        let d = doc("今回は 2024/1/23 に行われた VimConf の話です。");
-        let got = examples_of(
-            "文字種",
-            "空白",
-            &[Sample {
-                name: "u",
-                document: &d,
-            }],
-        );
-        assert!(!got.is_empty(), "{got:?}");
-        assert!(got.iter().any(|x| x.contains(' ')), "{got:?}");
-    }
-
-    #[test]
-    fn どこにでもある字は実例にしない() {
-        // ひらがなを 1 つ抜き出して見せても、何も伝わらない。
-        let d = doc("これはひらがなばかりの文である。");
-        assert!(examples_of(
-            "文字種",
-            "ひらがな",
-            &[Sample {
-                name: "u",
-                document: &d
-            }]
-        )
-        .is_empty());
-    }
-
-    #[test]
-    fn 読点の直前の字は読点ごと見せる() {
-        let d = doc("そうなので、こうした。ならば、こうする。");
-        let got = examples_of(
-            "読点の打ち方",
-            "で",
-            &[Sample {
-                name: "u",
-                document: &d,
-            }],
-        );
-        assert!(got.iter().any(|x| x.contains("で、")), "{got:?}");
-    }
-
-    #[test]
-    fn 字面に現れない次元は無理に作らない() {
-        // 間隔は字として現れない。
-        let d = doc("そうなので、こうした。");
-        assert!(examples_of(
-            "読点の打ち方",
-            "17字",
-            &[Sample {
-                name: "u",
-                document: &d
-            }]
-        )
-        .is_empty());
-    }
-}
-
-/// 見つけた位置のまわりを切り出す。文字の境で切る。
-fn snippets(
-    partners: &[Sample<'_>],
-    find: &dyn Fn(&str) -> Vec<usize>,
-    len: usize,
-    want: usize,
-    around: usize,
-) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for p in partners {
-        for seg in &p.document.prose() {
-            let cs: Vec<char> = seg.text.chars().collect();
-            let byte_to_char: BTreeMap<usize, usize> = seg
-                .text
-                .char_indices()
-                .enumerate()
-                .map(|(k, (b, _))| (b, k))
-                .collect();
-            for b in find(&seg.text) {
-                let Some(&k) = byte_to_char.get(&b) else {
-                    continue;
-                };
-                let lo = k.saturating_sub(around);
-                let hi = (k + len + around).min(cs.len());
-                let snip: String = cs[lo..hi].iter().collect();
-                let snip = snip.trim().to_owned();
-                if snip.chars().count() < 4 || out.contains(&snip) {
-                    continue;
-                }
-                out.push(snip);
-                if out.len() >= want {
-                    return out;
-                }
-            }
-        }
-    }
     out
 }
 
@@ -1969,113 +1804,8 @@ pub struct Measured {
 mod tests {
     use super::*;
     use kakiburi_doc::node::{Kind, Node};
-    use kakiburi_metrics::morph::{Dictionary, Morpheme};
 
-    /// 試験用の解析器。UniDic を名乗り、字で切る。
-    ///
-    /// 仕様の手続きを通すためのものであって、日本語を解析するものではない。
-    struct Chars;
-
-    impl Analyzer for Chars {
-        fn dictionary(&self) -> Dictionary {
-            Dictionary::UnidicShort
-        }
-        fn dictionary_version(&self) -> (String, String) {
-            ("UniDic".into(), "試験".into())
-        }
-        fn analyze(&self, text: &str) -> Vec<Morpheme> {
-            text.chars()
-                .map(|c| {
-                    let pos1 = match c {
-                        'は' | 'が' | 'の' | 'を' | 'に' => "助詞",
-                        '。' | '、' => "補助記号",
-                        _ => "名詞",
-                    };
-                    Morpheme {
-                        surface: c.to_string(),
-                        lemma: c.to_string(),
-                        pos1: pos1.into(),
-                        pos2: "*".into(),
-                    }
-                })
-                .collect()
-        }
-    }
-
-    /// 1 単位ぶんの文書。すべての除外を越える長さにする。
-    ///
-    /// 長さは単位ごとに散らす。 揃えると広がりが 0 になり、長さの範囲の検査が
-    /// 「重なり 0」で止まる——両側が同じ範囲に散っている素材でなければ先へ進めない。
-    fn document(index: usize, machine: bool) -> Document {
-        document_with(index, machine, "、")
-    }
-
-    /// 読点を `comma` に替えた文書。 空にすれば読点の系統だけが欠ける。
-    fn document_with(index: usize, machine: bool, comma: &str) -> Document {
-        let seed = index * if machine { 17 } else { 13 };
-        // 畳まれても下限に届く量にする。 作り物の文は繰り返しが強いので、
-        // [コーパスから見つけた語](kakiburi_metrics::lexicon)が実素材より多く畳む。
-        let nodes: Vec<Node> = (0..90 + index * 4)
-            .map(|i| {
-                // 骨格は両側で同じにする。 違えば、長さの差が両側の違いに混ざる。
-                let (a, b, c, d) = if machine {
-                    // 機械の側。語を散らす——繰り返しが足りない側に出る。
-                    (
-                        wordy(seed + i),
-                        wordy(seed + i * 3),
-                        wordy(seed + i * 7),
-                        wordy(seed + i * 11),
-                    )
-                } else {
-                    // 人の側。同じ言い回しを繰り返す。
-                    (wordy(seed % 2), wordy(0), wordy(1), wordy(seed % 3))
-                };
-                // 機能語を 5 つ含める。対象の形態素の下限を越えるためである——
-                // 越えなければ機能語が測れず、判定に使う系統が揃わない。
-                Node::leaf(
-                    Kind::Paragraph,
-                    format!("{a}は{comma}{b}の{c}を{d}に{a}が。"),
-                )
-            })
-            .collect();
-        Document::new(nodes)
-    }
-
-    /// 語のかわりに使う、種で変わるかな列。
-    fn wordy(n: usize) -> String {
-        const KANA: [char; 10] = ['あ', 'か', 'さ', 'た', 'な', 'は', 'ま', 'や', 'ら', 'わ'];
-        (0..3)
-            .map(|i| KANA[(n / 10_usize.pow(i) + i as usize) % KANA.len()])
-            .collect()
-    }
-
-    struct Fixture {
-        person: Vec<(String, Document)>,
-        baseline: Vec<(String, Document)>,
-    }
-
-    impl Fixture {
-        fn new(n: usize) -> Self {
-            Self {
-                person: (0..n)
-                    .map(|i| (format!("p{i:02}"), document(i, false)))
-                    .collect(),
-                baseline: (0..n)
-                    .map(|i| (format!("b{i:02}"), document(i, true)))
-                    .collect(),
-            }
-        }
-
-        fn samples(pairs: &[(String, Document)]) -> Vec<Sample<'_>> {
-            pairs
-                .iter()
-                .map(|(n, d)| Sample {
-                    name: n,
-                    document: d,
-                })
-                .collect()
-        }
-    }
+    use crate::testing::{document_with, Chars, Fixture};
 
     #[test]
     fn 広く使う型を狭い穴あきに食わせない() {

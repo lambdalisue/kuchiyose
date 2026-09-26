@@ -328,23 +328,32 @@ pub fn parts(
     prose: &[Segment],
     analyzed: Option<&Analyzed>,
 ) -> Option<Vec<Counts>> {
-    if !measurable(system, prose) {
-        return None;
-    }
+    floored(
+        system,
+        raw_parts(system, prose, analyzed)?,
+        &Amounts::of(prose, analyzed),
+    )
+}
+
+/// 系統ごとの部分ベクトルの数え上げ。下限を掛けない。
+///
+/// 何本かを束ねた単位の値は、文書ごとの数え上げを足してから[下限を掛けて](floored)
+/// 作る。数え上げは node を跨がないので、足したものは束ねた本文を数えたものと
+/// 一致する。
+///
+/// `None` は数えられないことを表す——解析器が無いか、判定に使わない系統である。
+#[must_use]
+pub fn raw_parts(
+    system: System,
+    prose: &[Segment],
+    analyzed: Option<&Analyzed>,
+) -> Option<Vec<Counts>> {
     match system {
-        System::CharBigram => enough(vec![char_bigrams(prose)], crate::floor::BIGRAMS),
+        System::CharBigram => Some(vec![char_bigrams(prose)]),
         System::CharType => Some(vec![char_types(prose)]),
         System::Comma => Some(comma_position(prose)),
-        // 語の側は延べ語数の下限を別に持つ。 字数で足りていても語で足りないことがある。
-        System::FunctionWord => analyzed.filter(|a| a.enough_tokens()).and_then(|a| {
-            enough(
-                vec![crate::word::function_words(a)],
-                crate::floor::FUNCTION_WORDS,
-            )
-        }),
-        System::PosBigram => analyzed
-            .filter(|a| a.enough_tokens())
-            .and_then(|a| enough(vec![crate::word::pos_bigrams(a)], crate::floor::BIGRAMS)),
+        System::FunctionWord => analyzed.map(|a| vec![crate::word::function_words(a)]),
+        System::PosBigram => analyzed.map(|a| vec![crate::word::pos_bigrams(a)]),
         // 判定に使わない系統。ここから値を出さない。
         System::BunsetsuPattern
         | System::Embedding
@@ -353,6 +362,62 @@ pub fn parts(
         | System::Orthography
         | System::Structure
         | System::Length => None,
+    }
+}
+
+/// 系統の下限を見る量。足し合わせられる。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Amounts {
+    /// 地の文の日本語の文字数。
+    pub japanese: usize,
+    /// 読点の数。
+    pub commas: usize,
+    /// 延べ語数。解析器が無ければ `None`。
+    pub tokens: Option<usize>,
+}
+
+impl Amounts {
+    /// 地の文から数える。
+    #[must_use]
+    pub fn of(prose: &[Segment], analyzed: Option<&Analyzed>) -> Self {
+        Self {
+            japanese: kakiburi_doc::prose::japanese_chars(prose),
+            commas: comma_count(prose),
+            tokens: analyzed.map(Analyzed::tokens),
+        }
+    }
+
+    /// 足し合わせる。延べ語数は 1 本でも欠ければ欠ける。
+    #[must_use]
+    pub fn sum(all: &[Amounts]) -> Self {
+        Self {
+            japanese: all.iter().map(|a| a.japanese).sum(),
+            commas: all.iter().map(|a| a.commas).sum(),
+            tokens: all.iter().map(|a| a.tokens).sum(),
+        }
+    }
+}
+
+/// 数え上げに下限を掛ける。届かなければ `None`。
+///
+/// 見るのは素材の量と、その系統が実際に数えた事象の数である。
+#[must_use]
+pub fn floored(system: System, raw: Vec<Counts>, amounts: &Amounts) -> Option<Vec<Counts>> {
+    if !measurable_with(system, amounts) {
+        return None;
+    }
+    // 語の側は延べ語数の下限を別に持つ。 字数で足りていても語で足りないことがある。
+    let tokens_ok = amounts.tokens.is_some_and(|n| n >= crate::floor::TOKENS);
+    match system {
+        System::CharBigram => enough(raw, crate::floor::BIGRAMS),
+        System::CharType | System::Comma => Some(raw),
+        System::FunctionWord => tokens_ok
+            .then_some(raw)
+            .and_then(|r| enough(r, crate::floor::FUNCTION_WORDS)),
+        System::PosBigram => tokens_ok
+            .then_some(raw)
+            .and_then(|r| enough(r, crate::floor::BIGRAMS)),
+        _ => None,
     }
 }
 
@@ -389,10 +454,14 @@ fn enough(parts: Vec<Counts>, floor: usize) -> Option<Vec<Counts>> {
 /// この単位でこの系統を測れるか。除外はここで 1 度だけ決める。
 #[must_use]
 pub fn measurable(system: System, prose: &[Segment]) -> bool {
-    let ja = kakiburi_doc::prose::japanese_chars(prose);
+    measurable_with(system, &Amounts::of(prose, None))
+}
+
+fn measurable_with(system: System, amounts: &Amounts) -> bool {
+    let ja = amounts.japanese;
     match system {
         System::CharType => ja >= CHAR_TYPE_FLOOR,
-        System::Comma => ja >= crate::floor::JAPANESE_CHARS && comma_count(prose) >= COMMA_FLOOR,
+        System::Comma => ja >= crate::floor::JAPANESE_CHARS && amounts.commas >= COMMA_FLOOR,
         _ => ja >= crate::floor::JAPANESE_CHARS,
     }
 }
@@ -449,6 +518,49 @@ mod tests {
         for c in ['é', 'α', 'д'] {
             assert_eq!(CharType::of(c), CharType::Other, "{c}");
         }
+    }
+
+    #[test]
+    fn 束ねた数え上げは足してから下限を掛ける() {
+        // 1 本ずつでは字数の下限を割る 2 本。 足せば届く。
+        let a = vec![seg(&"あいう、えお。".repeat(80))];
+        let b = vec![seg(&"かきく、けこ。".repeat(80))];
+        assert_eq!(parts(System::Comma, &a, None), None, "1 本では届かない");
+        let sum = |x: Vec<Counts>, y: Vec<Counts>| -> Vec<Counts> {
+            x.into_iter()
+                .zip(y)
+                .map(|(mut p, q)| {
+                    for (k, v) in q {
+                        *p.entry(k).or_default() += v;
+                    }
+                    p
+                })
+                .collect()
+        };
+        let raw = sum(
+            raw_parts(System::Comma, &a, None).unwrap(),
+            raw_parts(System::Comma, &b, None).unwrap(),
+        );
+        let amounts = Amounts::sum(&[Amounts::of(&a, None), Amounts::of(&b, None)]);
+        let joined: Vec<Segment> = a.iter().chain(&b).cloned().collect();
+        assert_eq!(
+            floored(System::Comma, raw, &amounts),
+            parts(System::Comma, &joined, None),
+            "node を跨がないので、足したものは束ねた本文を数えたものと一致する"
+        );
+    }
+
+    #[test]
+    fn 延べ語数は_1_本でも欠ければ欠ける() {
+        let got = Amounts::sum(&[
+            Amounts {
+                japanese: 1,
+                commas: 0,
+                tokens: Some(3),
+            },
+            Amounts::default(),
+        ]);
+        assert_eq!(got.tokens, None);
     }
 
     #[test]

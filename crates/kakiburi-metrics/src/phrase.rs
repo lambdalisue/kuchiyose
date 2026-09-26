@@ -11,7 +11,7 @@
 use kakiburi_doc::prose::Segment;
 use kakiburi_doc::sentence;
 
-use crate::{floor, Measured};
+use crate::directive::Counted;
 
 /// 非断定の密度。**文末がこれで終わる数。**
 ///
@@ -93,7 +93,7 @@ pub const DIGRESSIONS: [&str; 10] = [
 
 /// 非断定の密度。
 #[must_use]
-pub fn hedging(prose: &[Segment]) -> Measured {
+pub fn hedging(prose: &[Segment]) -> Counted {
     per_1000(prose, count_hedging)
 }
 
@@ -111,7 +111,7 @@ pub fn count_hedging(prose: &[Segment]) -> usize {
 
 /// 対比構文。
 #[must_use]
-pub fn contrast(prose: &[Segment]) -> Measured {
+pub fn contrast(prose: &[Segment]) -> Counted {
     per_1000(prose, count_contrast)
 }
 
@@ -126,7 +126,7 @@ pub fn count_contrast(prose: &[Segment]) -> usize {
 
 /// 自己否定の密度。
 #[must_use]
-pub fn self_negation(prose: &[Segment]) -> Measured {
+pub fn self_negation(prose: &[Segment]) -> Counted {
     per_1000(prose, count_self_negation)
 }
 
@@ -141,7 +141,7 @@ pub fn count_self_negation(prose: &[Segment]) -> usize {
 
 /// 進行の実況。
 #[must_use]
-pub fn narration(prose: &[Segment]) -> Measured {
+pub fn narration(prose: &[Segment]) -> Counted {
     per_1000(prose, count_narration)
 }
 
@@ -156,7 +156,7 @@ pub fn count_narration(prose: &[Segment]) -> usize {
 
 /// 脱線。
 #[must_use]
-pub fn digression(prose: &[Segment]) -> Measured {
+pub fn digression(prose: &[Segment]) -> Counted {
     per_1000(prose, count_digression)
 }
 
@@ -170,21 +170,12 @@ pub fn count_digression(prose: &[Segment]) -> usize {
 }
 
 /// 数えて、日本語 1,000 字あたりにする。
-fn per_1000(prose: &[Segment], count: impl Fn(&[Segment]) -> usize) -> Measured {
-    let ja = japanese(prose);
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
-    density(count(prose), ja)
+fn per_1000(prose: &[Segment], count: impl Fn(&[Segment]) -> usize) -> Counted {
+    Counted::density(count(prose), japanese(prose))
 }
 
 fn japanese(prose: &[Segment]) -> usize {
     kakiburi_doc::prose::japanese_chars(prose)
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn density(n: usize, ja: usize) -> Measured {
-    Measured::Value(1000.0 * n as f64 / ja as f64)
 }
 
 fn ends_with_any(s: &str, list: &[&str]) -> bool {
@@ -226,6 +217,7 @@ fn count_longest(text: &str, list: &[&str]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Measured;
     use kakiburi_doc::node::Kind;
 
     /// 下限を越える長さの地の文に、試す文字列を足す。
@@ -242,8 +234,8 @@ mod tests {
         ]
     }
 
-    fn value(m: Measured) -> f64 {
-        m.value().expect("測れている")
+    fn value(m: impl Into<Measured>) -> f64 {
+        m.into().value().expect("測れている")
     }
 
     /// 数えるだけの地の文。**下限は掛けないので、数そのものを比べられる。**

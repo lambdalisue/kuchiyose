@@ -10,7 +10,8 @@ pub type Counts = BTreeMap<String, usize>;
 
 use crate::morph::Analyzed;
 
-use crate::Measured;
+use crate::directive::{Counted, Parts};
+use crate::Unmeasured;
 
 /// 機能語の分布。
 ///
@@ -318,12 +319,11 @@ fn is_content(m: &(&str, &str)) -> bool {
 /// ——`ある、という` も `さて、では` も `はい、なので` も、読点を外して語が繋がらない。
 /// 壊れた草稿の `あらため、て` だけが当たる。
 #[must_use]
-pub fn splitting_commas(analyzed: Option<&Analyzed>) -> Measured {
+pub fn splitting_commas(analyzed: Option<&Analyzed>) -> Counted {
     let Some(a) = analyzed else {
-        return Measured::ToolMissing;
+        return Counted::unmeasured(Unmeasured::ToolMissing);
     };
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(a.split_commas().len() as f64)
+    Counted::of(Parts::Count(a.split_commas().len()))
 }
 
 /// 接続詞直後の読点。語彙素 × 位置ごとのスカラー。
@@ -332,7 +332,7 @@ pub fn splitting_commas(analyzed: Option<&Analyzed>) -> Measured {
 ///
 /// まとめて 1 つの割合にしない。 まとめると、規範で決まる分に薄まる。
 #[must_use]
-pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Measured> {
+pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Counted> {
     // (語彙素, 位置) → (読点あり, 全体)
     let mut tally: BTreeMap<(&'static str, Position), (usize, usize)> = BTreeMap::new();
     for lemma in CONJUNCTIONS {
@@ -371,15 +371,13 @@ pub fn conjunction_comma(a: &Analyzed) -> BTreeMap<String, Measured> {
         let name = format!("接続詞直後の読点・{lemma}・{}", pos.name());
         // 1 度も現れないのと、現れたが足りないのを分ける。 前者は素材を足しても
         // 直るとは限らない——その語彙素をその位置で使わない書き手である。
-        let m = match total {
-            0 => Measured::NoDenominator,
-            n if n < 10 => Measured::BelowFloor,
-            _ =>
-            {
-                #[allow(clippy::cast_precision_loss)]
-                Measured::Value(hit as f64 / total as f64)
-            }
-        };
+        let m = Counted::of(Parts::Ratio {
+            num: hit,
+            den: total,
+            per: 1,
+            floor: 10,
+            zero_is_absent: true,
+        });
         out.insert(name, m);
     }
     out
@@ -447,6 +445,7 @@ fn bucket(v: f64, cuts: &[f64; 9]) -> usize {
 mod tests {
     use super::*;
     use crate::morph::stub::Stub;
+    use crate::Measured;
     use kakiburi_doc::node::Kind;
 
     fn prose(texts: &[&str]) -> Vec<kakiburi_doc::prose::Segment> {

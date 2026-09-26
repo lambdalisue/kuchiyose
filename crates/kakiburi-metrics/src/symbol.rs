@@ -6,7 +6,7 @@
 use kakiburi_doc::prose::Segment;
 use kakiburi_doc::text;
 
-use crate::{floor, Measured};
+use crate::directive::Counted;
 
 /// 地の文の文字を、node の順に走る。node を跨ぐ隣接は作らない。
 fn chars_per_node(prose: &[Segment]) -> impl Iterator<Item = Vec<char>> + '_ {
@@ -19,34 +19,30 @@ fn japanese(prose: &[Segment]) -> usize {
 }
 
 /// 1 文字を数えて、日本語 1,000 字あたりに直す。
-fn per_1000(prose: &[Segment], hit: impl Fn(char) -> bool) -> Measured {
+fn per_1000(prose: &[Segment], hit: impl Fn(char) -> bool) -> Counted {
     let ja = japanese(prose);
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
     let n: usize = prose
         .iter()
         .map(|s| s.text.chars().filter(|&c| hit(c)).count())
         .sum();
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(1000.0 * n as f64 / ja as f64)
+    Counted::density(n, ja)
 }
 
 /// 全角括弧。`（` の数。
 #[must_use]
-pub fn full_width_paren(prose: &[Segment]) -> Measured {
+pub fn full_width_paren(prose: &[Segment]) -> Counted {
     per_1000(prose, |c| c == '（')
 }
 
 /// 半角括弧。`(` の数。
 #[must_use]
-pub fn half_width_paren(prose: &[Segment]) -> Measured {
+pub fn half_width_paren(prose: &[Segment]) -> Counted {
     per_1000(prose, |c| c == '(')
 }
 
 /// 鉤括弧。`「` の数。
 #[must_use]
-pub fn corner_bracket(prose: &[Segment]) -> Measured {
+pub fn corner_bracket(prose: &[Segment]) -> Counted {
     per_1000(prose, |c| c == '「')
 }
 
@@ -55,19 +51,19 @@ pub fn corner_bracket(prose: &[Segment]) -> Measured {
 /// 合算してよいのは、これが頻度の指標だからである。どちらを使うかの選択は
 /// [`exclamation_width`]が別に見る。
 #[must_use]
-pub fn exclamation(prose: &[Segment]) -> Measured {
+pub fn exclamation(prose: &[Segment]) -> Counted {
     per_1000(prose, |c| c == '!' || c == '！')
 }
 
 /// 疑問符。字幅を合算する。
 #[must_use]
-pub fn question(prose: &[Segment]) -> Measured {
+pub fn question(prose: &[Segment]) -> Counted {
     per_1000(prose, |c| c == '?' || c == '？')
 }
 
 /// em dash。`—` の数。
 #[must_use]
-pub fn em_dash(prose: &[Segment]) -> Measured {
+pub fn em_dash(prose: &[Segment]) -> Counted {
     per_1000(prose, |c| c == '\u{2014}')
 }
 
@@ -79,14 +75,10 @@ pub fn em_dash(prose: &[Segment]) -> Measured {
 /// 符号位置で数えてはいけない。 国旗は 2、家族の ZWJ 列は 5 以上になり、
 /// 絵文字を 1 つ置いた書き手が 5 つ置いたことになる。
 #[must_use]
-pub fn emoji(prose: &[Segment]) -> Measured {
+pub fn emoji(prose: &[Segment]) -> Counted {
     let ja = japanese(prose);
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
     let n: usize = chars_per_node(prose).map(|cs| clusters(&cs)).sum();
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(1000.0 * n as f64 / ja as f64)
+    Counted::density(n, ja)
 }
 
 /// 絵文字の列を、書記素クラスタの数として数える。最長一致で取る。
@@ -183,11 +175,8 @@ pub const EMOJI_RANGES_VERSION: &str = "暫定の区画表 1";
 /// カタカナ語の区切りに使われた `・` を除く。 前後がともにカタカナである `・` は
 /// 複合語の区切り（「アプリケーション・サーバ」）であって、並列の選択ではない。
 #[must_use]
-pub fn middle_dot(prose: &[Segment]) -> Measured {
+pub fn middle_dot(prose: &[Segment]) -> Counted {
     let ja = japanese(prose);
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
     let mut n = 0usize;
     for chars in chars_per_node(prose) {
         for i in 0..chars.len() {
@@ -203,8 +192,7 @@ pub fn middle_dot(prose: &[Segment]) -> Measured {
             }
         }
     }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(1000.0 * n as f64 / ja as f64)
+    Counted::density(n, ja)
 }
 
 /// 三点リーダの箇所。
@@ -212,24 +200,16 @@ pub fn middle_dot(prose: &[Segment]) -> Measured {
 /// 1 箇所とは、連続する `…` の並び全体、または連続する半角ピリオド 3 つ以上の
 /// 並び全体を指す。`……` は 1 箇所、`...` も 1 箇所、`......` も 1 箇所である。
 #[must_use]
-pub fn ellipsis(prose: &[Segment]) -> Measured {
+pub fn ellipsis(prose: &[Segment]) -> Counted {
     let ja = japanese(prose);
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(1000.0 * count_ellipsis(prose).0 as f64 / ja as f64)
+    Counted::density(count_ellipsis(prose).0, ja)
 }
 
 /// 三点リーダの字数。箇所のうち重ねた箇所の割合。
 #[must_use]
-pub fn ellipsis_doubled(prose: &[Segment]) -> Measured {
+pub fn ellipsis_doubled(prose: &[Segment]) -> Counted {
     let (total, doubled) = count_ellipsis(prose);
-    if total < 5 {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(doubled as f64 / total as f64)
+    Counted::share(doubled, total, 5)
 }
 
 /// 箇所の数と、そのうち重ねた箇所の数。
@@ -271,19 +251,19 @@ fn count_ellipsis(prose: &[Segment]) -> (usize, usize) {
 
 /// 感嘆符の字幅。感嘆符のうち全角 `！` の割合。
 #[must_use]
-pub fn exclamation_width(prose: &[Segment]) -> Measured {
+pub fn exclamation_width(prose: &[Segment]) -> Counted {
     width_ratio(prose, '！', '!', 5)
 }
 
 /// 疑問符の字幅。疑問符のうち全角 `？` の割合。
 #[must_use]
-pub fn question_width(prose: &[Segment]) -> Measured {
+pub fn question_width(prose: &[Segment]) -> Counted {
     width_ratio(prose, '？', '?', 5)
 }
 
 /// 数字の字幅。数字のうち全角の割合。
 #[must_use]
-pub fn digit_width(prose: &[Segment]) -> Measured {
+pub fn digit_width(prose: &[Segment]) -> Counted {
     let (mut full, mut total) = (0usize, 0usize);
     for chars in chars_per_node(prose) {
         for c in chars {
@@ -300,11 +280,11 @@ pub fn digit_width(prose: &[Segment]) -> Measured {
 
 /// 波ダッシュ。`〜` と `～` の合計のうち `〜`（U+301C）の割合。
 #[must_use]
-pub fn wave_dash(prose: &[Segment]) -> Measured {
+pub fn wave_dash(prose: &[Segment]) -> Counted {
     width_ratio(prose, '\u{301C}', '\u{FF5E}', 3)
 }
 
-fn width_ratio(prose: &[Segment], picked: char, other: char, min: usize) -> Measured {
+fn width_ratio(prose: &[Segment], picked: char, other: char, min: usize) -> Counted {
     let (mut hit, mut total) = (0usize, 0usize);
     for chars in chars_per_node(prose) {
         for c in chars {
@@ -319,13 +299,9 @@ fn width_ratio(prose: &[Segment], picked: char, other: char, min: usize) -> Meas
     ratio(hit, total, min)
 }
 
-#[allow(clippy::cast_precision_loss)]
-fn ratio(hit: usize, total: usize, min: usize) -> Measured {
-    if total < min {
-        // 分母が小さいと割合が跳ねる。0 を返さない。
-        return Measured::BelowFloor;
-    }
-    Measured::Value(hit as f64 / total as f64)
+/// 分母が小さいと割合が跳ねる。下限に届かなければ 0 ではなく下限未満になる。
+fn ratio(hit: usize, total: usize, min: usize) -> Counted {
+    Counted::share(hit, total, min)
 }
 
 /// 和欧間スペース欠落。
@@ -336,7 +312,7 @@ fn ratio(hit: usize, total: usize, min: usize) -> Measured {
 /// 動く。約物を挟む場合は、機会にも欠落にも数えない——`Rust、` や `（Rust` は、
 /// スペースを入れる習慣のある人でも入れない。
 #[must_use]
-pub fn missing_space(prose: &[Segment]) -> Measured {
+pub fn missing_space(prose: &[Segment]) -> Counted {
     let (mut chance, mut missing) = (0usize, 0usize);
     for chars in chars_per_node(prose) {
         let mut i = 0;
@@ -362,11 +338,7 @@ pub fn missing_space(prose: &[Segment]) -> Measured {
             i = j;
         }
     }
-    if chance < 20 {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(missing as f64 / chance as f64)
+    Counted::share(missing, chance, 20)
 }
 
 /// 和文間スペース。
@@ -384,7 +356,7 @@ pub fn missing_space(prose: &[Segment]) -> Measured {
 /// だったのに対し、和欧間の空白を機械的に入れて作った草稿が 103 箇所になり、
 /// それでも判定が通った。 通してはいけないものが通る穴を塞ぐために置いている。
 #[must_use]
-pub fn wabun_space(prose: &[Segment]) -> Measured {
+pub fn wabun_space(prose: &[Segment]) -> Counted {
     let (mut chance, mut spaced) = (0usize, 0usize);
     for chars in chars_per_node(prose) {
         let mut i = 0;
@@ -408,11 +380,7 @@ pub fn wabun_space(prose: &[Segment]) -> Measured {
             i = j;
         }
     }
-    if chance < 20 {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(spaced as f64 / chance as f64)
+    Counted::share(spaced, chance, 20)
 }
 
 /// 和欧の境目になりうる文字か。
@@ -448,11 +416,8 @@ fn is_cross(a: char, b: char) -> bool {
 /// 連続は 1 と数える。`www` は 3 ではなく 1。`w` 1 つも 1 と数える——回数ではなく、
 /// 笑いを差し込んだ箇所の数を見たい。
 #[must_use]
-pub fn laughter(prose: &[Segment]) -> Measured {
+pub fn laughter(prose: &[Segment]) -> Counted {
     let ja = japanese(prose);
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
     let mut n = 0usize;
     for chars in chars_per_node(prose) {
         let mut i = 0;
@@ -490,8 +455,7 @@ pub fn laughter(prose: &[Segment]) -> Measured {
             i += 1;
         }
     }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(1000.0 * n as f64 / ja as f64)
+    Counted::density(n, ja)
 }
 
 fn is_w(c: char) -> bool {
@@ -518,6 +482,7 @@ fn paren_laugh(chars: &[char], i: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Measured;
     use kakiburi_doc::node::Kind;
 
     /// 日本語 1,000 字を超える地の文を作る。除外に掛からせないため。
@@ -535,8 +500,8 @@ mod tests {
         ]
     }
 
-    fn value(m: Measured) -> f64 {
-        m.value().expect("測れているべき")
+    fn value(m: impl Into<Measured>) -> f64 {
+        m.into().value().expect("測れているべき")
     }
 
     #[test]
@@ -648,7 +613,7 @@ mod tests {
     fn 和文間スペースは入った箇所を数える() {
         // 通してはいけないものが通る穴を塞ぐ。
         let p = prose_with(&"複数の リポジトリ を扱う。".repeat(6));
-        let Measured::Value(v) = wabun_space(&p) else {
+        let Measured::Value(v) = wabun_space(&p).measured() else {
             panic!("測れる");
         };
         assert!(v > 0.0, "{v}");

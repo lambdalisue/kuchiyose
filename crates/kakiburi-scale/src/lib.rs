@@ -4,13 +4,22 @@
 //! 作り直せてしまう経路を作らない——[`Scale`]は作り終えた形しか公開しない。
 
 pub mod assemble;
+pub mod assembly;
 pub mod band;
+pub mod bundle;
 pub mod calibrate;
 pub mod effective;
+pub mod examples;
 pub mod humanness;
 pub mod pairing;
+pub mod select;
+pub mod self_check;
 pub mod split;
+pub mod stats;
 pub mod vocabulary;
+
+#[cfg(test)]
+mod testing;
 
 pub use assemble::{
     assemble, diverging, inspect, measure_against, Divergence, HumannessByMetric, Measured, Report,
@@ -69,6 +78,10 @@ pub enum ScaleError {
     ///
     /// ここが壊れると、分離するように合わせたものの分離具合を測ることになる。
     SharedPairs,
+    /// 同じ名前の単位が 1 つの側に 2 つある。
+    ///
+    /// 測った値を名前で引くので、重なれば片方の値がもう片方で黙って置き換わる。
+    DuplicateName(String),
 }
 
 impl std::fmt::Display for ScaleError {
@@ -116,6 +129,7 @@ impl std::fmt::Display for ScaleError {
             ScaleError::SharedPairs => {
                 write!(f, "較正と目盛りが対を共有している")
             }
+            ScaleError::DuplicateName(n) => write!(f, "単位の名前が重なっている: `{n}`"),
         }
     }
 }

@@ -3,6 +3,7 @@
 //! 登録簿がこのクレートの本体である。「使う側は一覧を持たない」を守る唯一の場所。
 
 pub mod definitions;
+pub mod directive;
 pub mod humanness;
 pub mod lexicon;
 pub mod matching;
@@ -142,6 +143,18 @@ impl Unmeasured {
             self,
             Unmeasured::NotWritable | Unmeasured::NoDenominator | Unmeasured::BelowFloor
         )
+    }
+}
+
+impl From<Unmeasured> for Measured {
+    fn from(why: Unmeasured) -> Self {
+        match why {
+            Unmeasured::ToolFailed => Measured::ToolFailed,
+            Unmeasured::ToolMissing => Measured::ToolMissing,
+            Unmeasured::NotWritable => Measured::NotWritable,
+            Unmeasured::NoDenominator => Measured::NoDenominator,
+            Unmeasured::BelowFloor => Measured::BelowFloor,
+        }
     }
 }
 

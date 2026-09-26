@@ -6,17 +6,13 @@
 use kakiburi_doc::node::{Kind, Node};
 use kakiburi_doc::{text, Document};
 
+use crate::directive::Counted;
 use crate::morph::{Analyzed, Morpheme};
-use crate::{floor, Measured};
+use crate::{floor, Unmeasured};
 
 /// node の数を、日本語 1,000 字あたりに直す。
-fn nodes_per_1000(doc: &Document, kind: Kind) -> Measured {
-    let ja = doc.japanese_chars();
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(1000.0 * count(doc, kind) as f64 / ja as f64)
+fn nodes_per_1000(doc: &Document, kind: Kind) -> Counted {
+    Counted::density(count(doc, kind), doc.japanese_chars())
 }
 
 /// その種類の node の数。入れ子も数える。
@@ -36,55 +32,55 @@ fn count(doc: &Document, kind: Kind) -> usize {
 
 /// 見出しの数。深さは問わない。
 #[must_use]
-pub fn headings(doc: &Document) -> Measured {
+pub fn headings(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Heading)
 }
 
 /// 箇条書きの数。順序のない列挙。
 #[must_use]
-pub fn bullets(doc: &Document) -> Measured {
+pub fn bullets(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Bullet)
 }
 
 /// 番号リストの数。順序のある列挙。
 #[must_use]
-pub fn ordered_lists(doc: &Document) -> Measured {
+pub fn ordered_lists(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Ordered)
 }
 
 /// 表の数。
 #[must_use]
-pub fn tables(doc: &Document) -> Measured {
+pub fn tables(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Table)
 }
 
 /// 引用の数。
 #[must_use]
-pub fn quotes(doc: &Document) -> Measured {
+pub fn quotes(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Quote)
 }
 
 /// 補足の数。記法は問わない。
 #[must_use]
-pub fn notes(doc: &Document) -> Measured {
+pub fn notes(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Note)
 }
 
 /// 警告の数。記法は問わない。
 #[must_use]
-pub fn warnings(doc: &Document) -> Measured {
+pub fn warnings(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Warning)
 }
 
 /// 折りたたみの数。
 #[must_use]
-pub fn details(doc: &Document) -> Measured {
+pub fn details(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Details)
 }
 
 /// 強調の数。
 #[must_use]
-pub fn emphasis(doc: &Document) -> Measured {
+pub fn emphasis(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::Emphasis)
 }
 
@@ -94,39 +90,30 @@ pub fn emphasis(doc: &Document) -> Measured {
 /// 貼っただけで率が下がる。[地の文](kakiburi_doc::prose)がコードを含まないので、
 /// ここは分母をそのまま使えばよい。
 #[must_use]
-pub fn code_blocks(doc: &Document) -> Measured {
+pub fn code_blocks(doc: &Document) -> Counted {
     nodes_per_1000(doc, Kind::CodeBlock)
 }
 
 /// 深い見出しの数。深さ 3 以上。
 #[must_use]
-pub fn deep_headings(doc: &Document) -> Measured {
-    let ja = doc.japanese_chars();
-    if ja < floor::JAPANESE_CHARS {
-        return Measured::BelowFloor;
-    }
+pub fn deep_headings(doc: &Document) -> Counted {
     let deep = doc
         .nodes
         .iter()
         .filter(|n| doc.heading_depth(n).is_some_and(|d| d >= 3))
         .count();
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(1000.0 * deep as f64 / ja as f64)
+    Counted::density(deep, doc.japanese_chars())
 }
 
 /// 1 文だけの段落の割合。
 #[must_use]
-pub fn single_sentence_paragraphs(doc: &Document) -> Measured {
+pub fn single_sentence_paragraphs(doc: &Document) -> Counted {
     let paras = doc.paragraphs();
-    if paras.len() < 10 {
-        return Measured::BelowFloor;
-    }
     let one = paras
         .iter()
         .filter(|p| kakiburi_doc::sentence::sentences(&p.text).len() == 1)
         .count();
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(one as f64 / paras.len() as f64)
+    Counted::share(one, paras.len(), 10)
 }
 
 /// 敬体で終わる文の割合。node の種類ごとに数える。
@@ -140,7 +127,7 @@ pub fn single_sentence_paragraphs(doc: &Document) -> Measured {
 ///
 /// 分母は敬体か常体で終わった文だけである。 体言止めと疑問符で終わる文はどちらでも
 /// ないので数えない——入れると、体言止めの多い書き手ほど敬体率が下がる。
-fn polite_rate(texts: &[String], floor: usize) -> Measured {
+fn polite_rate(texts: &[String], floor: usize) -> Counted {
     let (mut polite, mut plain) = (0usize, 0usize);
     for t in texts {
         for s in kakiburi_doc::sentence::sentences(t) {
@@ -151,11 +138,7 @@ fn polite_rate(texts: &[String], floor: usize) -> Measured {
             }
         }
     }
-    if polite + plain < floor {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(polite as f64 / (polite + plain) as f64)
+    Counted::share(polite, polite + plain, floor)
 }
 
 /// その文が敬体か。どちらでもなければ `None`。
@@ -207,7 +190,7 @@ fn register_of(sentence: &str) -> Option<bool> {
 /// 解析器が要る。 体言止めは「文の最後の自立語が名詞で終わる」ことなので、
 /// 語尾の文字列では決まらない——`できる` のように、語尾の一覧に載っていない
 /// 動詞の活用形と見分けが付かない。
-fn taigen_rate<'a>(segments: impl Iterator<Item = &'a Vec<Morpheme>>, floor: usize) -> Measured {
+fn taigen_rate<'a>(segments: impl Iterator<Item = &'a Vec<Morpheme>>, floor: usize) -> Counted {
     let (mut taigen, mut total) = (0usize, 0usize);
     for seg in segments {
         for sentence in split_sentences(seg) {
@@ -220,11 +203,7 @@ fn taigen_rate<'a>(segments: impl Iterator<Item = &'a Vec<Morpheme>>, floor: usi
             }
         }
     }
-    if total < floor {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(taigen as f64 / total as f64)
+    Counted::share(taigen, total, floor)
 }
 
 /// 形態素列を文に割る。句点・感嘆符・疑問符で切る。
@@ -282,7 +261,7 @@ pub fn register_names() -> Vec<String> {
 pub fn register_rates(
     prose: &[kakiburi_doc::prose::Segment],
     analyzed: Option<&Analyzed>,
-) -> Vec<(String, Measured)> {
+) -> Vec<(String, Counted)> {
     let mut out = Vec::with_capacity(Kind::PROSE.len() * 2);
     for kind in Kind::PROSE {
         let texts: Vec<String> = prose
@@ -298,7 +277,7 @@ pub fn register_rates(
             format!("体言止め率・{}", kind.name()),
             match analyzed {
                 Some(a) => taigen_rate(a.segments_of(kind), REGISTER_FLOOR),
-                None => Measured::ToolMissing,
+                None => Counted::unmeasured(Unmeasured::ToolMissing),
             },
         ));
     }
@@ -309,99 +288,69 @@ pub fn register_rates(
 ///
 /// 見出しや項目やセルの文を分子に入れない。
 #[must_use]
-pub fn sentences_per_paragraph(doc: &Document) -> Measured {
+pub fn sentences_per_paragraph(doc: &Document) -> Counted {
     let paras = doc.paragraphs();
-    if paras.len() < floor::PARAGRAPHS {
-        return Measured::BelowFloor;
-    }
     let n: usize = paras
         .iter()
         .map(|p| kakiburi_doc::sentence::sentences(&p.text).len())
         .sum();
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(n as f64 / paras.len() as f64)
+    Counted::share(n, paras.len(), floor::PARAGRAPHS)
 }
 
 /// 太字始まりの項目の割合。分母は項目数。
 #[must_use]
-pub fn bold_leading_items(doc: &Document) -> Measured {
+pub fn bold_leading_items(doc: &Document) -> Counted {
     let items = doc.items();
-    if items.len() < 10 {
-        return Measured::BelowFloor;
-    }
     let bold = items
         .iter()
         .filter(|i| i.children.first().is_some_and(|c| c.kind == Kind::Emphasis))
         .count();
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(bold as f64 / items.len() as f64)
+    Counted::share(bold, items.len(), 10)
 }
 
 /// 段落長の変動係数。段落ごとの日本語文字数の標準偏差 ÷ 平均。
 #[must_use]
-pub fn paragraph_length_cv(doc: &Document) -> Measured {
+pub fn paragraph_length_cv(doc: &Document) -> Counted {
     let paras = doc.paragraphs();
-    if paras.len() < 10 {
-        return Measured::BelowFloor;
-    }
-    cv(&paras
-        .iter()
-        .map(|p| text::count_japanese(&p.text))
-        .collect::<Vec<_>>())
+    Counted::spread(
+        paras
+            .iter()
+            .map(|p| text::count_japanese(&p.text))
+            .collect(),
+        10,
+    )
 }
 
 /// 箇条書き項目長の変動係数。
 ///
 /// 文書内の全ての項目を 1 つの分布として見る。箇条書きごとに分けない。
 #[must_use]
-pub fn item_length_cv(doc: &Document) -> Measured {
+pub fn item_length_cv(doc: &Document) -> Counted {
     let items = doc.items();
-    if items.len() < 10 {
-        return Measured::BelowFloor;
-    }
-    cv(&items
-        .iter()
-        .map(|i| text::count_japanese(&i.text))
-        .collect::<Vec<_>>())
+    Counted::spread(
+        items
+            .iter()
+            .map(|i| text::count_japanese(&i.text))
+            .collect(),
+        10,
+    )
 }
 
 /// 節の長さの変動係数。
 #[must_use]
-pub fn section_length_cv(doc: &Document) -> Measured {
+pub fn section_length_cv(doc: &Document) -> Counted {
     let sections = doc.sections();
-    if sections.len() < 5 {
-        return Measured::BelowFloor;
-    }
     let lens: Vec<usize> = sections
         .iter()
         .map(|s| kakiburi_doc::prose::japanese_chars(&kakiburi_doc::prose::prose(s.nodes)))
         .collect();
-    cv(&lens)
-}
-
-/// 変動係数。標準偏差 ÷ 平均。
-#[allow(clippy::cast_precision_loss)]
-fn cv(values: &[usize]) -> Measured {
-    if values.is_empty() {
-        return Measured::BelowFloor;
-    }
-    let n = values.len() as f64;
-    let mean = values.iter().sum::<usize>() as f64 / n;
-    if mean <= 0.0 {
-        // 平均が 0 では割れない。0 を返さない——測れていない。
-        return Measured::BelowFloor;
-    }
-    let var = values
-        .iter()
-        .map(|&v| (v as f64 - mean).powi(2))
-        .sum::<f64>()
-        / n;
-    Measured::Value(var.sqrt() / mean)
+    Counted::spread(lens, 5)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Measured;
 
     fn filler() -> Node {
         Node::leaf(Kind::Paragraph, "これは日本語の文章である。".repeat(100))
@@ -412,8 +361,8 @@ mod tests {
         Document::new(nodes)
     }
 
-    fn value(m: Measured) -> f64 {
-        m.value().expect("測れているべき")
+    fn value(m: impl Into<Measured>) -> f64 {
+        m.into().value().expect("測れているべき")
     }
 
     #[test]

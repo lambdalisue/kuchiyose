@@ -21,7 +21,7 @@ use std::io::Write;
 use kakiburi_doc::prose::Segment;
 
 use crate::morph::Analyzed;
-use crate::{floor, Measured};
+use crate::{floor, Measured, Unmeasured};
 
 /// 圧縮の水準。固定する。 変えれば値が変わり、過去の値と比べられなくなる。
 pub const COMPRESSION_LEVEL: u32 = 6;
@@ -171,19 +171,31 @@ impl Humanness {
     /// 0 を返さない。 0 は「測って 0 だった」という値である。
     #[must_use]
     pub fn measure(prose: &[Segment], analyzed: Option<&Analyzed>) -> Self {
-        let mut values = Vec::with_capacity(Metric::ALL.len());
-        for m in Metric::ALL {
-            let got = match m {
-                Metric::Compression => vec![compression_ratio(prose)],
-                Metric::RepetitionShort => repetition(analyzed, &SHORT_N),
-                Metric::RepetitionLong => repetition(analyzed, &LONG_N),
-                Metric::Richness => vec![richness(analyzed)],
-                Metric::Entropy => entropy(analyzed),
-                Metric::Punctuation => punctuation(prose),
-            };
-            let named = m.dims().into_iter().zip(got).collect();
-            values.push((m, named));
-        }
+        Self::from_windows(&HumannessWindows::measure(prose, analyzed))
+    }
+
+    /// 窓ごとの値からならす。
+    ///
+    /// 何本かを束ねた単位は、文書ごとの窓を[並べた](HumannessWindows::concat)ものから作る。
+    #[must_use]
+    pub fn from_windows(windows: &HumannessWindows) -> Self {
+        let values = windows
+            .values
+            .iter()
+            .map(|(m, dims)| {
+                let named = dims
+                    .iter()
+                    .map(|(n, w)| {
+                        let v = match w {
+                            Ok(w) => w.measured(),
+                            Err(why) => (*why).into(),
+                        };
+                        (n.clone(), v)
+                    })
+                    .collect();
+                (*m, named)
+            })
+            .collect();
         Self { values }
     }
 
@@ -224,6 +236,126 @@ impl Humanness {
     }
 }
 
+/// 1 次元の、窓ごとの値。
+///
+/// 窓は文書の中で切る。 何本かを束ねた単位は、文書ごとの窓を
+/// [並べて](HumannessWindows::concat)ならす——窓が文書をまたげば、別の文書の語が
+/// 1 つの窓で数えられる（[束ね方](../../../docs/spec/200-extract.md#短い文書は束ねる)）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Windows {
+    /// 取れた窓の数。値を返さなかった窓も数える。
+    pub taken: usize,
+    /// 値を返した窓の値。窓の順。
+    pub values: Vec<f64>,
+}
+
+impl Windows {
+    /// どの窓も値を返したときの形。
+    fn every(values: Vec<f64>) -> Self {
+        Self {
+            taken: values.len(),
+            values,
+        }
+    }
+
+    /// 窓ごとの値をならす。
+    ///
+    /// 窓が 1 つも取れなければ下限未満、取れたのにどれも値を返さなければ分母が 0。
+    /// 値を返さない窓は平均から外す——分母が 0 の窓を 0 として混ぜれば、
+    /// 測れなかったことが値になる。
+    #[must_use]
+    pub fn measured(&self) -> Measured {
+        if self.taken == 0 {
+            return Measured::BelowFloor;
+        }
+        if self.values.is_empty() {
+            return Measured::NoDenominator;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        Measured::Value(self.values.iter().sum::<f64>() / self.values.len() as f64)
+    }
+}
+
+/// 窓を持つ次元の値。数える前に止まったなら理由である。
+fn measured(w: &Result<Windows, Unmeasured>) -> Measured {
+    match w {
+        Ok(w) => w.measured(),
+        Err(why) => (*why).into(),
+    }
+}
+
+/// 1 指標の、次元ごとの窓。数える前に止まった次元は理由を持つ。
+pub type MetricWindows = (Metric, Vec<(String, Result<Windows, Unmeasured>)>);
+
+/// 人らしさの全次元の、窓ごとの値。並びは[`Metric::ALL`]と[`Metric::dims`]に従う。
+#[derive(Debug, Clone, PartialEq)]
+pub struct HumannessWindows {
+    /// 指標ごと・次元ごとの窓。数える前に止まった次元は理由を持つ。
+    pub values: Vec<MetricWindows>,
+}
+
+impl HumannessWindows {
+    /// 窓ごとに測る。
+    ///
+    /// `analyzed` が `None` なら、形態素を要る指標は[道具が無い](Unmeasured::ToolMissing)になる。
+    #[must_use]
+    pub fn measure(prose: &[Segment], analyzed: Option<&Analyzed>) -> Self {
+        let mut values = Vec::with_capacity(Metric::ALL.len());
+        for m in Metric::ALL {
+            let got = match m {
+                Metric::Compression => vec![compression_windows(prose)],
+                Metric::RepetitionShort => repetition_windows(analyzed, &SHORT_N),
+                Metric::RepetitionLong => repetition_windows(analyzed, &LONG_N),
+                Metric::Richness => vec![richness_windows(analyzed)],
+                Metric::Entropy => entropy_windows(analyzed),
+                Metric::Punctuation => punctuation_windows(prose),
+            };
+            values.push((m, m.dims().into_iter().zip(got).collect()));
+        }
+        Self { values }
+    }
+
+    /// 文書ごとの窓を並べる。窓は文書の境目をまたがない。
+    ///
+    /// 1 本でも数える前に止まった次元は、束ねた単位でも止まる——理由は、直せる手の
+    /// いちばん限られたものを返す。 1 本だけなら、その 1 本と同じものが返る。
+    #[must_use]
+    pub fn concat(parts: &[&HumannessWindows]) -> Self {
+        let values = Metric::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(i, m)| {
+                let dims = m
+                    .dims()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(j, name)| {
+                        let mut out: Result<Windows, Unmeasured> = Ok(Windows::every(Vec::new()));
+                        for p in parts {
+                            let Some((_, w)) = p.values.get(i).and_then(|(_, d)| d.get(j)) else {
+                                continue;
+                            };
+                            out = match (out, w) {
+                                (Err(a), Err(b)) => Err(a.min(*b)),
+                                (Err(a), Ok(_)) => Err(a),
+                                (Ok(_), Err(b)) => Err(*b),
+                                (Ok(mut acc), Ok(w)) => {
+                                    acc.taken += w.taken;
+                                    acc.values.extend(&w.values);
+                                    Ok(acc)
+                                }
+                            };
+                        }
+                        (name, out)
+                    })
+                    .collect();
+                (m, dims)
+            })
+            .collect();
+        Self { values }
+    }
+}
+
 /// 地の文を node の順に改行 1 つで繋ぐ。
 ///
 /// 繋ぎ方が定義の一部である。 node ごとに圧縮して足すのと、繋いでから圧縮するのと
@@ -242,6 +374,10 @@ pub fn joined(prose: &[Segment]) -> String {
 /// 形態素解析を要らない、数少ない指標である。
 #[must_use]
 pub fn compression_ratio(prose: &[Segment]) -> Measured {
+    measured(&compression_windows(prose))
+}
+
+fn compression_windows(prose: &[Segment]) -> Result<Windows, Unmeasured> {
     let text = joined(prose);
     // 窓ごとに圧縮して、比の平均を取る。 通しで圧縮すると、長い文書ほど
     // 辞書が育って比が下がる——測っているのは書きぶりではなく長さになる。
@@ -257,16 +393,13 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
         let Some(r) = deflated(&window) else {
             // 圧縮器が返さないのは環境の壊れである。 素材が短いのと混ぜない
             // ——混ぜれば、壊れた道具が「素材が足りない」という顔で回り続ける。
-            return Measured::ToolFailed;
+            return Err(Unmeasured::ToolFailed);
         };
         ratios.push(r);
         window.clear();
     }
-    if ratios.is_empty() {
-        return Measured::BelowFloor;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(ratios.iter().sum::<f64>() / ratios.len() as f64)
+    // 窓が 1 つも取れなければ下限未満になる。
+    Ok(Windows::every(ratios))
 }
 
 /// 句読点の密度。句点と読点を別々に、1,000 字あたりで数える。
@@ -277,6 +410,10 @@ pub fn compression_ratio(prose: &[Segment]) -> Measured {
 /// 形態素解析を要らないので、[圧縮率](compression_ratio)と同じくバイトの窓で切る。
 #[must_use]
 pub fn punctuation(prose: &[Segment]) -> Vec<Measured> {
+    punctuation_windows(prose).iter().map(measured).collect()
+}
+
+fn punctuation_windows(prose: &[Segment]) -> Vec<Result<Windows, Unmeasured>> {
     let text = joined(prose);
     let mut periods = Vec::new();
     let mut commas = Vec::new();
@@ -289,11 +426,8 @@ pub fn punctuation(prose: &[Segment]) -> Vec<Measured> {
         push_rates(&window, &mut periods, &mut commas);
         window.clear();
     }
-    if periods.is_empty() {
-        // 窓が 1 つも取れない。0 を返さない——0 は「測って 0 だった」である。
-        return vec![Measured::BelowFloor, Measured::BelowFloor];
-    }
-    vec![mean(&periods), mean(&commas)]
+    // 窓が 1 つも取れなければ下限未満になる。0 を返さない——0 は「測って 0 だった」である。
+    vec![Ok(Windows::every(periods)), Ok(Windows::every(commas))]
 }
 
 /// 1 つの窓から、句点と読点の 1,000 字あたりの数を出して足す。
@@ -308,12 +442,6 @@ fn push_rates(window: &str, periods: &mut Vec<f64>, commas: &mut Vec<f64>) {
     let per_thousand = |n: usize| n as f64 / chars as f64 * 1000.0;
     periods.push(per_thousand(count('。')));
     commas.push(per_thousand(count('、')));
-}
-
-/// 窓ごとの値の平均。
-fn mean(values: &[f64]) -> Measured {
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(values.iter().sum::<f64>() / values.len() as f64)
 }
 
 /// 1 つの窓を圧縮して、比を返す。圧縮器が返さなければ `None`。
@@ -483,28 +611,36 @@ fn token_windows(a: &Analyzed) -> Vec<Vec<Vec<&str>>> {
 ///
 /// 値を返さない窓は平均から外す。 分母が 0 の窓を 0 として混ぜれば、
 /// 測れなかったことが値になる。1 つも残らなければ分母が無い。
-fn averaged(windows: &[Vec<Vec<&str>>], f: impl Fn(&[Vec<&str>]) -> Option<f64>) -> Measured {
-    let vals: Vec<f64> = windows.iter().filter_map(|w| f(w)).collect();
-    if vals.is_empty() {
-        return Measured::NoDenominator;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    Measured::Value(vals.iter().sum::<f64>() / vals.len() as f64)
+fn averaged(
+    windows: &[Vec<Vec<&str>>],
+    f: impl Fn(&[Vec<&str>]) -> Option<f64>,
+) -> Result<Windows, Unmeasured> {
+    Ok(Windows {
+        taken: windows.len(),
+        values: windows.iter().filter_map(|w| f(w)).collect(),
+    })
 }
 
 /// 繰り返しの数え上げ。
 #[must_use]
 pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
+    repetition_windows(analyzed, ns)
+        .iter()
+        .map(measured)
+        .collect()
+}
+
+fn repetition_windows(
+    analyzed: Option<&Analyzed>,
+    ns: &[usize],
+) -> Vec<Result<Windows, Unmeasured>> {
     let n_dims = ns.len() * 2;
     // 解析器が無いのと、語が足りないのを分ける。 前者は環境の壊れで、素材を
     // いくら足しても直らない。
     let Some(a) = analyzed else {
-        return vec![Measured::ToolMissing; n_dims];
+        return vec![Err(Unmeasured::ToolMissing); n_dims];
     };
     let ws = token_windows(a);
-    if ws.is_empty() {
-        return vec![Measured::BelowFloor; n_dims];
-    }
     let count = |w: &[Vec<&str>], n: usize| -> BTreeMap<String, usize> {
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         for run in w {
@@ -549,14 +685,15 @@ pub fn repetition(analyzed: Option<&Analyzed>, ns: &[usize]) -> Vec<Measured> {
 /// 窓は重ねず、順に切る。 端の 1,000 語に満たない分は捨てる。
 #[must_use]
 pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
+    measured(&richness_windows(analyzed))
+}
+
+fn richness_windows(analyzed: Option<&Analyzed>) -> Result<Windows, Unmeasured> {
     let Some(a) = analyzed else {
-        return Measured::ToolMissing;
+        return Err(Unmeasured::ToolMissing);
     };
     // 約物と記号の形態素も含める——外すと、読点の多い書き手ほど窓が長くなる。
     let ws = token_windows(a);
-    if ws.is_empty() {
-        return Measured::BelowFloor;
-    }
     averaged(&ws, |w| {
         let types: std::collections::BTreeSet<&str> = w.iter().flatten().copied().collect();
         #[allow(clippy::cast_precision_loss)]
@@ -575,13 +712,14 @@ pub fn richness(analyzed: Option<&Analyzed>) -> Measured {
 /// 違う下限を持たない。
 #[must_use]
 pub fn entropy(analyzed: Option<&Analyzed>) -> Vec<Measured> {
+    entropy_windows(analyzed).iter().map(measured).collect()
+}
+
+fn entropy_windows(analyzed: Option<&Analyzed>) -> Vec<Result<Windows, Unmeasured>> {
     let Some(a) = analyzed else {
-        return vec![Measured::ToolMissing; 2];
+        return vec![Err(Unmeasured::ToolMissing); 2];
     };
     let ws = token_windows(a);
-    if ws.is_empty() {
-        return vec![Measured::BelowFloor; 2];
-    }
     let words = averaged(&ws, |w| Some(shannon(w.iter().flatten().copied())));
     // 文字は日本語の文字に限らない全文字である。
     //
@@ -655,6 +793,75 @@ mod tests {
         let prose: Vec<Segment> = (0..times).map(|_| seg(unit)).collect();
         let a = Analyzed::of(&prose, &Stub::unidic()).unwrap();
         (prose, a)
+    }
+
+    #[test]
+    fn 窓を_1_本だけ並べたものは直接測ったものと同じ() {
+        let (prose, a) = tokens("これ は 同じ 言い回し で ある 。", 200);
+        let w = HumannessWindows::measure(&prose, Some(&a));
+        let one = HumannessWindows::concat(&[&w]);
+        assert_eq!(one, w);
+        assert_eq!(
+            Humanness::from_windows(&one),
+            Humanness::measure(&prose, Some(&a))
+        );
+    }
+
+    #[test]
+    fn 束ねた窓は文書の境目をまたがない() {
+        // 1 本ずつでは窓が取れない長さの 2 本。 繋いで測れば窓が 1 つ取れるが、
+        // それは別の文書の語を 1 つの窓で数えたものである。
+        let half = WINDOW * 2 / 3;
+        let (p1, a1) = tokens("あ", half);
+        let (p2, a2) = tokens("い", half);
+        let w = HumannessWindows::concat(&[
+            &HumannessWindows::measure(&p1, Some(&a1)),
+            &HumannessWindows::measure(&p2, Some(&a2)),
+        ]);
+        assert_eq!(richness(Some(&a1)), Measured::BelowFloor);
+        assert!(
+            !Humanness::from_windows(&w).all_measured(),
+            "窓は文書ごとに切る"
+        );
+
+        let joined: Vec<Segment> = p1.iter().chain(&p2).cloned().collect();
+        let a = Analyzed::of(&joined, &Stub::unidic()).unwrap();
+        assert!(richness(Some(&a)).is_measured(), "繋げば窓が取れてしまう");
+    }
+
+    #[test]
+    fn 束ねた窓は文書ごとの窓を並べてならす() {
+        let (p1, a1) = tokens("あ い う え お か き く け こ", 150);
+        let (p2, a2) = tokens("あ あ あ い い い あ あ い い", 150);
+        let (w1, w2) = (
+            HumannessWindows::measure(&p1, Some(&a1)),
+            HumannessWindows::measure(&p2, Some(&a2)),
+        );
+        let both = Humanness::from_windows(&HumannessWindows::concat(&[&w1, &w2]));
+        let r = |h: &Humanness| {
+            h.flat()
+                .into_iter()
+                .find(|(n, _)| n == "異なり語率")
+                .and_then(|(_, m)| m.value())
+                .unwrap()
+        };
+        let (x, y) = (
+            r(&Humanness::from_windows(&w1)),
+            r(&Humanness::from_windows(&w2)),
+        );
+        assert!(
+            (r(&both) - (x + y) / 2.0).abs() < 1e-12,
+            "窓 1 つずつの平均"
+        );
+    }
+
+    #[test]
+    fn 数える前に止まった次元は束ねても止まる() {
+        let (p, a) = tokens("あ い う え お か き く け こ", 150);
+        let ok = HumannessWindows::measure(&p, Some(&a));
+        let missing = HumannessWindows::measure(&p, None);
+        let both = Humanness::from_windows(&HumannessWindows::concat(&[&ok, &missing]));
+        assert!(both.flat().iter().any(|(_, m)| *m == Measured::ToolMissing));
     }
 
     #[test]

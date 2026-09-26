@@ -15,9 +15,12 @@ use exit::Exit;
 use kakiburi_cassette::{
     save, store, Cassette, Common, Decided, Derived, Fingerprint, Inputs, Normalization, Tool,
 };
-use kakiburi_metrics::{phrase, structure, symbol, Measured};
+use kakiburi_metrics::{structure, Measured};
 use kakiburi_normalize::{normalize, Source};
 use kakiburi_review::{judge, Observed, Range, Side};
+use kakiburi_scale::bundle::{bundle_plans, measurable_length, try_plans, Attempt};
+use kakiburi_scale::select::{RegisterCount, RegisterFilter, POLITE_SHARE_MIN, POOL_TAKE};
+use kakiburi_scale::self_check::{higher_rate, measured_in_self_check, HIGHER_RATE_FLOOR};
 use kakiburi_scale::{assemble, measure_against, Sample, Scale};
 use std::collections::BTreeMap;
 
@@ -706,15 +709,6 @@ fn doctor(args: &[String]) -> Exit {
     }
 }
 
-/// 本人が基準より高く出た対の、通ると言える割合の下限。暫定値である。
-///
-/// 1.0 を求めない。 それは「1 対でも逆に出たら落とす」ということで、
-/// [端で見るのと同じく n で漂う](higher_rate)——素材を足すほど落ちやすくなる。
-///
-/// 導き直していない。 目盛りが壊れていれば 0.5 付近に落ちるので、そこから
-/// 十分に離れた値を置いてある。どこまで緩めてよいかは、複数の書き手で測るまで決まらない。
-const HIGHER_RATE_FLOOR: f64 = 0.95;
-
 /// 逆に出た対を、いくつまで名指しするか。
 const INVERTED_SHOWN: usize = 5;
 
@@ -729,18 +723,19 @@ fn check_person_higher(
     a: Option<&dyn kakiburi_metrics::morph::Analyzer>,
     say: &dyn Fn(String),
 ) -> usize {
-    let side = |samples: &[Sample<'_>]| -> Vec<(String, f64)> {
-        self_check_units(scale, samples)
-            .into_iter()
-            .filter_map(|s| {
-                measure_against(scale, s, a)
-                    .matching
-                    .map(|v| (s.name.to_owned(), v))
-            })
-            .collect()
-    };
-    let mine = side(person);
-    let theirs = side(baseline);
+    let side =
+        |side: kakiburi_scale::self_check::Side, samples: &[Sample<'_>]| -> Vec<(String, f64)> {
+            self_check_units(scale, side, samples)
+                .into_iter()
+                .filter_map(|s| {
+                    measure_against(scale, s, a)
+                        .matching
+                        .map(|v| (s.name.to_owned(), v))
+                })
+                .collect()
+        };
+    let mine = side(kakiburi_scale::self_check::Side::Person, person);
+    let theirs = side(kakiburi_scale::self_check::Side::Baseline, baseline);
     if mine.is_empty() || theirs.is_empty() {
         say("自己検査: 照合値を出せる単位が足りない".to_owned());
         return 0;
@@ -769,55 +764,17 @@ fn check_person_higher(
 }
 
 
-/// 自己検査で測る単位。較正に使った単位を除く。
-///
-/// 本人の相手集合を測れば、自分との距離を測ることになる。 基準の較正分も
-/// 除く——照合値の較正は「基準の較正分 × 相手集合」を違う人の対として合わせて
-/// いるので、それを測り直せば、分けるように合わせたものの分け具合を測る
-/// ことになる。
-fn self_check_units<'a>(scale: &Scale, samples: &[Sample<'a>]) -> Vec<Sample<'a>> {
-    let used = |name: &str| {
-        scale
-            .partners()
-            .iter()
-            .chain(&scale.selection.baseline_partners)
-            .any(|n| n == name)
-    };
-    samples.iter().filter(|s| !used(s.name)).copied().collect()
-}
-
-/// 本人が基準より高く出た対の割合。逆に出た対も返す。
-///
-/// 最小と最大では見ない。 端は n とともに外へ広がるので、素材を足すほど
-/// 本人の最小は下がり基準の最大は上がる——目盛りが良くなっても検査が落ちやすくなる。
-/// [帯の端を各側で数を決めて取る](kakiburi_scale::assemble)のと同じ理由である。
-///
-/// 対ごとの比較は漂わない。 全部の対で本人が高ければ 1.0 で、これが
-/// 「本人がいちばん高く出る」の言い換えになる。
-fn higher_rate(
-    mine: &[(String, f64)],
-    theirs: &[(String, f64)],
-) -> (f64, Vec<(String, f64, String, f64)>) {
-    let mut win = 0.0f64;
-    let mut inverted = Vec::new();
-    for (pn, pv) in mine {
-        for (bn, bv) in theirs {
-            if pv > bv {
-                win += 1.0;
-            } else {
-                // 並んだ対も逆として数える。 高く出ていないことに変わりはない。
-                if pv == bv {
-                    win += 0.5;
-                }
-                inverted.push((pn.clone(), *pv, bn.clone(), *bv));
-            }
-        }
-    }
-    // 差の小さい順に並べる。 いちばん惜しい対から見せる。
-    inverted.sort_by(|a, b| (b.1 - b.3).total_cmp(&(a.1 - a.3)));
-    #[allow(clippy::cast_precision_loss)]
-    let n = (mine.len() * theirs.len()) as f64;
-    (win / n, inverted)
+/// 自己検査で測る単位。[較正に使った単位を除く](kakiburi_scale::self_check::measured_in_self_check)。
+fn self_check_units<'a>(
+    scale: &Scale,
+    side: kakiburi_scale::self_check::Side,
+    samples: &[Sample<'a>],
+) -> Vec<Sample<'a>> {
+    samples
+        .iter()
+        .filter(|s| measured_in_self_check(scale, side, s.name))
+        .copied()
+        .collect()
 }
 
 /// 人が決めたことを書く。
@@ -1086,14 +1043,6 @@ const POOL_MARKER: &str = "POOL";
 /// 同梱の池の名前。指紋に入る。
 const POOL_MODEL: &str = "同梱の池";
 
-/// 池から取る本数。暫定値である。
-///
-/// [下限](kakiburi_scale::split::UNITS_FLOOR)は 10 だが、測れない分が出るので余裕を
-/// 持たせる。手作りの基準 21 本で目盛りが作れていたので、そのあたりに置いた。
-///
-/// 多く取れば題材の遠いものが混ざり、少なく取れば本数が下限を割る。
-const POOL_TAKE: usize = 24;
-
 /// 基準の池の場所。
 fn baseline_pool() -> Option<String> {
     if let Ok(p) = std::env::var("KAKIBURI_BASELINES") {
@@ -1166,16 +1115,12 @@ fn measurable_chars_of(files: &[String]) -> Vec<usize> {
         .filter_map(|f| {
             let body = std::fs::read_to_string(f).ok()?;
             let doc = normalize(&body, source_of(f)?).ok()?;
-            let chars = doc.japanese_chars();
-            if chars < kakiburi_metrics::floor::JAPANESE_CHARS {
-                return None;
-            }
             let commas: usize = doc
                 .prose()
                 .iter()
                 .map(|s| s.text.matches('、').count())
                 .sum();
-            (commas >= kakiburi_metrics::matching::COMMA_FLOOR).then_some(chars)
+            measurable_length(doc.japanese_chars(), commas)
         })
         .collect()
 }
@@ -1201,10 +1146,6 @@ fn measurable_chars_of(files: &[String]) -> Vec<usize> {
 /// 近さは自立語の重なりで測る。助詞や助動詞は誰が書いても同じで、題材を
 /// 分けない。
 fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> {
-    let all = || (0..pool.len()).collect();
-    if pool.len() <= take {
-        return all();
-    }
     let analyzer = analyzer::resolve();
     let words = |files: &[String]| -> std::collections::BTreeSet<String> {
         let mut out = std::collections::BTreeSet::new();
@@ -1230,161 +1171,32 @@ fn pick_by_topic(person: &[String], pool: &[String], take: usize) -> Vec<usize> 
         }
         out
     };
-    let mine = words(person);
-    if mine.is_empty() {
-        return all();
-    }
-    let mut scored: Vec<(usize, usize)> = pool
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let theirs = words(std::slice::from_ref(f));
-            (theirs.intersection(&mine).count(), i)
-        })
-        .collect();
-    // 重なりの多い順。同点なら池の並び順。 決めておかないと、同じ素材から
-    // 違う目盛りができる。
-    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    let mut picked: Vec<usize> = scored.into_iter().take(take).map(|(_, i)| i).collect();
-    picked.sort_unstable();
-    picked
+    kakiburi_scale::select::pick_by_topic(
+        || words(person),
+        pool.len(),
+        |i| words(std::slice::from_ref(&pool[i])),
+        take,
+    )
 }
 
-/// 敬体率がこれ以上なら敬体の文書とする。暫定値である。
+/// 1 本の段落の[敬体率](structure::register_rates)。測れなければ `None`。
 ///
-/// 敬体と常体の真ん中に置いた。 本人の記事も池の文書もどちらかに大きく
-/// 寄っているので、境目の位置で分け方はほとんど変わらない。
-const POLITE_SHARE_MIN: f64 = 0.5;
-
-/// 文書の文体。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Register {
-    /// です・ます。
-    Polite,
-    /// だ・である。
-    Plain,
-}
-
-impl Register {
-    fn name(self) -> &'static str {
-        match self {
-            Register::Polite => "敬体",
-            Register::Plain => "常体",
-        }
-    }
-}
-
-/// 1 本の文体。[敬体率](structure::register_rates)の段落の値で分ける。
-///
-/// ファイル名では分けない。 池の敬体版は名前でそれと分かるが、名前は中身を
-/// 保証しない——生成が常体で返した分まで敬体として数えることになる。
-///
-/// 段落だけを見る。 同じ書き手が項目や見出しを常体で書くのは普通で、文書の
-/// 文体を決めているのは段落である。敬体率は体言止めを分母から落とすので、
-/// 体言止めの多い文書でも敬体と常体の比だけが出る。
-///
-/// 測れない文書（敬体か常体で終わった文が下限に届かない）は分けない。
-fn register_of_file(path: &str) -> Option<Register> {
+/// 文体は[段落の敬体率](kakiburi_scale::select::Register::of_share)で分ける。 ファイル名では
+/// 分けない——名前は中身を保証しない。
+fn polite_share_of_file(path: &str) -> Option<f64> {
     let body = std::fs::read_to_string(path).ok()?;
     let doc = normalize(&body, source_of(path)?).ok()?;
     let name = format!("敬体率・{}", kakiburi_doc::node::Kind::Paragraph.name());
-    let share = structure::register_rates(&doc.prose(), None)
+    structure::register_rates(&doc.prose(), None)
         .into_iter()
         .find(|(n, _)| *n == name)
-        .and_then(|(_, m)| m.value())?;
-    Some(if share >= POLITE_SHARE_MIN {
-        Register::Polite
-    } else {
-        Register::Plain
-    })
+        .and_then(|(_, m)| m.value())
 }
 
-/// 文体ごとの本数。分けられなかった文書は数えない。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct RegisterCount {
-    polite: usize,
-    plain: usize,
-}
-
-impl RegisterCount {
-    fn of(files: &[String]) -> Self {
-        let mut out = Self::default();
-        for f in files {
-            match register_of_file(f) {
-                Some(Register::Polite) => out.polite += 1,
-                Some(Register::Plain) => out.plain += 1,
-                None => {}
-            }
-        }
-        out
-    }
-
-    /// 多い方。同数なら決めない——1 本も分けられなかったときも同数である。
-    fn majority(self) -> Option<Register> {
-        match self.polite.cmp(&self.plain) {
-            std::cmp::Ordering::Greater => Some(Register::Polite),
-            std::cmp::Ordering::Less => Some(Register::Plain),
-            std::cmp::Ordering::Equal => None,
-        }
-    }
-}
-
-/// 池を本人の文体で絞った結果。進み方として言うために返す。
-#[derive(Debug, PartialEq, Eq)]
-enum RegisterFilter {
-    /// 本人の文体の分だけを候補にした。
-    Matched {
-        register: Register,
-        person: RegisterCount,
-        candidates: usize,
-    },
-    /// 本人の文体が決まらなかった。池を全部候補にした。
-    Undecided { person: RegisterCount },
-    /// 池に本人の文体の文書が無かった。池を全部候補にした。
-    Missing {
-        register: Register,
-        person: RegisterCount,
-    },
-}
-
-/// 池のうち、本人と同じ文体の分。
-///
-/// 文体を揃えないと、床が本人の文体から外れたところにできる。 常体の基準で
-/// 作った床は敬体の機械文より下にあり、本人が敬体なら、敬体の機械文が床と
-/// 本人の隙間に落ちて通る——取り置きで 104 本中 8 本がそうして通り、
-/// 敬体の機械文を基準に足すと 0 本になった。
-///
-/// 絞れないときは池を全部使う。 本人の文体が決まらないとき（同数、または
-/// 1 本も分けられない）と、池に本人の文体が無いときである。 絞って 0 本に
-/// すれば目盛りが作れないので、揃えられないことを言って作るのは止めない。
+/// 池のうち、本人と同じ文体の分。[選び方](kakiburi_scale::select::restrict_to_register)は目盛りの側が持つ。
 fn restrict_to_register(person: &[String], pool: Vec<String>) -> (Vec<String>, RegisterFilter) {
-    let counted = RegisterCount::of(person);
-    let Some(register) = counted.majority() else {
-        return (pool, RegisterFilter::Undecided { person: counted });
-    };
-    let matched: Vec<String> = pool
-        .iter()
-        .filter(|f| register_of_file(f) == Some(register))
-        .cloned()
-        .collect();
-    if matched.is_empty() {
-        return (
-            pool,
-            RegisterFilter::Missing {
-                register,
-                person: counted,
-            },
-        );
-    }
-    let candidates = matched.len();
-    (
-        matched,
-        RegisterFilter::Matched {
-            register,
-            person: counted,
-            candidates,
-        },
-    )
+    let counted = RegisterCount::of(person.iter().map(|f| polite_share_of_file(f)));
+    kakiburi_scale::select::restrict_to_register(counted, None, pool, |f| polite_share_of_file(f))
 }
 
 /// 基準のうち、目盛りに使う分。
@@ -1439,117 +1251,6 @@ fn source_or_refuse(path: &str) -> Result<Source, Exit> {
 /// 読める拡張子。help と断りの文で同じ文を使う。
 const EXTENSIONS: &str =
     "取り込み元は拡張子から決める——.md と .markdown は Markdown、.html と .htm は HTML。ほかは断る。";
-
-/// 返すのは池の何番目をどう束ねるかである。中の並びは池の添字。
-///
-/// 小さいほうから積んで本人の上端に届かせ、残りは単独で置く。 こうすると単独の分が
-/// 下から中ほどを埋め、束ねた分が上端に届く。
-///
-/// 一律に束ねない。 全部を同じ本数で束ねると、大きいものどうしが合わさって
-/// 本人の上端を大きく超え、今度は基準側の範囲が広がりすぎる。実測で、一律 3 本に
-/// したら本人側 70% / 基準側 42% になった。
-///
-/// [防護柵](kakiburi_scale::length_range_ok)は通ればよい門であって、最大化する目的ではない。
-/// この案が通るならそのまま使い、落ちたときだけほかの束ね方を探す。
-///
-/// 最大化しにいくと別の場所が壊れる。 実測で、重なりを最大にする案に置き換え
-/// たら目盛りはすべて作れるようになったが、本人の通過が 15 本から 9 本へ落ちた
-/// ——長さの重なりが最大の案が、値の帯まで良くしてくれるわけではない。
-#[cfg(test)]
-fn bundle_plan(person: &[usize], pool: &[usize]) -> Vec<Vec<usize>> {
-    bundle_plans(person, pool).swap_remove(0)
-}
-
-/// 試す順に並べた束ね方。1 案目が本命で、残りは断られたときの控えである。
-///
-/// 通るかどうかは作ってみないと分からない。 長さの範囲は測れた単位だけで
-/// 測られ、どれが測れるかは全文を解析するまで決まらない——ここで計算する重なりは
-/// 近似でしかない。
-///
-/// だから選ぶのではなく、順番を付けて渡す。 決めるのは build である。
-fn bundle_plans(person: &[usize], pool: &[usize]) -> Vec<Vec<Vec<usize>>> {
-    let single = || -> Vec<Vec<usize>> { (0..pool.len()).map(|i| vec![i]).collect() };
-    let (Some(&p_hi), Some(&b_hi)) = (person.iter().max(), pool.iter().max()) else {
-        return vec![single()];
-    };
-    let mut order: Vec<usize> = (0..pool.len()).collect();
-    order.sort_by_key(|&i| pool[i]);
-
-    // 本命は今までと同じ案である。 小さいほうから積んで本人の上端に届かせ、
-    // 残りは単独で置く。これが通る素材のほうが多い。
-    let mut out: Vec<Vec<Vec<usize>>> = Vec::new();
-    if b_hi > 0 && p_hi > b_hi {
-        out.push(bundle_to(&order, pool, p_hi, pool.len() / 3));
-    }
-    out.push(single());
-
-    // 控えは重なりの良い順。 近似でしかないが、順番を付ける材料はこれしかない。
-    let mut rest: Vec<(f64, Vec<Vec<usize>>)> = Vec::new();
-    for step in 1..=12u32 {
-        let target = p_hi * step as usize / 12;
-        for div in [2usize, 3, 4, 6] {
-            let plan = bundle_to(&order, pool, target, pool.len() / div);
-            if out.contains(&plan) || rest.iter().any(|(_, p)| *p == plan) {
-                continue;
-            }
-            rest.push((overlap_score(person, &lengths_of(&plan, pool)), plan));
-        }
-    }
-    rest.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    out.extend(rest.into_iter().map(|(_, p)| p));
-    out
-}
-
-/// 目標の上端まで小さいほうから積む。残りは単独で置く。
-fn bundle_to(order: &[usize], pool: &[usize], target: usize, budget: usize) -> Vec<Vec<usize>> {
-    let mut plan: Vec<Vec<usize>> = Vec::new();
-    let mut cur: Vec<usize> = Vec::new();
-    let mut sum = 0usize;
-    for (used, &i) in order.iter().enumerate() {
-        if used >= budget {
-            break;
-        }
-        cur.push(i);
-        sum += pool[i];
-        if sum >= target {
-            plan.push(std::mem::take(&mut cur));
-            sum = 0;
-        }
-    }
-    if cur.len() > 1 {
-        plan.push(cur);
-    }
-    let bundled: std::collections::BTreeSet<usize> = plan.iter().flatten().copied().collect();
-    plan.extend(
-        order
-            .iter()
-            .filter(|i| !bundled.contains(i))
-            .map(|&i| vec![i]),
-    );
-    plan
-}
-
-/// 束ねた結果の、単位ごとの長さ。
-fn lengths_of(plan: &[Vec<usize>], pool: &[usize]) -> Vec<usize> {
-    plan.iter()
-        .map(|g| g.iter().map(|&i| pool[i]).sum())
-        .collect()
-}
-
-/// [防護柵](kakiburi_scale::length_range_ok)の採点。小さいほうの比を返す。
-///
-/// 片方だけ良くても通らないので、最大化するのは悪いほうである。
-fn overlap_score(person: &[usize], baseline: &[usize]) -> f64 {
-    let span = |v: &[usize]| -> Option<(f64, f64)> {
-        #[allow(clippy::cast_precision_loss)]
-        Some((*v.iter().min()? as f64, *v.iter().max()? as f64))
-    };
-    let (Some((plo, phi)), Some((blo, bhi))) = (span(person), span(baseline)) else {
-        return 0.0;
-    };
-    let overlap = (phi.min(bhi) - plo.max(blo)).max(0.0);
-    (overlap / (phi - plo).max(1.0)).min(overlap / (bhi - blo).max(1.0))
-}
 
 /// 素材のフォルダから目盛りを作る。
 ///
@@ -1717,6 +1418,7 @@ fn build(args: &[String]) -> Exit {
             register,
             person: n,
             candidates,
+            ..
         }) => say(format!(
             "本人は{}で書いている（敬体 {} 本 / 常体 {} 本）。池から{}の {candidates} 本を候補にする",
             register.name(),
@@ -1731,6 +1433,7 @@ fn build(args: &[String]) -> Exit {
         Some(RegisterFilter::Missing {
             register,
             person: n,
+            ..
         }) => say(format!(
             "本人は{}で書いている（敬体 {} 本 / 常体 {} 本）が、池に{}の文書が無い。池を全部候補にする",
             register.name(),
@@ -1976,40 +1679,6 @@ fn load_units(
 
 /// 環境の側で測れないときの理由。
 const BROKEN_ENVIRONMENT: &str = "環境の側で測れない指標がある";
-
-/// 目盛りを作ろうとして、どう終わったか。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Attempt {
-    /// 作れた。
-    Built,
-    /// [長さの範囲](kakiburi_scale::length_range_ok)で断られた。 束ね方で
-    /// 基準の長さが変わるので、別の束ね方なら通りうる。
-    LengthRange,
-    /// ほかの理由で止まった。 束ね直しでは直らない。
-    Stopped,
-}
-
-/// 束ね方を順に試す。長さの範囲で断られたときだけ次の案へ進む。
-///
-/// ほかの止まり方で次へ進まない。 天井と床が重なった、単位が足りない、
-/// 環境が壊れている——どれも束ね方で直るものではない。 それでも試し続ければ、
-/// 通るまで基準の組み合わせを探したことになり、通った 1 案だけが残って、
-/// 最初に止まった理由が消える。
-///
-/// 全部の案が断られたら、最後の断りを返す。
-fn try_plans<P>(
-    plans: Vec<P>,
-    mut attempt: impl FnMut(usize, P) -> Result<Attempt, Exit>,
-) -> Result<Attempt, Exit> {
-    let mut last = Attempt::Stopped;
-    for (i, plan) in plans.into_iter().enumerate() {
-        last = attempt(i, plan)?;
-        if last != Attempt::LengthRange {
-            break;
-        }
-    }
-    Ok(last)
-}
 
 /// 目盛りを作る。作らずに終わる条件を持つ。
 ///
@@ -3921,84 +3590,10 @@ fn measured_with(
     doc: &kakiburi_doc::Document,
     analyzed: Option<&kakiburi_metrics::morph::Analyzed>,
 ) -> Vec<(String, Measured)> {
-    let p = doc.prose();
-    let mut out: Vec<(String, Measured)> = fixed(doc, &p)
+    kakiburi_metrics::directive::measure(doc, analyzed)
         .into_iter()
-        .map(|(n, m)| (n.to_owned(), m))
-        .collect();
-
-    // 1 つの定義が 24 本の軸に展開される。 名前は定義が作る——実装が作れば、
-    // 名前が 2 か所に現れる。
-    out.push((
-        "語を割る読点".to_owned(),
-        kakiburi_metrics::word::splitting_commas(analyzed),
-    ));
-
-    // 文末の軸は node の種類ごとに出す。 1 つの定義が種類の数だけ軸を作るので、
-    // 種類が増えても指標の側を書き足さなくてよい。
-    out.extend(structure::register_rates(&p, analyzed));
-
-    match analyzed.map(kakiburi_metrics::word::conjunction_comma) {
-        Some(got) => out.extend(got),
-        None => out.extend(
-            kakiburi_metrics::word::conjunction_comma_names()
-                .into_iter()
-                .map(|n| (n, Measured::ToolMissing)),
-        ),
-    }
-    out
-}
-
-/// 解析器を要らない指標。
-fn fixed(
-    doc: &kakiburi_doc::Document,
-    p: &[kakiburi_doc::prose::Segment],
-) -> Vec<(&'static str, Measured)> {
-    vec![
-        ("全角括弧", symbol::full_width_paren(p)),
-        ("半角括弧", symbol::half_width_paren(p)),
-        ("鉤括弧", symbol::corner_bracket(p)),
-        ("感嘆符", symbol::exclamation(p)),
-        ("疑問符", symbol::question(p)),
-        ("三点リーダ", symbol::ellipsis(p)),
-        ("三点リーダの字数", symbol::ellipsis_doubled(p)),
-        ("中黒", symbol::middle_dot(p)),
-        ("波ダッシュ", symbol::wave_dash(p)),
-        ("数字の字幅", symbol::digit_width(p)),
-        ("感嘆符の字幅", symbol::exclamation_width(p)),
-        ("疑問符の字幅", symbol::question_width(p)),
-        ("和欧間スペース欠落", symbol::missing_space(p)),
-        ("和文間スペース", symbol::wabun_space(p)),
-        ("笑い", symbol::laughter(p)),
-        ("絵文字", symbol::emoji(p)),
-        ("em dash", symbol::em_dash(p)),
-        ("見出し", structure::headings(doc)),
-        ("深い見出し", structure::deep_headings(doc)),
-        ("箇条書き", structure::bullets(doc)),
-        ("番号リスト", structure::ordered_lists(doc)),
-        ("表", structure::tables(doc)),
-        ("引用", structure::quotes(doc)),
-        ("補足", structure::notes(doc)),
-        ("警告", structure::warnings(doc)),
-        ("折りたたみ", structure::details(doc)),
-        ("強調", structure::emphasis(doc)),
-        ("コードブロック", structure::code_blocks(doc)),
-        (
-            "1 文だけの段落の割合",
-            structure::single_sentence_paragraphs(doc),
-        ),
-        ("段落あたりの文数", structure::sentences_per_paragraph(doc)),
-        ("太字始まりの項目", structure::bold_leading_items(doc)),
-        ("段落長の変動係数", structure::paragraph_length_cv(doc)),
-        ("箇条書き項目長の変動係数", structure::item_length_cv(doc)),
-        ("節の長さの変動係数", structure::section_length_cv(doc)),
-        // 手で選んだ語句で数えるもの。形態素解析を要らない。
-        ("非断定の密度", phrase::hedging(p)),
-        ("対比構文", phrase::contrast(p)),
-        ("自己否定の密度", phrase::self_negation(p)),
-        ("進行の実況", phrase::narration(p)),
-        ("脱線", phrase::digression(p)),
-    ]
+        .map(|(name, c)| (name, c.measured()))
+        .collect()
 }
 
 /// 登録簿の一覧。
@@ -4049,6 +3644,7 @@ fn measured_names() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kakiburi_scale::select::Register;
 
     fn paragraph(text: &str) -> kakiburi_doc::Document {
         kakiburi_doc::Document::new(vec![kakiburi_doc::node::Node::leaf(
@@ -4138,118 +3734,6 @@ mod tests {
             .map(|(_, m)| m)
             .collect();
         assert_eq!(without, vec![Measured::ToolMissing]);
-    }
-
-    #[test]
-    fn 池が本人の長さに届かなければ束ねる() {
-        // 池の 1 本は地の文 4,500 字あたりで頭打ちになる。 本人に長い記事が
-        // あると長さの範囲の防護柵に当たり、目盛りが作れない。実測では、池を
-        // 題材でも長さでも広げたのに本人の範囲との重なりが 28% から 43% までしか
-        // 伸びず、束ねて初めて通った。
-        let pool = vec![2200, 2900, 3000, 4400, 2400, 2600, 3200, 3800, 2300];
-        let plan = bundle_plan(&[1500, 3000, 4000], &pool);
-        assert!(
-            plan.iter().all(|g| g.len() == 1),
-            "届くなら束ねない: {plan:?}"
-        );
-
-        let plan = bundle_plan(&[1500, 7000], &pool);
-        assert!(
-            plan.iter().any(|g| g.len() > 1),
-            "届かないなら束ねる: {plan:?}"
-        );
-        assert!(
-            plan.iter().filter(|g| g.len() == 1).count() >= pool.len() / 2,
-            "単独の分を残す——全部束ねると単位の本数が下限を割る: {plan:?}"
-        );
-        let used: Vec<usize> = plan.iter().flatten().copied().collect();
-        assert_eq!(used.len(), pool.len(), "池を余さず使う");
-    }
-
-    #[test]
-    fn 束ね方は防護柵の式で選ぶ() {
-        // 勘で決めた 1 案では落ちる素材がある。 取り置きの総当たりで、
-        // 4 分割のうち 1 つが長さの範囲で目盛りを作れず、取り置いた 12 本が
-        // 丸ごと判定できないになっていた。
-        //
-        // 候補を作って、通さなければならない式そのもので採点する。
-        let pool = vec![2200, 2900, 3000, 4400, 2400, 2600, 3200, 3800, 2300];
-        for person in [
-            vec![1500, 7000],
-            vec![900, 12000],
-            vec![3000, 3200, 18000],
-            vec![2500, 2600, 2700],
-        ] {
-            let plan = bundle_plan(&person, &pool);
-            let got = overlap_score(&person, &lengths_of(&plan, &pool));
-            let flat: Vec<Vec<usize>> = (0..pool.len()).map(|i| vec![i]).collect();
-            let flat_score = overlap_score(&person, &lengths_of(&flat, &pool));
-            assert!(
-                got >= flat_score,
-                "束ねて悪くなる案は採らない: {person:?} で {got} < {flat_score}"
-            );
-            let used: Vec<usize> = plan.iter().flatten().copied().collect();
-            assert_eq!(used.len(), pool.len(), "池を余さず使う: {person:?}");
-        }
-    }
-
-    #[test]
-    fn 長さの範囲以外で止まったら束ね直さない() {
-        // 帯が重なった、単位が足りない——束ね方を変えて通るまで試せば、
-        // 通った 1 案だけが残り、止まった理由が消える。
-        let mut tried = Vec::new();
-        let got = try_plans(vec!["a", "b", "c"], |_, p| {
-            tried.push(p);
-            Ok(Attempt::Stopped)
-        });
-        assert_eq!(got, Ok(Attempt::Stopped));
-        assert_eq!(tried, vec!["a"], "1 案目で止める");
-    }
-
-    #[test]
-    fn 長さの範囲で断られたときだけ次の案へ進む() {
-        let mut tried = Vec::new();
-        let got = try_plans(vec!["a", "b", "c", "d"], |_, p| {
-            tried.push(p);
-            Ok(if p == "c" {
-                Attempt::Built
-            } else {
-                Attempt::LengthRange
-            })
-        });
-        assert_eq!(got, Ok(Attempt::Built));
-        assert_eq!(tried, vec!["a", "b", "c"], "通ったら残りは試さない");
-
-        // 全部断られたら、最後の断りをそのまま返す。
-        let got = try_plans(vec!["a", "b"], |_, _| Ok(Attempt::LengthRange));
-        assert_eq!(got, Ok(Attempt::LengthRange));
-    }
-
-    #[test]
-    fn 束ね直しの途中で使い方の誤りが出たらそこで返す() {
-        let mut tried = 0;
-        let got = try_plans(vec!["a", "b"], |_, _| {
-            tried += 1;
-            Err(Exit::Usage)
-        });
-        assert_eq!(got, Err(Exit::Usage));
-        assert_eq!(tried, 1);
-    }
-
-    #[test]
-    fn 採点は悪いほうの比を返す() {
-        // 片方だけ良くても通らない。 防護柵は両方に 0.5 を要求する。
-        // 基準が本人の範囲に完全に含まれていると、本人側の比だけが効く。
-        let wide = overlap_score(&[1000, 5000], &[2000, 3000]);
-        assert!(wide < 0.5, "基準が狭すぎれば落ちる: {wide}");
-        let same = overlap_score(&[1000, 5000], &[1000, 5000]);
-        assert!((same - 1.0).abs() < 1e-9, "同じ範囲なら 1.0: {same}");
-    }
-
-    #[test]
-    fn 池が空でも落ちない() {
-        assert!(bundle_plan(&[1500], &[]).is_empty());
-        assert_eq!(bundle_plan(&[], &[2000]).len(), 1);
     }
 
     #[test]
@@ -5364,6 +4848,10 @@ mod tests {
         RegisterCount { polite, plain }
     }
 
+    fn register_of(path: &str) -> Option<Register> {
+        polite_share_of_file(path).map(Register::of_share)
+    }
+
     #[test]
     fn 文体は敬体率で分けファイル名では分けない() {
         let dir = temp_dir("register-of");
@@ -5376,11 +4864,11 @@ mod tests {
                 ("x-desu", PLAIN),
             ],
         );
-        assert_eq!(register_of_file(&files[0]), Some(Register::Polite));
-        assert_eq!(register_of_file(&files[1]), Some(Register::Plain));
-        assert_eq!(register_of_file(&files[2]), None, "測れない分は分けない");
+        assert_eq!(register_of(&files[0]), Some(Register::Polite));
+        assert_eq!(register_of(&files[1]), Some(Register::Plain));
+        assert_eq!(register_of(&files[2]), None, "測れない分は分けない");
         assert_eq!(
-            register_of_file(&files[3]),
+            register_of(&files[3]),
             Some(Register::Plain),
             "名前が敬体を名乗っても中身で分ける"
         );
@@ -5400,19 +4888,13 @@ mod tests {
                 ("e", SHORT),
             ],
         );
-        let count = RegisterCount::of(&files);
+        let count = RegisterCount::of(files.iter().map(|f| polite_share_of_file(f)));
         assert_eq!(count, counted(2, 1));
         assert_eq!(count.majority(), Some(Register::Polite));
 
         let plain = counted(1, 3);
         assert_eq!(plain.majority(), Some(Register::Plain));
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn 本人の文体は同数でも分けられなくても決まらない() {
-        assert_eq!(counted(2, 2).majority(), None);
-        assert_eq!(counted(0, 0).majority(), None);
     }
 
     #[test]
@@ -5442,6 +4924,7 @@ mod tests {
             filter,
             Some(RegisterFilter::Matched {
                 register: Register::Polite,
+                source: kakiburi_scale::select::RegisterSource::Counted,
                 person: counted(2, 1),
                 candidates: 2,
             })
@@ -5493,6 +4976,7 @@ mod tests {
             filter,
             Some(RegisterFilter::Missing {
                 register: Register::Polite,
+                source: kakiburi_scale::select::RegisterSource::Counted,
                 person: counted(1, 0),
             })
         );
@@ -5734,13 +5218,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    fn pairs(v: &[f64]) -> Vec<(String, f64)> {
-        v.iter()
-            .enumerate()
-            .map(|(i, x)| (format!("u{i}"), *x))
-            .collect()
-    }
-
     #[test]
     fn 自己検査は較正に使った単位を測らない() {
         // 較正に使った単位を測れば、分けるように合わせたものの分け具合を
@@ -5750,49 +5227,17 @@ mod tests {
         let (person, baseline) = (fixture::samples(&person), fixture::samples(&baseline));
         let names =
             |s: Vec<Sample<'_>>| -> Vec<String> { s.iter().map(|x| x.name.to_owned()).collect() };
-        let mine = names(self_check_units(&scale, &person));
-        let theirs = names(self_check_units(&scale, &baseline));
+        let mine = names(self_check_units(
+            &scale,
+            kakiburi_scale::self_check::Side::Person,
+            &person,
+        ));
+        let theirs = names(self_check_units(
+            &scale,
+            kakiburi_scale::self_check::Side::Baseline,
+            &baseline,
+        ));
         assert_eq!(mine, scale.selection.person_points, "本人は測る分だけ");
         assert_eq!(theirs, scale.selection.baseline_points, "基準は床の点だけ");
-    }
-
-    #[test]
-    fn 全部の対で本人が高ければ_1_である() {
-        let (rate, inverted) = higher_rate(&pairs(&[2.0, 3.0]), &pairs(&[0.0, 1.0]));
-        assert!((rate - 1.0).abs() < f64::EPSILON, "{rate}");
-        assert!(inverted.is_empty());
-    }
-
-    #[test]
-    fn 逆に出た対を名指しできる() {
-        let (rate, inverted) = higher_rate(&pairs(&[1.0, 3.0]), &pairs(&[0.0, 2.0]));
-        assert!((rate - 0.75).abs() < f64::EPSILON, "{rate}");
-        assert_eq!(inverted.len(), 1);
-        assert_eq!(inverted[0].0, "u0");
-        assert_eq!(inverted[0].2, "u1");
-    }
-
-    #[test]
-    fn 並んだ対は高く出たことにしない() {
-        // 半分だけ数えるが、逆に出た対としては残す——高く出ていないことに変わりはない。
-        let (rate, inverted) = higher_rate(&pairs(&[1.0]), &pairs(&[1.0]));
-        assert!((rate - 0.5).abs() < f64::EPSILON, "{rate}");
-        assert_eq!(inverted.len(), 1);
-    }
-
-    #[test]
-    fn 外れた_1_本を足しても割合はほとんど動かない() {
-        // これが最小・最大との違いである。 端で見れば、この 1 本だけで
-        // 通っていたものが落ちる。
-        let mine: Vec<f64> = (0..20).map(|i| 2.0 + f64::from(i)).collect();
-        let theirs: Vec<f64> = (0..20).map(|i| -20.0 + f64::from(i)).collect();
-        let (before, _) = higher_rate(&pairs(&mine), &pairs(&theirs));
-        assert!((before - 1.0).abs() < f64::EPSILON, "{before}");
-
-        let mut theirs = theirs;
-        theirs.push(100.0);
-        let (after, inverted) = higher_rate(&pairs(&mine), &pairs(&theirs));
-        assert_eq!(inverted.len(), 20, "外れた 1 本は全部の対で逆に出る");
-        assert!(after > HIGHER_RATE_FLOOR, "{after}");
     }
 }
