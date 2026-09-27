@@ -6,7 +6,8 @@
 //! | [ペルソナの読み方](persona::parse) | 見出しと項目と引用を取り出す。形が合わなければ断る |
 //! | [引用の照らし方](persona::check) | 単位ごとの node の文字列を受け取り、引用が現れるかを返す |
 //! | [代筆のプロンプト](draft::draft_prompt) | ペルソナ・文体の事実・要約・保存先から組み立てる |
-//! | [直させるプロンプト](revise::revise_prompt) | 検めた結果の散文・読む経路・書く経路から組み立てる |
+//! | [直させるプロンプト](revise::revise_prompt) | 検めた結果の散文・言い回しの上限・捨てた直し・読む経路・書く経路から組み立てる |
+//! | [変えたところ](changes::changes) | 2 つの版の文字列から、変えた文の断片を返す。捨てた直しに載せる |
 //! | [ペルソナを作らせるプロンプト](persona_prompt::persona_prompt) | 素材のフォルダ・書く経路・確かめるコマンドから組み立てる |
 //!
 //! 入出力を持たない。 受け取るのは文字列と、組み立て層が詰めた平らな値だけである。
@@ -16,11 +17,13 @@
 //! どのクレートにも依存しない。 目盛りも判定も知らないので、プロンプトの側から
 //! 作り直す経路が書けない（[境界](../../../docs/design/000-architecture.md#kuchiyose-prompt)）。
 
+pub mod changes;
 pub mod draft;
 pub mod persona;
 pub mod persona_prompt;
 pub mod revise;
 
+pub use changes::{changes, Change};
 pub use draft::{
     draft_prompt, Avoid, AvoidKind, DraftRequest, FirstPerson, Kata, Length, Register,
     RegisterFact, Spread, StyleFacts, MAX_PHRASES,
@@ -30,7 +33,7 @@ pub use persona::{
     HEADINGS, QUOTE_MIN_CHARS,
 };
 pub use persona_prompt::persona_prompt;
-pub use revise::revise_prompt;
+pub use revise::{revise_prompt, Ceiling, Rejected, MAX_CEILINGS, MAX_CHANGES, MAX_REJECTED};
 
 /// シェルに渡す 1 語にする。単引用符で囲み、中の単引用符は閉じて繋ぐ。
 ///

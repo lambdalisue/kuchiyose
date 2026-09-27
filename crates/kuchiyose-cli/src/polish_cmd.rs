@@ -7,6 +7,8 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use kuchiyose_katashiro::json::{self, Value};
+use kuchiyose_prompt::{Ceiling, Change, Rejected};
 use kuchiyose_review::{Stage, Standing, Verdict, Version};
 use kuchiyose_scale::assembly;
 
@@ -31,8 +33,9 @@ kuchiyose polish <ファイル> [-o <ファイル>] [--katashiro <形代>] [--ba
     手元の文章の表現だけを寄せる。検めて、指摘された表現だけを LLM の道具に対話なしで
     直させ、また検める。直した版は、それまでに採った版より良くなったときだけ採る。
     採った版が通るか、上限の周回数に達するか、道具が失敗したら止める。
-    元のファイルは上書きしない。版と各周のプロンプトと検めた結果は
-    <ファイルの名前>.kuchiyose/ に残る。
+    元のファイルは上書きしない。版と各周のプロンプトと検めた結果と捨てた版の記録は
+    <ファイルの名前>.kuchiyose/ に残る。捨てた版があれば、次の周のプロンプトに
+    何をして捨てたかを載せる。
     -o         最後に採った版を書く経路。省けば <ファイルの名前>.polished.<拡張子>。
                1 周も採らなければ書かない。
     --rounds   上限の周回数。1 以上 1000 以下。既定は 4。捨てた周も 1 周と数える。
@@ -157,6 +160,10 @@ impl Plan {
         self.work.join(format!("round-{n}.review.json"))
     }
 
+    fn rejected(&self, n: usize) -> PathBuf {
+        self.work.join(format!("round-{n}.rejected.json"))
+    }
+
     /// 作業用のフォルダに残っている版の、次の番号。無ければ 0。
     ///
     /// 既にあれば、断らずに続きの番号から書く。続きの番号が数えられる上限を超えれば `None`。
@@ -277,8 +284,11 @@ pub fn run_rounds(
     for n in (start + 1)..=last {
         let write = plan.version(n);
         // 直させるのはいつも、それまでに採った版である。 捨てた版から続けない。
+        // 捨てた版は、何をして捨てられたかだけを伝える。
         let prompt = kuchiyose_prompt::revise_prompt(
             &report.kept.prose,
+            &ceilings(&report.kept),
+            &rejected_history(plan, &report.kept_path, &report.kept.json),
             &report.kept_path.display().to_string(),
             &write.display().to_string(),
         );
@@ -318,9 +328,179 @@ pub fn run_rounds(
             if report.kept.verdict == Verdict::Pass {
                 break;
             }
+        } else {
+            let record =
+                rejection_record(&report.kept_path, &report.kept, &standing, &write, &checked);
+            write_file(&plan.rejected(n), &format!("{}\n", record.write()))?;
         }
     }
     Ok(report)
+}
+
+/// 直させるプロンプトに載せる、言い回しの上限。検めた結果の並びのまま渡す。
+fn ceilings(kept: &Checked) -> Vec<Ceiling> {
+    kept.headroom
+        .iter()
+        .map(|h| Ceiling {
+            text: h.text.clone(),
+            times: h.times,
+            density: h.density,
+            ceiling: h.ceiling,
+            allowed: h.allowed,
+        })
+        .collect()
+}
+
+/// 目盛りを名乗る欄。捨てた版の記録は、同じ目盛りで検めた版にだけ当てる。
+const SCALE_FIELDS: [&str; 2] = ["content_hash", "baseline_content_hash"];
+
+fn scale_of(review_json: &str) -> Vec<Option<String>> {
+    let v = json::parse(review_json.trim()).ok();
+    SCALE_FIELDS
+        .iter()
+        .map(|k| {
+            v.as_ref()
+                .and_then(|v| v.get(k))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+/// 悪い向きに動いた指標。人らしさ値は正が人の側なので、下がったものである。動いた量の大きい順。
+fn worse_metrics(kept: &Checked, candidate: &Checked) -> Vec<String> {
+    let mut worse: Vec<(f64, &str, f64, f64)> = candidate
+        .humanness_by_metric
+        .iter()
+        .filter_map(|(name, after)| {
+            let (_, before) = kept.humanness_by_metric.iter().find(|(k, _)| k == name)?;
+            (after < before).then(|| (before - after, name.as_str(), *before, *after))
+        })
+        .collect();
+    worse.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(b.1)));
+    worse
+        .into_iter()
+        .map(|(_, name, before, after)| format!("{name} {before:.3} → {after:.3}"))
+        .collect()
+}
+
+/// 捨てた版の記録（[捨てた直しを伝える](../../../docs/spec/400-write.md#捨てた直しを伝える)）。
+///
+/// 続きから回したときにも同じものを組み直せるよう、プロンプトに載せる値をそのまま残す。
+/// 読んだ版は、作業用のフォルダの中の名前で持つ。
+fn rejection_record(
+    read: &Path,
+    kept: &Checked,
+    standing: &Standing,
+    write: &Path,
+    candidate: &Checked,
+) -> Value {
+    let text =
+        |p: &Path| String::from_utf8_lossy(&std::fs::read(p).unwrap_or_default()).into_owned();
+    // 基準との距離で止まった版どうしのときだけ、指標ごとの向きを言う。 段が違えば、
+    // 指標ごとの値は採否を決めていない。
+    let worse = match &candidate.version {
+        Version::Measured(s)
+            if s.stage == Stage::Humanness && standing.stage == Stage::Humanness =>
+        {
+            worse_metrics(kept, candidate)
+        }
+        _ => Vec::new(),
+    };
+    let changes = kuchiyose_prompt::changes(&text(read), &text(write));
+    let name = |p: &Path| {
+        p.file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let mut fields = vec![
+        ("read".to_owned(), Value::s(name(read))),
+        (
+            "reason".to_owned(),
+            Value::s(kuchiyose_review::rejection(&candidate.version, standing)),
+        ),
+        ("worse".to_owned(), crate::machine::strings(&worse)),
+        (
+            "changes".to_owned(),
+            Value::Array(
+                changes
+                    .iter()
+                    .map(|c| {
+                        Value::obj([
+                            ("before".to_owned(), Value::s(&c.before)),
+                            ("after".to_owned(), Value::s(&c.after)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+    ];
+    for (k, v) in SCALE_FIELDS.iter().zip(scale_of(&kept.json)) {
+        fields.push(((*k).to_owned(), v.map_or(Value::Null, Value::s)));
+    }
+    Value::obj(fields)
+}
+
+/// 今の版を直して捨てた版を、作業用のフォルダの記録から古い順に組み直す。
+///
+/// 当てるのは、読んだ版の中身が今の版とバイトまで同じで、同じ目盛りで検めた記録だけである。
+/// 採った版が変われば、それより前の記録は当たらなくなる。 続きから回したときも、元の版が
+/// 同じなら、前に回したときの記録が当たる。
+fn rejected_history(plan: &Plan, kept_path: &Path, kept_json: &str) -> Vec<Rejected> {
+    let (Ok(kept), Ok(entries)) = (std::fs::read(kept_path), std::fs::read_dir(&plan.work)) else {
+        return Vec::new();
+    };
+    let scale = scale_of(kept_json);
+    let mut numbers: Vec<usize> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.strip_prefix("round-")?
+                .strip_suffix(".rejected.json")?
+                .parse()
+                .ok()
+        })
+        .collect();
+    numbers.sort_unstable();
+    numbers
+        .into_iter()
+        .filter_map(|n| {
+            let body = std::fs::read_to_string(plan.rejected(n)).ok()?;
+            let v = json::parse(body.trim()).ok()?;
+            let read = plan.work.join(v.get("read")?.as_str()?);
+            let same_scale = SCALE_FIELDS
+                .iter()
+                .zip(&scale)
+                .all(|(k, s)| v.get(k).and_then(Value::as_str) == s.as_deref());
+            (same_scale && std::fs::read(read).ok()? == kept).then_some(())?;
+            let strings = |key: &str| -> Vec<String> {
+                v.get(key)
+                    .and_then(Value::as_array)
+                    .unwrap_or_default()
+                    .iter()
+                    .filter_map(|s| s.as_str().map(str::to_owned))
+                    .collect()
+            };
+            let changes = v
+                .get("changes")
+                .and_then(Value::as_array)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|c| {
+                    Some(Change {
+                        before: c.get("before")?.as_str()?.to_owned(),
+                        after: c.get("after")?.as_str()?.to_owned(),
+                    })
+                })
+                .collect();
+            Some(Rejected {
+                round: n,
+                reason: v.get("reason")?.as_str()?.to_owned(),
+                worse: strings("worse"),
+                changes,
+            })
+        })
+        .collect()
 }
 
 /// 推論設定の直し方。基準との距離で止まったときだけ言う。
@@ -420,6 +600,8 @@ pub fn first_prompt(plan: &Plan, first: &Checked) -> Result<String, String> {
     }
     Ok(kuchiyose_prompt::revise_prompt(
         &first.prose,
+        &ceilings(first),
+        &rejected_history(plan, &plan.original, &first.json),
         &plan.original.display().to_string(),
         &plan.output.display().to_string(),
     ))
@@ -506,25 +688,60 @@ mod tests {
 
     /// 版の中身から検めた結果を決める、試験のための検め。
     ///
-    /// 中身は `通らない 0.5` のような 1 行で、判定と基準との距離を名乗る。
+    /// 中身は `通らない 0.5` のような 1 行で、判定と基準との距離を名乗る。 指標ごとの
+    /// 人らしさ値は `圧縮率` の 1 本だけで、基準との距離と同じ値にする。
     /// `短い` は測れない版、`通る` は通る版である。
+    ///
+    /// 距離のあとに `しています。=16` のように言い回しと回数を並べられる。 どれも 5,000 字の
+    /// 版で本人の上限 2.8 回、つまり 14 回まで使える、とする。 超えたぶんが使いすぎである。
     fn stub_judge(p: &Path) -> Checked {
         let body = std::fs::read_to_string(p).unwrap_or_default();
         let body = body.trim();
+        let used: Vec<(String, usize)> = body
+            .split_whitespace()
+            .filter_map(|w| {
+                let (text, n) = w.split_once('=')?;
+                Some((text.to_owned(), n.parse().ok()?))
+            })
+            .collect();
+        let headroom = used
+            .iter()
+            .map(|(text, times)| kuchiyose_review::Headroom {
+                text: text.clone(),
+                times: *times,
+                #[allow(clippy::cast_precision_loss)]
+                density: *times as f64 / 5.0,
+                ceiling: 2.8,
+                allowed: 14,
+            })
+            .collect();
+        let overused: Vec<(String, usize)> = used
+            .iter()
+            .filter(|(_, n)| *n > 14)
+            .map(|(t, n)| (t.clone(), n - 14))
+            .collect();
         let checked = |verdict: Verdict, version: Version| Checked {
             verdict,
             prose: format!("検めた: {body}\n"),
             json: format!("{{\"draft\":\"{body}\"}}\n"),
+            humanness_by_metric: match &version {
+                Version::Measured(Standing {
+                    amount: Amount::Humanness { distance },
+                    ..
+                }) => vec![("圧縮率".to_owned(), *distance)],
+                _ => Vec::new(),
+            },
             version,
             directives: 3,
             chars: body.chars().count(),
+            headroom,
         };
         let at = |verdict: Verdict, stage: Stage, amount: Amount| {
             Version::Measured(Standing {
                 verdict,
                 stage,
                 amount,
-                overused: 0,
+                overused: overused.clone(),
                 baseline_times: 0,
             })
         };
@@ -544,7 +761,7 @@ mod tests {
                 Verdict::Unknown,
                 Version::Unmeasurable("短すぎて測れない".into()),
             ),
-            ["通らない", d] => checked(
+            ["通らない", d, ..] => checked(
                 Verdict::Fail,
                 at(
                     Verdict::Fail,
@@ -640,6 +857,150 @@ mod tests {
         assert!(
             second.contains(&format!("- 読む: {}", p.version(0).display())),
             "{second}"
+        );
+    }
+
+    fn prompt_of(p: &Plan, n: usize) -> String {
+        std::fs::read_to_string(p.work.join(format!("round-{n}.prompt.md"))).unwrap()
+    }
+
+    #[test]
+    fn 捨てた周の次の周には捨てた理由と悪い向きに動いた指標と変えたところを伝える() {
+        let dir = TempDir::new("polish-rejected-feedback");
+        let p = plan(&dir, "通らない 0.5", 2);
+        run(&p, &fake_agent(&dir, &["通らない 0.4", "通らない 0.3"]));
+        assert!(
+            !prompt_of(&p, 1).contains("## 捨てた直し"),
+            "まだ何も捨てていない"
+        );
+        let second = prompt_of(&p, 2);
+        let want = "\n## 捨てた直し\n\n\
+            読む経路の文章を直した版を、これまでに 1 回捨てた。どれも採らなかった。\n\
+            \n### 1 周目\n\n\
+            - 採らなかった理由: 基準との距離が 0.500 から 0.400 に下がった。大きいほうが良い\n\
+            - 悪い向きに動いた指標: 圧縮率 0.500 → 0.400\n\
+            - 変えたところ 1 か所:\n  \
+            - 「通らない 0.5」→「通らない 0.4」\n";
+        assert!(second.contains(want), "{second}");
+        assert!(second.contains("同じ直しを繰り返さない。"), "{second}");
+        assert!(p.work.join("round-1.rejected.json").exists());
+        assert!(p.work.join("round-2.rejected.json").exists());
+    }
+
+    #[test]
+    fn 捨てた直しは採った版が変わると伝えなくなる() {
+        let dir = TempDir::new("polish-rejected-reset");
+        let p = plan(&dir, "通らない 0.5", 4);
+        run(
+            &p,
+            &fake_agent(
+                &dir,
+                &[
+                    "通らない 0.4",
+                    "通らない 0.6",
+                    "通らない 0.3",
+                    "通らない 0.2",
+                ],
+            ),
+        );
+        assert!(prompt_of(&p, 2).contains("### 1 周目"));
+        assert!(
+            !prompt_of(&p, 3).contains("## 捨てた直し"),
+            "2 周目で採った版は、まだ直して捨てていない"
+        );
+        let fourth = prompt_of(&p, 4);
+        assert!(fourth.contains("### 3 周目"), "{fourth}");
+        assert!(
+            !fourth.contains("### 1 周目"),
+            "前の版への直しは伝えない: {fourth}"
+        );
+        assert!(
+            fourth.contains("「通らない 0.6」→「通らない 0.3」"),
+            "今の版からの変えたところ: {fourth}"
+        );
+        assert!(
+            !p.work.join("round-2.rejected.json").exists(),
+            "採った版は捨てた版の記録を残さない"
+        );
+    }
+
+    #[test]
+    fn 続きから回すと元の版が同じなら前に捨てた直しを伝える() {
+        let dir = TempDir::new("polish-rejected-continue");
+        let p = plan(&dir, "通らない 0.5", 1);
+        let agent = fake_agent(&dir, &["通らない 0.4", "通らない 0.3"]);
+        run(&p, &agent);
+        let printed = first_prompt(&p, &stub_judge(&p.original)).expect("周回に入る");
+        assert!(
+            printed.contains("### 1 周目"),
+            "表示用のプロンプトも同じ: {printed}"
+        );
+        run(&p, &agent);
+        let third = prompt_of(&p, 3);
+        assert!(
+            third.contains(&format!("- 読む: {}", p.version(2).display())),
+            "{third}"
+        );
+        assert!(third.contains("### 1 周目"), "{third}");
+    }
+
+    #[test]
+    fn 目盛りが違う記録は伝えない() {
+        let dir = TempDir::new("polish-rejected-scale");
+        let p = plan(&dir, "通らない 0.5", 1);
+        let agent = fake_agent(&dir, &["通らない 0.4", "通らない 0.3"]);
+        run(&p, &agent);
+        let other = |path: &Path| Checked {
+            json: "{\"content_hash\":\"sha256:別の形代\"}\n".to_owned(),
+            ..stub_judge(path)
+        };
+        run_rounds(&p, &other, &|l| agent::run_batch(&agent, l)).expect("回せる");
+        assert!(!prompt_of(&p, 3).contains("## 捨てた直し"));
+    }
+
+    #[test]
+    fn 基準との距離が上がっても使いすぎを増やした版は採らず次の周にそう伝える() {
+        let dir = TempDir::new("polish-overuse-grew");
+        let p = plan(&dir, "通らない 0.5 しています。=13", 2);
+        let r = run(
+            &p,
+            &fake_agent(
+                &dir,
+                &[
+                    "通らない 0.6 しています。=16",
+                    "通らない 0.6 しています。=14",
+                ],
+            ),
+        );
+        assert_eq!(r.adopted, 1);
+        assert_eq!(r.kept_path, p.version(2), "増やさなかった版を採る");
+        let second = prompt_of(&p, 2);
+        assert!(
+            second.contains(
+                "- 採らなかった理由: 本人の上限を超えた言い回しが 0 本から 1 本に増えた\
+                 （「しています。」）。使いすぎを増やした版は、止まった段の量が良くなっても採らない\n"
+            ),
+            "{second}"
+        );
+    }
+
+    #[test]
+    fn 直させるプロンプトに今の版の言い回しの上限までの余地を載せる() {
+        let dir = TempDir::new("polish-headroom");
+        let p = plan(&dir, "通らない 0.5 しています。=13", 1);
+        run(&p, &fake_agent(&dir, &["通らない 0.4"]));
+        let first = prompt_of(&p, 1);
+        assert!(
+            first.contains(
+                "- 「しています。」: 今 13 回（1,000 字あたり 2.6 回）。この人は 1,000 字あたり 2.8 回まで。\
+                 この長さなら 14 回まで。あと 1 回。\n"
+            ),
+            "{first}"
+        );
+        let printed = first_prompt(&p, &stub_judge(&p.original)).expect("周回に入る");
+        assert!(
+            printed.contains("## 言い回しの上限"),
+            "表示用も同じ: {printed}"
         );
     }
 

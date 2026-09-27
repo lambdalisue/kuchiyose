@@ -11,7 +11,9 @@ pub mod point;
 pub mod range;
 pub mod verdict;
 
-pub use better::{adopt, compare, standing, Amount, Standing, Values, Version};
+pub use better::{
+    adopt, compare, decisive, rejection, standing, Amount, Key, Overuse, Standing, Values, Version,
+};
 pub use point::{Point, PointError, Remedies};
 pub use range::{appearance_size, Lower, Outside, Range, APPEARANCE_FLOOR};
 pub use verdict::{
@@ -229,6 +231,80 @@ fn over_used(katas: &[Kata]) -> Vec<&Kata> {
         .iter()
         .filter(|k| k.ceiling > 0.0 && k.times > 1 && k.density > k.ceiling * OVERUSE)
         .collect()
+}
+
+/// この文章の長さで、本人の上限まで使える回数。切り捨てる。
+///
+/// 字数は回数と濃さから戻す。 出ていない言い回しでは戻せないが、余地を言う先も、
+/// 超えた回数を数える先も、出ている言い回しだけである。 割った値が整数に
+/// 張り付いたとき、丸めの誤差で 1 つ少なく数えないよう、わずかに足してから切り捨てる。
+fn allowed(k: &Kata) -> usize {
+    if k.times == 0 || k.density <= 0.0 {
+        return 0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let n = k.ceiling * OVERUSE * k.times as f64 / k.density;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let allowed = (n + 1e-9).floor().max(0.0) as usize;
+    allowed
+}
+
+/// 本人の上限を超えた言い回しと、この長さで使える回数を超えた分。文字列の順。
+///
+/// 使いすぎの知らせと同じ集合である。 超えた分は、上限を超えていれば少なくとも 1 とする
+/// ——濃さの比べ方と回数の切り捨てが丸めで食い違っても、超えたものを 0 と数えない。
+#[must_use]
+pub fn overuse(phrases: &[Kata]) -> Vec<(String, usize)> {
+    let mut over: Vec<(String, usize)> = over_used(phrases)
+        .into_iter()
+        .map(|k| (k.text.clone(), k.times.saturating_sub(allowed(k)).max(1)))
+        .collect();
+    over.sort();
+    over
+}
+
+/// 本人の上限までの余地。言い回し 1 つぶん。
+///
+/// 使いすぎの知らせは超えてからしか出ない。 超える前に余地が見えなければ、
+/// 直す側は超えるまで足す（[仕様](../../../docs/spec/400-write.md#上限までの余地を見せる)）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Headroom {
+    /// 言い回し。
+    pub text: String,
+    /// この文章に現れた回数。
+    pub times: usize,
+    /// この文章での、日本語 1,000 字あたりの回数。
+    pub density: f64,
+    /// 本人が 1 本の中で使う、日本語 1,000 字あたりの最大。
+    pub ceiling: f64,
+    /// この文章の長さで、本人の上限まで使える回数。
+    pub allowed: usize,
+}
+
+/// 上限を持ち、この文章に出ている言い回しの余地。上限に対する濃さの高い順、同じなら文字列の順。
+///
+/// 上限に近いものほど、次の直しで超えやすい。 上限 0 のものは入れない——
+/// [使いすぎ](over_used)が言わないのと同じ理由である。 本数は絞らない。
+/// 何本まで見せるかは、見せる側が決める。
+#[must_use]
+pub fn headroom(phrases: &[Kata]) -> Vec<Headroom> {
+    let mut out: Vec<Headroom> = phrases
+        .iter()
+        .filter(|k| k.ceiling > 0.0 && k.times > 0)
+        .map(|k| Headroom {
+            text: k.text.clone(),
+            times: k.times,
+            density: k.density,
+            ceiling: k.ceiling,
+            allowed: allowed(k),
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        (b.density / b.ceiling)
+            .total_cmp(&(a.density / a.ceiling))
+            .then_with(|| a.text.cmp(&b.text))
+    });
+    out
 }
 
 /// 型を使う位置が偏っていれば、その場所の名前。`at` は文書の中での位置の中央（0〜1）。
@@ -1999,6 +2075,42 @@ mod tests {
     fn 本人が使わない並びは使いすぎと言わない() {
         // 上限が 0 のものは、そもそも本人の型ではない。
         assert!(overused_katas(&[dense("と考えています", 9, 2.0, 0.0)]).is_empty());
+    }
+
+    #[test]
+    fn 超えた分はこの長さで使える回数を超えた回数である() {
+        // 5,000 字で 16 回は 3.2 回。上限 2.8 回なら 14 回まで使え、2 回超えている。
+        let over = overuse(&[
+            dense("しています。", 16, 3.2, 2.8),
+            dense("になります。", 3, 0.6, 2.0),
+        ]);
+        assert_eq!(over, vec![("しています。".to_owned(), 2)]);
+    }
+
+    #[test]
+    fn 超えていれば超えた分は少なくとも_1_である() {
+        // 5,000 字で上限 2.0 回なら 10 回まで。濃さがわずかに上を指しても 0 と数えない。
+        let over = overuse(&[dense("ています。", 10, 2.000_000_1, 2.0)]);
+        assert_eq!(over, vec![("ています。".to_owned(), 1)]);
+    }
+
+    #[test]
+    fn 余地は上限に近い順に並び同じなら文字列の順である() {
+        let got = headroom(&[
+            dense("と思います。", 2, 0.4, 2.0),
+            dense("しています。", 13, 2.6, 2.8),
+            dense("になります。", 5, 1.0, 5.0),
+            dense("と考えています", 9, 1.8, 0.0),
+            dense("ことができます", 0, 0.0, 0.3),
+        ]);
+        let texts: Vec<&str> = got.iter().map(|h| h.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            ["しています。", "と思います。", "になります。"],
+            "上限 0 と、出ていないものは入れない"
+        );
+        assert_eq!(got[0].allowed, 14, "5,000 字で 1,000 字あたり 2.8 回まで");
+        assert_eq!(got[0].times, 13);
     }
 
     fn kata(text: &str, rate: f64, at: f64, used: bool) -> Kata {

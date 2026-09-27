@@ -164,6 +164,14 @@ pub struct Checked {
     pub directives: usize,
     /// 地の文の日本語の字数。
     pub chars: usize,
+    /// 指標ごとの人らしさ値。正が人の側。測れなければ空。
+    ///
+    /// 捨てた版で、どの指標が悪い向きに動いたかを言うのに使う。
+    pub humanness_by_metric: Vec<(String, f64)>,
+    /// 使っている言い回しの、本人の上限までの余地。上限に近い順。測れなければ空。
+    ///
+    /// 直させるプロンプトに載せる。 使いすぎの知らせと同じ数え方である。
+    pub headroom: Vec<kuchiyose_review::Headroom>,
 }
 
 impl Session {
@@ -261,6 +269,8 @@ impl Session {
                     )),
                     directives: 0,
                     chars: 0,
+                    humanness_by_metric: Vec::new(),
+                    headroom: Vec::new(),
                 };
             }
         };
@@ -273,12 +283,20 @@ impl Session {
         let head = self.head();
         let (body, _) = render_single(false, false, &head, &row);
         let (json, _) = render_single(true, false, &head, &row);
-        let (version, directives) = match &row {
-            Row::Judged(j) => (j.version.clone(), j.directives),
-            Row::Unknown { reason, .. } => {
-                (kuchiyose_review::Version::Unmeasurable(reason.clone()), 0)
-            }
+        let (version, directives, headroom) = match &row {
+            Row::Judged(j) => (j.version.clone(), j.directives, j.headroom.clone()),
+            Row::Unknown { reason, .. } => (
+                kuchiyose_review::Version::Unmeasurable(reason.clone()),
+                0,
+                Vec::new(),
+            ),
         };
+        let humanness_by_metric = row.got().map_or_else(Vec::new, |got| {
+            got.humanness_by_metric
+                .iter()
+                .map(|m| (m.name.clone(), m.value))
+                .collect()
+        });
         Checked {
             verdict: row.outcome().verdict,
             prose: format!("{}{body}", head.text()),
@@ -286,6 +304,8 @@ impl Session {
             version,
             directives,
             chars: d.doc.japanese_chars(),
+            humanness_by_metric,
+            headroom,
         }
     }
 }
@@ -480,6 +500,8 @@ struct Judged {
     result: Review,
     /// 周回が版を比べるための、この版の立ち位置。
     version: kuchiyose_review::Version,
+    /// 使っている言い回しの、本人の上限までの余地。
+    headroom: Vec<kuchiyose_review::Headroom>,
 }
 
 /// 帯。`--values` で値と並べる。
@@ -720,6 +742,7 @@ fn evaluate(d: &Draft, built: &Built, tuning: &Tuning, defs: &FromDefinitions) -
             }
         });
     let phrases: Vec<kuchiyose_review::Kata> = offered.chain(repeated).collect();
+    let headroom = kuchiyose_review::headroom(&phrases);
     let katas = seen(&scale.katas, MuteKind::Kata);
     let machine_katas = seen(&scale.machine_katas, MuteKind::BaselineKata);
     // 語は文字列ではなく語彙素で照らす。
@@ -802,6 +825,7 @@ fn evaluate(d: &Draft, built: &Built, tuning: &Tuning, defs: &FromDefinitions) -
         },
         result,
         version,
+        headroom,
     }
 }
 
