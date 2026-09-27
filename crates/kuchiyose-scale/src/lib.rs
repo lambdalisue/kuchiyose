@@ -22,7 +22,7 @@ pub mod vocabulary;
 mod testing;
 
 pub use assemble::{
-    diverging, measure_against, Divergence, HumannessByMetric, Measured, Report, Sample,
+    diverging, measure_against, DimToward, Divergence, HumannessByMetric, Measured, Report, Sample,
     Substituted,
 };
 pub use band::{Band, BandError, Ends, Verdict};

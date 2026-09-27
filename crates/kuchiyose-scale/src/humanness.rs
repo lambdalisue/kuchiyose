@@ -319,37 +319,73 @@ impl HumannessScale {
     /// 形代で直し方に従うほど人らしさが下がる。先行研究が言うのは
     /// 「普通はこちら」であって、この人とこの基準でそうなるとはかぎらない。
     ///
-    /// 次元の向きが割れている指標は返さない。 どちらへ動かせばよいかを言えない
-    /// ものを指示にしない。
+    /// 次元の向きが割れている指標は返さない。 指標をまとめて動かす向きを言えない。
+    /// そうした指標の次元ごとの向きは[別に返す](Self::split_toward_human)。
     #[must_use]
     pub fn toward_human(&self) -> Vec<(&'static str, bool)> {
-        let owners = owners();
         Metric::ALL
             .into_iter()
             .enumerate()
             .filter_map(|(i, m)| {
-                let slopes: Vec<f64> = self
-                    .per_dim
+                let leaning = self.leaning(i);
+                let (_, first) = *leaning.first()?;
+                leaning
                     .iter()
-                    .enumerate()
-                    .filter(|(j, _)| owners.get(*j) == Some(&i))
-                    .map(|(_, w)| w.slopes().first().copied().unwrap_or(0.0))
-                    .collect();
-                // 向きを持たない次元は、向きの割れに数えない。 傾きがほぼ 0 の
-                // 次元はどちらへ動かしても値を変えないので、それが 1 本あるだけで
-                // 指標全体を指示できなくするのは、無い信号に判断を委ねることである。
-                let max = slopes.iter().fold(0.0f64, |a, b| a.max(b.abs()));
-                if max == 0.0 {
+                    .all(|(_, up)| *up == first)
+                    .then_some((m.name(), first))
+            })
+            .collect()
+    }
+
+    /// 次元ごとの向きが割れている指標と、次元ごとの人へ寄せる向き。`true` なら上げる。
+    ///
+    /// 指標をまとめて上げるか下げるかは言えないが、次元ごとには言える。 指標の値は
+    /// 次元ごとの対数尤度比の平均なので、どの次元もその傾きの向きへ動かせば、指標の
+    /// 値は下がらない。 並べるのは向きを持つ次元だけである。
+    #[must_use]
+    pub fn split_toward_human(&self) -> Vec<(&'static str, Vec<(String, bool)>)> {
+        Metric::ALL
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, m)| {
+                let leaning = self.leaning(i);
+                let (_, first) = *leaning.first()?;
+                if leaning.iter().all(|(_, up)| *up == first) {
                     return None;
                 }
-                let mut signs = slopes
-                    .iter()
-                    .filter(|x| x.abs() / max >= FAINT)
-                    .map(|x| *x > 0.0)
-                    .peekable();
-                let first = *signs.peek()?;
-                signs.all(|x| x == first).then_some((m.name(), first))
+                Some((
+                    m.name(),
+                    leaning
+                        .into_iter()
+                        .map(|(j, up)| (self.dims[j].clone(), up))
+                        .collect(),
+                ))
             })
+            .collect()
+    }
+
+    /// その指標の、向きを持つ次元と向き。次元の並びの順。
+    ///
+    /// 向きを持たない次元は、向きの割れに数えない。 傾きがほぼ 0 の次元は
+    /// どちらへ動かしても値を変えないので、それが 1 本あるだけで指標全体を
+    /// 指示できなくするのは、無い信号に判断を委ねることである。
+    fn leaning(&self, metric: usize) -> Vec<(usize, bool)> {
+        let owners = owners();
+        let slopes: Vec<(usize, f64)> = self
+            .per_dim
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| owners.get(*j) == Some(&metric))
+            .map(|(j, w)| (j, w.slopes().first().copied().unwrap_or(0.0)))
+            .collect();
+        let max = slopes.iter().fold(0.0f64, |a, (_, b)| a.max(b.abs()));
+        if max == 0.0 {
+            return Vec::new();
+        }
+        slopes
+            .into_iter()
+            .filter(|(_, x)| x.abs() / max >= FAINT)
+            .map(|(j, x)| (j, x > 0.0))
             .collect()
     }
 
@@ -497,6 +533,46 @@ mod tests {
                 "{m}: {toward:?}"
             );
         }
+    }
+
+    #[test]
+    fn 次元ごとに向きが割れた指標は次元ごとの向きを返す() {
+        // 実測で、句点の密度は人の側が高く、読点の密度は人の側が低かった。
+        // 指標をまとめた向きは言えないが、次元ごとには言える。
+        let row = |human: bool, i: usize| {
+            let seed = f64::from(u32::try_from(i).unwrap()) * 0.01;
+            let mut row = if human {
+                human_row(seed)
+            } else {
+                machine_row(seed)
+            };
+            row[12] = if human { 30.0 } else { 20.0 } + seed;
+            row
+        };
+        let human: Vec<Vec<f64>> = (0..5).map(|i| row(true, i)).collect();
+        let machine: Vec<Vec<f64>> = (0..5).map(|i| row(false, i)).collect();
+        let s = HumannessScale::fit(&human, &machine);
+
+        assert!(
+            !s.toward_human().iter().any(|(n, _)| *n == "句読点の密度"),
+            "まとめた向きは言えない: {:?}",
+            s.toward_human()
+        );
+        assert_eq!(
+            s.split_toward_human(),
+            vec![(
+                "句読点の密度",
+                vec![
+                    ("句点の密度".to_owned(), true),
+                    ("読点の密度".to_owned(), false)
+                ]
+            )]
+        );
+    }
+
+    #[test]
+    fn 向きが揃っていれば割れた指標は無い() {
+        assert!(scale().split_toward_human().is_empty());
     }
 
     #[test]

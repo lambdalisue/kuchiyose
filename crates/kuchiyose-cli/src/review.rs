@@ -635,6 +635,15 @@ fn evaluate(d: &Draft, built: &Built, tuning: &Tuning, defs: &FromDefinitions) -
             name: m.name.clone(),
             value: m.value,
             raise: m.raise,
+            dims: m
+                .dims
+                .iter()
+                .map(|d| kuchiyose_review::HumannessDim {
+                    name: d.name.clone(),
+                    raise: d.raise,
+                    value: d.value,
+                })
+                .collect(),
             // 長い繰り返しにだけ添える。
             phrases: if m.name == "長い繰り返し" {
                 scale.phrases.clone()
@@ -1027,7 +1036,22 @@ fn judged_fields(j: &Judged, values: bool) -> Vec<(String, Value)> {
                     m.name.clone(),
                     Value::obj([
                         ("value".to_owned(), Value::Number(m.value)),
-                        ("raise".to_owned(), Value::Bool(m.raise)),
+                        ("raise".to_owned(), m.raise.map_or(Value::Null, Value::Bool)),
+                        (
+                            "dims".to_owned(),
+                            Value::Array(
+                                m.dims
+                                    .iter()
+                                    .map(|d| {
+                                        Value::obj([
+                                            ("name".to_owned(), Value::s(&d.name)),
+                                            ("raise".to_owned(), Value::Bool(d.raise)),
+                                            ("value".to_owned(), Value::Number(d.value)),
+                                        ])
+                                    })
+                                    .collect(),
+                            ),
+                        ),
                     ]),
                 )
             })),

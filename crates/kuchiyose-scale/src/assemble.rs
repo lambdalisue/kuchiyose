@@ -1230,21 +1230,41 @@ pub fn measure_against(
         // 寄せる向きは較正から読む。 定義に固定すると、素材がその向きを
         // 支えていない形代で直し方に従うほど人らしさが下がる。
         //
-        // 次元の向きが割れている指標は渡さない。 どちらへ動かせばよいかを
-        // 言えないものを指示にしない。
+        // 次元の向きが割れている指標は、次元ごとの向きで渡す。 指標をまとめて
+        // 動かす向きは言えないが、次元ごとには言える。外せば、合算にいちばん
+        // 効いている指標が直し方から消えることがある——実測で、句読点の密度が
+        // そうだった。
         humanness_by_metric: {
             let toward = scale.humanness.toward_human();
-            let all = scale
-                .humanness
-                .by_metric(&t.humanness.flat())
-                .unwrap_or_default();
+            let split = scale.humanness.split_toward_human();
+            let flat = t.humanness.flat();
+            let all = scale.humanness.by_metric(&flat).unwrap_or_default();
             let values: Vec<f64> = all.iter().map(|(_, v)| *v).collect();
             // いまの合算。 差を取る相手である。
             let now = scale.humanness.fuse(&values, None);
             all.iter()
                 .enumerate()
                 .filter_map(|(j, (n, v))| {
-                    let (_, up) = toward.iter().find(|(m, _)| m == n)?;
+                    let (up, dims) = match toward.iter().find(|(m, _)| m == n) {
+                        Some((_, up)) => (Some(*up), Vec::new()),
+                        None => {
+                            let (_, by_dim) = split.iter().find(|(m, _)| m == n)?;
+                            let dims = by_dim
+                                .iter()
+                                .map(|(name, raise)| {
+                                    Some(DimToward {
+                                        name: name.clone(),
+                                        raise: *raise,
+                                        value: flat
+                                            .iter()
+                                            .find(|(d, _)| d == name)
+                                            .and_then(|(_, m)| m.value())?,
+                                    })
+                                })
+                                .collect::<Option<Vec<_>>>()?;
+                            (None, dims)
+                        }
+                    };
                     // その指標だけを本人の代表値へ置いて、合算し直す。
                     //
                     // 直し方は 2 本以上出て、互いに正反対を指すことがある
@@ -1256,16 +1276,27 @@ pub fn measure_against(
                         .find(|(m, _)| m == n)
                         .map_or(*v, |(_, x)| *x);
                     let effect = scale.humanness.fuse(&values, Some((j, target))) - now;
+                    // 減らす側では、この文章が繰り返しすぎているものを名指す。
+                    // 増やす側で本人の言い回しを渡すのと表裏である。
+                    //
+                    // 散らすなと言う側でだけ渡す。 散らせと言う側に
+                    // 「これが散らしている」を見せても使い道がない。
+                    let lowering = up == Some(false);
                     Some(HumannessByMetric {
                         name: (*n).to_owned(),
                         value: *v,
-                        raise: *up,
-                        // 減らす側では、この文章が繰り返しすぎているものを名指す。
-                        // 増やす側で本人の言い回しを渡すのと表裏である。
-                        overused: if *up { Vec::new() } else { t.overused.clone() },
-                        // 散らすなと言う側でだけ渡す。 散らせと言う側に
-                        // 「これが散らしている」を見せても使い道がない。
-                        once_only: if *up { Vec::new() } else { t.once_only.clone() },
+                        raise: up,
+                        dims,
+                        overused: if lowering {
+                            t.overused.clone()
+                        } else {
+                            Vec::new()
+                        },
+                        once_only: if lowering {
+                            t.once_only.clone()
+                        } else {
+                            Vec::new()
+                        },
                         effect,
                         target,
                     })
@@ -1373,8 +1404,12 @@ pub struct HumannessByMetric {
     pub name: String,
     /// その指標だけで見た人らしさ値。正が人の側、負が機械の側。
     pub value: f64,
-    /// 人へ寄せる向き。`true` なら値を上げる。
-    pub raise: bool,
+    /// 人へ寄せる向き。`Some(true)` なら値を上げる。
+    ///
+    /// 次元ごとに向きが割れていれば `None` で、向きは[次元ごとに](Self::dims)持つ。
+    pub raise: Option<bool>,
+    /// 向きが割れているときの、次元ごとの向き。割れていなければ空である。
+    pub dims: Vec<DimToward>,
     /// この文章が繰り返しすぎている言い回し。減らす側でだけ意味を持つ。
     pub overused: Vec<String>,
     /// この文章で一度しか出てこない語。語を散らしている当のものである。
@@ -1390,6 +1425,17 @@ pub struct HumannessByMetric {
     /// ところではない——4 指標とも境目より人の側にいるのに、合算では機械の側
     /// ということが実際に起きる。
     pub target: f64,
+}
+
+/// 人らしさの 1 次元を人へ寄せる向き。指標の中で向きが割れたときに使う。
+#[derive(Debug, Clone, PartialEq)]
+pub struct DimToward {
+    /// 次元の名前。
+    pub name: String,
+    /// `true` なら値を上げる。
+    pub raise: bool,
+    /// この文章で測った量。
+    pub value: f64,
 }
 
 /// 系統の 1 次元ぶんの隔たり。
@@ -1708,9 +1754,9 @@ pub struct Measured {
     /// 測れなければ空である。 直し方を渡す側が、測れていないことと機械の
     /// 側にあることを取り違えないようにする。
     pub humanness_by_metric: Vec<HumannessByMetric>,
-    /// 指標ごとの人らしさ値。向きの割れた指標も含めて全部。1 次元でも欠ければ空である。
+    /// 指標ごとの人らしさ値。向きを持たない指標も含めて全部。1 次元でも欠ければ空である。
     ///
-    /// [直し方の材料](Self::humanness_by_metric)は、向きを言えない指標を外す。
+    /// [直し方の材料](Self::humanness_by_metric)は、どの次元も向きを持たない指標を外す。
     /// 測った値を並べるときに外すと、合算に効いているのに見えない指標が残る。
     pub humanness_metrics: Vec<(String, f64)>,
     /// 人らしさの次元ごとの、測った量。測れなかった次元は `None`。
@@ -1798,7 +1844,7 @@ mod tests {
 
     #[test]
     fn 測った値を全部出すために指標ごとと次元ごとの値を持つ() {
-        // 向きの割れた指標は直し方から外れるが、値は出す。 出さなければ、
+        // 向きを持たない指標は直し方から外れるが、値は出す。 出さなければ、
         // 合算に効いているのに見えない指標が残る。
         let m = Fixture::new(10);
         let person = Fixture::samples(&m.person);

@@ -479,7 +479,11 @@ pub struct HumannessObserved {
     ///
     /// 較正が決める。 定義に固定すると、素材がその向きを支えていない
     /// 形代で直し方に従うほど人らしさが下がる。
-    pub raise: bool,
+    ///
+    /// 次元ごとに向きが割れていれば `None` で、向きは[次元ごとに](Self::dims)持つ。
+    pub raise: Option<bool>,
+    /// 向きが割れているときの、次元ごとの向き。割れていなければ空である。
+    pub dims: Vec<HumannessDim>,
     /// その人が現に繰り返している言い回し。この指標に添えるものだけ。
     ///
     /// 数値と向きだけでは直せない。「その人が繰り返している言い回しを
@@ -507,6 +511,17 @@ pub struct HumannessObserved {
     /// ではない——どの指標も境目より人の側にいるのに、合算では機械の側という
     /// ことが実際に起きる。
     pub target: f64,
+}
+
+/// 人らしさの 1 次元を人へ寄せる向き。指標の中で向きが割れたときに使う。
+#[derive(Debug, Clone, PartialEq)]
+pub struct HumannessDim {
+    /// 次元の名前。
+    pub name: String,
+    /// `true` なら値を上げる。
+    pub raise: bool,
+    /// この文章で測った量。
+    pub value: f64,
 }
 
 /// 検めに渡す観測ぜんぶ。
@@ -832,10 +847,14 @@ fn humanness_remedies(
             // 下と決め打ってはいけない。 人らしさの指標は両側の直し方を持つので、
             // 決め打つと必ず「足す」側が返り、較正が「減らせ」と言った場面でも
             // 「増やせ」と指示する——直し方に従うほど人らしさが下がる。
-            let remedy = if o.raise {
-                remedies.lower(&o.name).or_else(|| remedies.upper(&o.name))
-            } else {
-                remedies.upper(&o.name).or_else(|| remedies.lower(&o.name))
+            //
+            // 次元ごとに向きが割れていれば、定義の直し方は使えない。 定義は指標を
+            // まとめて上げるか下げるかで書いてあり、どちらも較正の向きと食い違う。
+            // 次元ごとの向きを言う。
+            let remedy = match o.raise {
+                Some(true) => remedies.lower(&o.name).or_else(|| remedies.upper(&o.name)),
+                Some(false) => remedies.upper(&o.name).or_else(|| remedies.lower(&o.name)),
+                None => by_dim(&o.dims),
             }?;
             // 並べる値はその指標だけで見た人らしさであって、指標そのものの
             // 量ではない。 「密度が本人より足りない」と書けば、続く直し方の
@@ -881,6 +900,26 @@ fn humanness_remedies(
             Some(line)
         })
         .collect()
+}
+
+/// 次元ごとの向き。「次元ごとに寄せる向きが違う: 句点の密度を上げる（この文章 26.369）、…。」の形。
+///
+/// 次元が無ければ言えることが無い。
+fn by_dim(dims: &[HumannessDim]) -> Option<String> {
+    if dims.is_empty() {
+        return None;
+    }
+    let parts: Vec<String> = dims
+        .iter()
+        .map(|d| {
+            let way = if d.raise { "上げる" } else { "下げる" };
+            format!("{}を{way}（この文章 {:.3}）", d.name, d.value)
+        })
+        .collect();
+    Some(format!(
+        "次元ごとに寄せる向きが違う: {}。",
+        parts.join("、")
+    ))
 }
 
 /// 判定と指摘を決める閾値。指紋に入れる材料である。
@@ -1108,7 +1147,8 @@ mod tests {
         HumannessObserved {
             name: name.into(),
             value,
-            raise: true,
+            raise: Some(true),
+            dims: Vec::new(),
             phrases: Vec::new(),
             overused: Vec::new(),
             once_only: Vec::new(),
@@ -1316,6 +1356,72 @@ mod tests {
         assert_eq!(names.len(), s.len(), "名前が重なれば片方が消える");
     }
 
+    fn humanness_only(by_metric: &[HumannessObserved]) -> Review {
+        let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
+        review(
+            &Observations {
+                inspections: &[],
+                humanness: Some(Side::Machine),
+                matching: Some(Side::Human),
+                matching_substituted: None,
+                too_short: None,
+                directives: &d,
+                directives_muted: false,
+                habits: &[],
+                humanness_by_metric: by_metric,
+                diverging: &[],
+                katas: &[],
+                machine_katas: &[],
+                machine_gois: &[],
+                phrases: &[],
+                first_person: &[],
+                draft_first_person: &[],
+                opening: &[],
+                draft_opening: None,
+            },
+            &All,
+        )
+    }
+
+    #[test]
+    fn 次元ごとに向きが割れた指標は定義の直し方ではなく次元ごとの向きを言う() {
+        // 実測で、句読点の密度は句点を増やし読点を減らす向きが人の側だった。
+        // 定義の直し方は句点と読点をまとめて増やすか減らすかで、どちらに従っても
+        // 片方の次元が本人から離れる。外せば、合算にいちばん効く指標が消える。
+        let mut split = human("句読点の密度", -0.413);
+        split.raise = None;
+        split.dims = vec![
+            HumannessDim {
+                name: "句点の密度".into(),
+                raise: true,
+                value: 26.369,
+            },
+            HumannessDim {
+                name: "読点の密度".into(),
+                raise: false,
+                value: 28.596,
+            },
+        ];
+        split.effect = 0.86;
+        let r = humanness_only(&[human("圧縮率", -0.95), split]);
+        assert_eq!(r.humanness.len(), 2, "{:?}", r.humanness);
+        assert_eq!(
+            r.humanness[0],
+            "句読点の密度で見た基準との距離が本人より近い（この文章 -0.413 / 本人 1.000）。\
+             次元ごとに寄せる向きが違う: 句点の密度を上げる（この文章 26.369）、\
+             読点の密度を下げる（この文章 28.596）。基準との距離が +0.860 動く。",
+            "効く量の順で先頭に来る"
+        );
+    }
+
+    #[test]
+    fn 向きが割れていて次元の向きも無ければ渡さない() {
+        let mut split = human("句読点の密度", -0.413);
+        split.raise = None;
+        let r = humanness_only(&[split]);
+        assert!(r.humanness.is_empty(), "{:?}", r.humanness);
+    }
+
     #[test]
     fn 人らしさの直し方は並べた値が人らしさだと言う() {
         // 並べる値は指標ごとの人らしさであって、指標そのものの密度ではない。
@@ -1323,7 +1429,7 @@ mod tests {
         // 食い違って読める。
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let mut down = human("句読点の密度", -0.9);
-        down.raise = false;
+        down.raise = Some(false);
         let r = review(
             &Observations {
                 inspections: &[],
@@ -1370,7 +1476,7 @@ mod tests {
         // 「減らせ」と言うなら、どれを減らすのかを言わなければ直せない。
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
         let mut h = human("短い繰り返し", -0.2);
-        h.raise = false;
+        h.raise = Some(false);
         h.overused = vec!["ます。".into(), "ています".into()];
         let r = review(
             &Observations {
@@ -1700,7 +1806,7 @@ mod tests {
         let d = [observed("全角括弧", 1.0, 0.0, 2.0)];
 
         let mut down = human("圧縮率", -0.9);
-        down.raise = false;
+        down.raise = Some(false);
         let r = review(
             &Observations {
                 inspections: &[],
