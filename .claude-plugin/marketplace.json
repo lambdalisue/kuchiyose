@@ -1,0 +1,18 @@
+{
+  "name": "kuchiyose",
+  "owner": {
+    "name": "lambdalisue"
+  },
+  "metadata": {
+    "description": "kuchiyose を Claude Code から使うためのプラグイン"
+  },
+  "plugins": [
+    {
+      "name": "kuchiyose",
+      "source": "./plugins/kuchiyose",
+      "description": "自分の書き方に寄せて日本語の文章を代筆させ、ずれを数えて直させる",
+      "category": "writing",
+      "keywords": ["japanese", "writing", "style"]
+    }
+  ]
+}
