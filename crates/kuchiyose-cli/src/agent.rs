@@ -80,12 +80,14 @@ pub enum Task<'a> {
         /// 確かめるコマンド。プロンプトに書いたとおりの文字列である。
         check: &'a str,
     },
-    /// 表現を直させる。今の版を読み、その周の版の経路だけに書く。何も実行させない。
+    /// 表現を直させる。今の版を読み、その周の版の経路だけに書き、その版を検めるコマンドだけを打てる。
     Polish {
         /// 今の版。
         read: &'a Path,
         /// その周の版を書く経路。
         write: &'a Path,
+        /// その周の版を検めるコマンド。プロンプトに書いたとおりの文字列である。空なら何も実行させない。
+        checks: &'a [String],
     },
 }
 
@@ -179,21 +181,41 @@ pub fn argv(agent: &Agent, launch: &Launch<'_>) -> Vec<String> {
             // 後ろに足したシェルの続きまで通る。
             format!("Bash({check})"),
         ],
-        (Kind::Claude, Task::Polish { read, write }) => vec![
-            program,
-            s("-p"),
-            prompt,
-            s("--permission-mode"),
-            s("dontAsk"),
-            s("--tools"),
-            s("Read,Write,Edit"),
-            s("--allowedTools"),
-            format!("Read({})", claude_path(read)),
-            format!("Edit({})", claude_path(write)),
-        ],
+        (
+            Kind::Claude,
+            Task::Polish {
+                read,
+                write,
+                checks,
+            },
+        ) => {
+            let tools = if checks.is_empty() {
+                "Read,Write,Edit"
+            } else {
+                "Read,Write,Edit,Bash"
+            };
+            let mut v = vec![
+                program,
+                s("-p"),
+                prompt,
+                s("--permission-mode"),
+                s("dontAsk"),
+                s("--tools"),
+                s(tools),
+                // 可変個の引数を取るので最後に置く。
+                s("--allowedTools"),
+                format!("Read({})", claude_path(read)),
+                format!("Edit({})", claude_path(write)),
+            ];
+            // 前置きで許す形（`:*`）にしない。 ほかの版や別の形代で検める道、後ろに
+            // 足したシェルの続きまで通る。
+            v.extend(checks.iter().map(|c| format!("Bash({c})")));
+            v
+        }
         // codex は書ける場所と実行できるものを細かく名指せない。 絞れる範囲で最も狭い
         // 段階を使う。作業のディレクトリの外には書けない。 ペルソナ作りの作業の
-        // ディレクトリは、kuchiyose が作った専用のものである。
+        // ディレクトリは、kuchiyose が作った専用のものである。 サンドボックスの中では
+        // コマンドを名指さずに打てるので、周回で版を検めるコマンドもそのまま打てる。
         (Kind::Codex, Task::Persona { .. } | Task::Polish { .. }) => vec![
             program,
             s("exec"),
@@ -439,9 +461,14 @@ mod tests {
     }
 
     fn polish() -> Task<'static> {
+        polish_checking(&[])
+    }
+
+    fn polish_checking(checks: &[String]) -> Task<'_> {
         Task::Polish {
             read: Path::new("/w/round-0.md"),
             write: Path::new("/w/round-1.md"),
+            checks,
         }
     }
 
@@ -475,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_の周回は今の版を読みその周の版だけに書き何も実行しない() {
+    fn claude_の周回は検めるコマンドが無ければ今の版を読みその周の版だけに書き何も実行しない() {
         let v = argv(&agent(Kind::Claude), &launch(polish()));
         assert_eq!(
             v,
@@ -493,6 +520,32 @@ mod tests {
             ]
         );
         assert!(!v.iter().any(|a| a.contains("Bash")), "{v:?}");
+    }
+
+    #[test]
+    fn claude_の周回で検めるコマンドを渡せばそのとおりの文字列だけを打てる() {
+        let checks = vec![
+            "'/bin/kuchiyose' review '/w/round-1.md' --katashiro '/k/a.katashiro'".to_owned(),
+            "'/bin/kuchiyose' review '/w/round-1.md' --katashiro '/k/a.katashiro' --values"
+                .to_owned(),
+        ];
+        assert_eq!(
+            argv(&agent(Kind::Claude), &launch(polish_checking(&checks))),
+            vec![
+                "/bin/claude",
+                "-p",
+                "依頼",
+                "--permission-mode",
+                "dontAsk",
+                "--tools",
+                "Read,Write,Edit,Bash",
+                "--allowedTools",
+                "Read(//w/round-0.md)",
+                "Edit(//w/round-1.md)",
+                "Bash('/bin/kuchiyose' review '/w/round-1.md' --katashiro '/k/a.katashiro')",
+                "Bash('/bin/kuchiyose' review '/w/round-1.md' --katashiro '/k/a.katashiro' --values)",
+            ]
+        );
     }
 
     #[test]

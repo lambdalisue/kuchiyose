@@ -35,7 +35,8 @@ kuchiyose polish <ファイル> [-o <ファイル>] [--katashiro <形代>] [--ba
     採った版が通るか、上限の周回数に達するか、道具が失敗したら止める。
     元のファイルは上書きしない。版と各周のプロンプトと検めた結果と捨てた版の記録は
     <ファイルの名前>.kuchiyose/ に残る。捨てた版があれば、次の周のプロンプトに
-    何をして捨てたかを載せる。
+    何をして捨てたかを載せる。道具は直した版を周回と同じ形代と基準で自分で検めて
+    よい。採るかは kuchiyose が自分の検めで決める。
     -o         最後に採った版を書く経路。省けば <ファイルの名前>.polished.<拡張子>。
                1 周も採らなければ書かない。
     --rounds   上限の周回数。1 以上 1000 以下。既定は 4。捨てた周も 1 周と数える。
@@ -122,6 +123,54 @@ pub struct Plan {
     pub output: PathBuf,
     /// 上限の周回数。
     pub rounds: usize,
+    /// 道具が自分の版を検めるコマンドの材料。無ければ道具に検めさせない。
+    pub self_check: Option<SelfCheck>,
+}
+
+/// 道具が自分の版を検めるコマンドの材料（[道具は自分の版を検めてよい](../../../docs/spec/400-write.md#道具は自分の版を検めてよい)）。
+///
+/// 形代と基準を名指して渡す。 省けば、道具の側の設定や環境変数で別の形代を開き、
+/// 周回と違う目盛りで検めることがある。
+#[derive(Debug, Clone)]
+pub struct SelfCheck {
+    /// 今動いている実行ファイル。道具の側の `PATH` にあるとは限らない。
+    pub exe: PathBuf,
+    /// 本人の形代。絶対経路である。
+    pub katashiro: PathBuf,
+    /// 基準の形代。絶対経路である。同梱の基準なら `None`。
+    pub baseline: Option<PathBuf>,
+}
+
+impl SelfCheck {
+    /// 周回を開くときに渡された形代と基準から作る。経路は今いる場所から絶対経路にする
+    /// ——道具は作業用のフォルダで走る。
+    #[must_use]
+    pub fn of(env: &Env, katashiro: &str, baseline: Option<&str>) -> Self {
+        Self {
+            exe: env.exe.clone(),
+            katashiro: env.absolute(katashiro),
+            baseline: baseline.map(|b| env.absolute(b)),
+        }
+    }
+
+    /// その版を検めるコマンド。散文を出すものと、`--values` を付けたもの。
+    ///
+    /// 道具がそのまま打てる形で、許す規則にも同じ文字列を使う。
+    #[must_use]
+    pub fn commands(&self, version: &Path) -> Vec<String> {
+        let q = |p: &Path| kuchiyose_prompt::shell_quote(&p.display().to_string());
+        let mut base = format!(
+            "{} review {} --katashiro {}",
+            q(&self.exe),
+            q(version),
+            q(&self.katashiro)
+        );
+        if let Some(b) = &self.baseline {
+            let _ = write!(base, " --baseline {}", q(b));
+        }
+        let values = format!("{base} --values");
+        vec![base, values]
+    }
 }
 
 impl Plan {
@@ -143,7 +192,16 @@ impl Plan {
             original,
             ext,
             rounds,
+            self_check: None,
         }
+    }
+
+    /// その版を検めるコマンド。材料が無ければ空である。
+    fn checks(&self, version: &Path) -> Vec<String> {
+        self.self_check
+            .as_ref()
+            .map(|c| c.commands(version))
+            .unwrap_or_default()
     }
 
     /// その番号の版の経路。
@@ -283,15 +341,10 @@ pub fn run_rounds(
     };
     for n in (start + 1)..=last {
         let write = plan.version(n);
+        let checks = plan.checks(&write);
         // 直させるのはいつも、それまでに採った版である。 捨てた版から続けない。
         // 捨てた版は、何をして捨てられたかだけを伝える。
-        let prompt = kuchiyose_prompt::revise_prompt(
-            &report.kept.prose,
-            &ceilings(&report.kept),
-            &rejected_history(plan, &report.kept_path, &report.kept.json),
-            &report.kept_path.display().to_string(),
-            &write.display().to_string(),
-        );
+        let prompt = prompt_for(plan, &report.kept, &report.kept_path, &write, &checks);
         let prompt_file = plan.prompt(n);
         write_file(&prompt_file, &prompt)?;
         report.rounds_run += 1;
@@ -299,6 +352,7 @@ pub fn run_rounds(
             task: Task::Polish {
                 read: &report.kept_path,
                 write: &write,
+                checks: &checks,
             },
             prompt: &prompt,
             prompt_file: &prompt_file,
@@ -335,6 +389,25 @@ pub fn run_rounds(
         }
     }
     Ok(report)
+}
+
+/// 直させるプロンプト。`read` を検めた結果が `kept` である。
+fn prompt_for(plan: &Plan, kept: &Checked, read: &Path, write: &Path, checks: &[String]) -> String {
+    kuchiyose_prompt::revise_prompt(&kuchiyose_prompt::ReviseRequest {
+        review: &kept.prose,
+        ceilings: &ceilings(kept),
+        rejected: &rejected_history(plan, read, &kept.json),
+        baseline_distance: matches!(
+            &kept.version,
+            Version::Measured(Standing {
+                stage: Stage::Humanness,
+                ..
+            })
+        ),
+        checks,
+        read: &read.display().to_string(),
+        write: &write.display().to_string(),
+    })
 }
 
 /// 直させるプロンプトに載せる、言い回しの上限。検めた結果の並びのまま渡す。
@@ -598,12 +671,12 @@ pub fn first_prompt(plan: &Plan, first: &Checked) -> Result<String, String> {
     if let Some(why) = not_entering(first) {
         return Err(why);
     }
-    Ok(kuchiyose_prompt::revise_prompt(
-        &first.prose,
-        &ceilings(first),
-        &rejected_history(plan, &plan.original, &first.json),
-        &plan.original.display().to_string(),
-        &plan.output.display().to_string(),
+    Ok(prompt_for(
+        plan,
+        first,
+        &plan.original,
+        &plan.output,
+        &plan.checks(&plan.output),
     ))
 }
 
@@ -636,14 +709,17 @@ pub fn run_with(args: &[String], env: &Env, assemble: &Assemble<'_>) -> Exit {
         Err(e) => return e,
     };
     let rounds = a.rounds.or(cfg.rounds).unwrap_or(DEFAULT_ROUNDS);
-    let plan = Plan::new(
-        original,
-        a.output.as_deref().map(|o| env.absolute(o)),
-        rounds,
-    );
     let katashiro = match katashiros::resolve(a.katashiro.as_deref(), env) {
         Ok(k) => k,
         Err(e) => return e,
+    };
+    let plan = Plan {
+        self_check: Some(SelfCheck::of(env, &katashiro, a.baseline.as_deref())),
+        ..Plan::new(
+            original,
+            a.output.as_deref().map(|o| env.absolute(o)),
+            rounds,
+        )
     };
     let agent = if a.print {
         None
@@ -690,7 +766,7 @@ mod tests {
     ///
     /// 中身は `通らない 0.5` のような 1 行で、判定と基準との距離を名乗る。 指標ごとの
     /// 人らしさ値は `圧縮率` の 1 本だけで、基準との距離と同じ値にする。
-    /// `短い` は測れない版、`通る` は通る版である。
+    /// `短い` は測れない版、`通る` は通る版、`照合値 0.5` は照合値の段で止まった版である。
     ///
     /// 距離のあとに `しています。=16` のように言い回しと回数を並べられる。 どれも 5,000 字の
     /// 版で本人の上限 2.8 回、つまり 14 回まで使える、とする。 超えたぶんが使いすぎである。
@@ -760,6 +836,16 @@ mod tests {
             ["短い"] => checked(
                 Verdict::Unknown,
                 Version::Unmeasurable("短すぎて測れない".into()),
+            ),
+            ["照合値", m, ..] => checked(
+                Verdict::Unknown,
+                at(
+                    Verdict::Unknown,
+                    Stage::Matching,
+                    Amount::Matching {
+                        value: m.parse().unwrap(),
+                    },
+                ),
             ),
             ["通らない", d, ..] => checked(
                 Verdict::Fail,
@@ -980,6 +1066,140 @@ mod tests {
                 "- 採らなかった理由: 本人の上限を超えた言い回しが 0 本から 1 本に増えた\
                  （「しています。」）。使いすぎを増やした版は、止まった段の量が良くなっても採らない\n"
             ),
+            "{second}"
+        );
+    }
+
+    /// 引数を記録するだけの偽の kuchiyose。版が書いてあったかも記録する。
+    fn recording_exe(dir: &TempDir) -> PathBuf {
+        let exe = dir.write(
+            "偽/kuchiyose",
+            format!(
+                "#!/bin/sh\n\
+                 [ -s \"$2\" ] && w=書いてあった || w=空だった\n\
+                 printf '%s %s\\n' \"$w\" \"$*\" >> '{}'\n",
+                dir.join("偽/検めた")
+            ),
+        );
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        PathBuf::from(exe)
+    }
+
+    /// 版を書いたあと、プロンプトの「自分で検める」のコマンドを 1 つずつ打つ偽の道具。
+    fn self_checking_agent(dir: &TempDir, versions: &[&str]) -> Agent {
+        for (i, v) in versions.iter().enumerate() {
+            dir.write(&format!("偽/{}.txt", i + 1), v);
+        }
+        let script = dir.write(
+            "偽/検める道具.sh",
+            format!(
+                "#!/bin/sh\n\
+                 n=$(cat '{d}/偽/count' 2>/dev/null || echo 0)\n\
+                 n=$((n + 1))\n\
+                 echo $n > '{d}/偽/count'\n\
+                 line=$(grep '^- 書く: ' \"$1\")\n\
+                 cat '{d}/偽/'$n'.txt' > \"${{line#- 書く: }}\"\n\
+                 in=0\n\
+                 while IFS= read -r l; do\n\
+                   case \"$l\" in\n\
+                     '```sh') in=1 ;;\n\
+                     '```') [ $in = 1 ] && break ;;\n\
+                     *) [ $in = 1 ] && sh -c \"$l\" < /dev/null ;;\n\
+                   esac\n\
+                 done < \"$1\"\n",
+                d = dir.path()
+            ),
+        );
+        Agent {
+            kind: Kind::Custom(format!("sh '{script}' {{prompt_file}}")),
+            program: PathBuf::from("/bin/sh"),
+        }
+    }
+
+    #[test]
+    fn 道具は書いた版を周回と同じ形代と基準で検めるコマンドを打てる() {
+        let dir = TempDir::new("polish-self-check");
+        let check = SelfCheck {
+            exe: recording_exe(&dir),
+            katashiro: PathBuf::from(dir.join("本人.katashiro")),
+            baseline: Some(PathBuf::from(dir.join("基準.katashiro"))),
+        };
+        let p = Plan {
+            self_check: Some(check),
+            ..plan(&dir, "通らない 0.5", 1)
+        };
+        let seen_checks = std::cell::RefCell::new(Vec::new());
+        let a = self_checking_agent(&dir, &["通らない 0.6"]);
+        let r = run_rounds(&p, &stub_judge, &|l| {
+            if let Task::Polish { checks, .. } = l.task {
+                seen_checks.borrow_mut().extend(checks.iter().cloned());
+            }
+            agent::run_batch(&a, l)
+        })
+        .expect("回せる");
+        assert_eq!(r.adopted, 1, "採るかは kuchiyose が自分の検めで決める");
+        let (w, k, b) = (
+            p.version(1).display().to_string(),
+            dir.join("本人.katashiro"),
+            dir.join("基準.katashiro"),
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("偽/検めた")).unwrap(),
+            format!(
+                "書いてあった review {w} --katashiro {k} --baseline {b}\n\
+                 書いてあった review {w} --katashiro {k} --baseline {b} --values\n"
+            )
+        );
+        assert_eq!(
+            *seen_checks.borrow(),
+            p.self_check.as_ref().unwrap().commands(&p.version(1)),
+            "道具に許すコマンドはプロンプトに書いたものと同じ文字列である"
+        );
+    }
+
+    #[test]
+    fn 同梱の基準で回すなら検めるコマンドに基準を書かない() {
+        let check = SelfCheck {
+            exe: PathBuf::from("/opt/kuchiyose"),
+            katashiro: PathBuf::from("/k/本人 の.katashiro"),
+            baseline: None,
+        };
+        assert_eq!(
+            check.commands(Path::new("/w/round-1.md")),
+            vec![
+                "'/opt/kuchiyose' review '/w/round-1.md' --katashiro '/k/本人 の.katashiro'",
+                "'/opt/kuchiyose' review '/w/round-1.md' --katashiro '/k/本人 の.katashiro' --values",
+            ]
+        );
+    }
+
+    #[test]
+    fn 材料が無ければ道具に検めさせない() {
+        let dir = TempDir::new("polish-no-self-check");
+        let p = plan(&dir, "通らない 0.5", 1);
+        run(&p, &fake_agent(&dir, &["通らない 0.4"]));
+        let first = prompt_of(&p, 1);
+        assert!(!first.contains("## 自分で検める"), "{first}");
+        assert!(first.contains("- 検めを自分で走らせない。"), "{first}");
+    }
+
+    #[test]
+    fn 基準との距離で止まった版を直させるときだけ語を揃えさせる() {
+        let dir = TempDir::new("polish-unify");
+        let p = plan(&dir, "通らない 0.5", 2);
+        run(&p, &fake_agent(&dir, &["照合値 0.1", "照合値 0.2"]));
+        assert!(
+            prompt_of(&p, 1).contains("## 語を揃える"),
+            "元の版は基準との距離で止まっている"
+        );
+        let second = prompt_of(&p, 2);
+        assert!(
+            !second.contains("## 語を揃える"),
+            "1 周目で照合値の段へ進んだ版を採った: {second}"
+        );
+        assert!(
+            second.contains("- 指摘に無い箇所を書き換えない。\n"),
             "{second}"
         );
     }

@@ -14,7 +14,7 @@ use crate::env::{Env, Input};
 use crate::exit::Exit;
 use crate::facts;
 use crate::pair::Assemble;
-use crate::polish_cmd::{self, Plan};
+use crate::polish_cmd::{self, Plan, SelfCheck};
 use crate::remedies::FromDefinitions;
 use crate::review::Session;
 use crate::{config, katashiros};
@@ -304,6 +304,7 @@ pub fn run_with(args: &[String], env: &Env, assemble: &Assemble<'_>) -> Exit {
             Err(e) => return e,
         }
     };
+    let self_check = SelfCheck::of(env, &katashiro, a.baseline.as_deref());
     let session = match Session::open(katashiro, a.baseline.clone(), assemble) {
         Ok(s) => s,
         Err(e) => return e,
@@ -322,7 +323,10 @@ pub fn run_with(args: &[String], env: &Env, assemble: &Assemble<'_>) -> Exit {
         .rounds
         .or(cfg.rounds)
         .unwrap_or(polish_cmd::DEFAULT_ROUNDS);
-    let plan = Plan::new(save.clone(), None, rounds);
+    let plan = Plan {
+        self_check: Some(self_check),
+        ..Plan::new(save.clone(), None, rounds)
+    };
     let prompt_file = plan.work.join("write.prompt.md");
     let wrote =
         std::fs::create_dir_all(&plan.work).and_then(|()| std::fs::write(&prompt_file, &prompt));

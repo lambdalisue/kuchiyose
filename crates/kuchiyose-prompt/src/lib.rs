@@ -6,7 +6,7 @@
 //! | [ペルソナの読み方](persona::parse) | 見出しと項目と引用を取り出す。形が合わなければ断る |
 //! | [引用の照らし方](persona::check) | 単位ごとの node の文字列を受け取り、引用が現れるかを返す |
 //! | [代筆のプロンプト](draft::draft_prompt) | ペルソナ・文体の事実・要約・保存先から組み立てる |
-//! | [直させるプロンプト](revise::revise_prompt) | 検めた結果の散文・言い回しの上限・捨てた直し・読む経路・書く経路から組み立てる |
+//! | [直させるプロンプト](revise::revise_prompt) | 検めた結果の散文・言い回しの上限・捨てた直し・止まった段・検めるコマンド・読む経路・書く経路から組み立てる |
 //! | [変えたところ](changes::changes) | 2 つの版の文字列から、変えた文の断片を返す。捨てた直しに載せる |
 //! | [ペルソナを作らせるプロンプト](persona_prompt::persona_prompt) | 素材のフォルダ・書く経路・確かめるコマンドから組み立てる |
 //!
@@ -33,7 +33,10 @@ pub use persona::{
     HEADINGS, QUOTE_MIN_CHARS,
 };
 pub use persona_prompt::persona_prompt;
-pub use revise::{revise_prompt, Ceiling, Rejected, MAX_CEILINGS, MAX_CHANGES, MAX_REJECTED};
+pub use revise::{
+    revise_prompt, Ceiling, Rejected, ReviseRequest, MAX_CEILINGS, MAX_CHANGES, MAX_CHECKS,
+    MAX_REJECTED,
+};
 
 /// シェルに渡す 1 語にする。単引用符で囲み、中の単引用符は閉じて繋ぐ。
 ///
