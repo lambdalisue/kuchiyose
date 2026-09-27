@@ -11,7 +11,10 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 fn main() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("definitions");
+    // `env!` で取ると、このスクリプトを組んだときの置き場が焼き込まれる。 cargo は
+    // リポジトリを動かしても組み直さないので、動かす前の置き場を読みにいく。
+    let dir = Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR がある"))
+        .join("definitions");
     // ディレクトリを指せば、中のどのファイルが変わっても作り直される。
     println!("cargo:rerun-if-changed={}", dir.display());
     let mut files: Vec<(String, String)> = std::fs::read_dir(&dir)
