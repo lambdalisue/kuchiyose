@@ -1,0 +1,11 @@
+{
+  "name": "kuchiyose",
+  "description": "自分の書き方に寄せて日本語の文章を代筆させ、ずれを数えて直させる",
+  "author": {
+    "name": "lambdalisue"
+  },
+  "homepage": "https://github.com/lambdalisue/kuchiyose",
+  "repository": "https://github.com/lambdalisue/kuchiyose",
+  "license": "MIT",
+  "keywords": ["japanese", "writing", "style"]
+}

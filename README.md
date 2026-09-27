@@ -75,6 +75,21 @@ kuchiyose polish draft.md                      # 手元の文章の表現だけ�
 道具の選び方、結果の読み方、指摘の調整、エラーへの対処、基準の替え方は
 [詳しい使い方](docs/guide.md)にある。
 
+## Claude Code から使う
+
+このリポジトリは Claude Code のプラグインのマーケットプレースを兼ねている。プラグインを
+入れると、Claude Code に「自分の書き方で記事を書いて」「この草稿を寄せて」と頼むだけで
+kuchiyose を使うスキルが呼ばれる。kuchiyose 本体は別に入れておく。
+
+```sh
+claude plugin marketplace add lambdalisue/kuchiyose
+claude plugin install kuchiyose@kuchiyose
+```
+
+Claude Code の中なら `/plugin marketplace add lambdalisue/kuchiyose` と
+`/plugin install kuchiyose@kuchiyose` でもよい。代筆は `write --print` で受け取った
+プロンプトに従って Claude Code が書き、表現を寄せる周回は `polish` が回す。
+
 ## 限界
 
 - 数字があなたの記事に揃っても、読んだ人が「あなたらしい」と感じるかは確かめていない。
